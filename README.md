@@ -204,6 +204,11 @@ cluster:
 
 **Provenance tracking** — Every HDF5 output file embeds the full pipeline YAML config, library versions (NumPy, scikit-learn, HDBSCAN, etc.), Python version, and platform info as root-level attributes. This means any output file is self-documenting and fully reproducible.
 
+## Authors
+
+- **Brendon Hall** — [@brendonhall](https://github.com/brendonhall) · [ORCID](https://orcid.org/0000-0002-2244-4994)
+- **Matthew Izawa** — [@matthewizawa](https://github.com/matthewizawa) · [ORCID](https://orcid.org/0000-0001-5456-2912)
+
 ## Contributing
 
 Contributions are welcome! Please open an issue to discuss proposed changes before submitting a pull request.
