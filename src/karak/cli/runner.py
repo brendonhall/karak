@@ -118,6 +118,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run with 4 elements at 4x downsample (fast validation).",
     )
     p.add_argument(
+        "--clean",
+        action="store_true",
+        help="Delete existing HDF5 output and start fresh.",
+    )
+    p.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable debug logging.",
@@ -887,6 +892,11 @@ def main(argv: list[str] | None = None) -> None:
 
     h5 = cfg.hdf5_output
     do_qc = not args.no_qc
+
+    # Clean previous run if requested
+    if args.clean and Path(h5).exists():
+        Path(h5).unlink()
+        console.print(f"[yellow]Deleted {h5}[/yellow]")
 
     # Determine element count description for banner
     if args.test_mode:
