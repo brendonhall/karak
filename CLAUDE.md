@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Workflow
+
+Always push commits to `main` after committing.
+
 ## Project
 
 Karak is an automated mineralogy pipeline for SEM-EDS (Scanning Electron Microscopy with Energy Dispersive Spectroscopy) elemental map stacks. It transforms jet-colormapped elemental map PNGs into mineral phase maps with chemical fingerprints. Python >=3.12, built with Hatchling.
