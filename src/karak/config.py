@@ -26,15 +26,70 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 class DownsampleConfig(BaseModel):
-    """Image downsampling and header trimming parameters."""
+    """Image downsampling and edge-trimming parameters."""
 
     header_trim_px: int = Field(
         default=100,
         description="Pixels to trim from top of each image (scale bar region)",
     )
+    bottom_trim_px: int = Field(
+        default=0,
+        description="Pixels to trim from bottom of each image (annotation strip)",
+    )
+    left_trim_px: int = Field(
+        default=0,
+        description="Pixels to trim from left edge of each image",
+    )
+    right_trim_px: int = Field(
+        default=0,
+        description="Pixels to trim from right edge of each image (annotation/colorbar strip)",
+    )
     downsample_factor: int = Field(
         default=2,
         description="Factor to downsample all images (BSE and EDS alike)",
+    )
+
+
+class LoaderConfig(BaseModel):
+    """File discovery, filename parsing, and colormap inversion parameters.
+
+    Lets karak ingest datasets that differ from the original TIMA convention
+    (jet-colormapped PNGs with ``{sample}-{element}.png`` naming).
+    """
+
+    file_glob: str = Field(
+        default="*.png",
+        description="Glob pattern (relative to input_dir) for element map files",
+    )
+    filename_pattern: Optional[str] = Field(
+        default=None,
+        description=(
+            "Filename pattern with ``{element}`` placeholder (and optional "
+            "``{sample}`` wildcard) used to extract element names from "
+            "matched files. Example: 'Map_NWA-5218_eds_{element}.bmp'. "
+            "If None, the legacy heuristic is used: split basename on '-' "
+            "and join parts[2:] (matches the original TIMA convention)."
+        ),
+    )
+    bse_filename: Optional[str] = Field(
+        default=None,
+        description=(
+            "Exact filename (relative to input_dir) of the BSE/SEM grayscale "
+            "channel, used when the BSE file does not match ``file_glob``. "
+            "If None, the BSE channel is found within the main glob by "
+            "matching the parsed element name to ``bse_channel``."
+        ),
+    )
+    colormap: str = Field(
+        default="cmap:jet",
+        description=(
+            "Colormap specification for inverting false-color element maps. "
+            "'cmap:NAME' looks up a matplotlib colormap by name (e.g. "
+            "'cmap:jet', 'cmap:gist_ncar'). 'lut:PATH' loads a (N, 3) uint8 "
+            "LUT from an .npy file (path is resolved relative to input_dir "
+            "if not absolute). Plain 'jet' is accepted as shorthand for "
+            "'cmap:jet' for backward compatibility."
+        ),
     )
 
 
@@ -313,6 +368,7 @@ class PipelineConfig(BaseModel):
     )
 
     # Sub-configs
+    loader: LoaderConfig = Field(default_factory=LoaderConfig)
     downsample: DownsampleConfig = Field(default_factory=DownsampleConfig)
     mask: MaskConfig = Field(default_factory=MaskConfig)
     normalize: NormalizeConfig = Field(default_factory=NormalizeConfig)
@@ -334,9 +390,33 @@ def save_config(config: PipelineConfig, path: str | Path) -> None:
 
 
 def load_config(path: str | Path) -> PipelineConfig:
-    """Load and validate a PipelineConfig from a YAML file."""
+    """Load and validate a PipelineConfig from a YAML file.
+
+    Relative paths in the config (``input_dir``, ``hdf5_output``,
+    ``figure_dir``, ``mask.valid_mask_path``) are resolved against the
+    config file's directory, so a config can travel with its data
+    directory regardless of the caller's working directory.
+    """
+    path = Path(path)
     with open(path) as fh:
         data = yaml.safe_load(fh)
+
+    base = path.resolve().parent
+
+    def _resolve(p: str | None) -> str | None:
+        if p is None:
+            return None
+        candidate = Path(p).expanduser()
+        if candidate.is_absolute():
+            return str(candidate)
+        return str((base / candidate).resolve())
+
+    for key in ("input_dir", "hdf5_output", "figure_dir"):
+        if key in data:
+            data[key] = _resolve(data[key])
+    if isinstance(data.get("mask"), dict) and "valid_mask_path" in data["mask"]:
+        data["mask"]["valid_mask_path"] = _resolve(data["mask"]["valid_mask_path"])
+
     return PipelineConfig(**data)
 
 
