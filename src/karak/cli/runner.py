@@ -252,6 +252,7 @@ def _run_load(
             cfg.exclude_elements,
             cfg.bse_channel,
             include_elements=include,
+            loader_config=cfg.loader,
         )
         cube = build_compositional_cube(elements, element_names)
         progress.update(task, completed=len(element_names), total=len(element_names))
@@ -305,6 +306,7 @@ def _run_mask(
             bse.shape,
             cfg.downsample.downsample_factor,
             cfg.downsample.header_trim_px,
+            cfg.downsample.left_trim_px,
         )
         console.print("done")
     else:

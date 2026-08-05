@@ -27,12 +27,13 @@ def load_valid_mask(
     image_shape: tuple[int, int],
     downsample_factor: int = 1,
     header_trim_px: int = 0,
+    left_trim_px: int = 0,
 ) -> np.ndarray:
     """Load a valid-region mask from a napari shapes CSV export.
 
     The CSV contains polygon vertices in full-resolution image coordinates.
-    Vertices are scaled by the downsample factor and offset by the header
-    trim before rasterizing to a boolean mask.
+    Vertices are scaled by the downsample factor and offset by the
+    top / left trims before rasterizing to a boolean mask.
 
     Only ``polygon`` shapes are rasterized (``path`` shapes are skipped
     since they represent open polylines without a filled interior).
@@ -43,12 +44,17 @@ def load_valid_mask(
         Path to the napari shapes CSV (columns: index, shape-type,
         vertex-index, axis-0, axis-1).
     image_shape : tuple[int, int]
-        (H, W) of the target image (after downsample and header trim).
+        (H, W) of the target image (after downsample and edge trims).
     downsample_factor : int
         Factor by which the image was downsampled from the original
         resolution used when drawing the mask.
     header_trim_px : int
         Pixels trimmed from the top of the image (in original resolution).
+    left_trim_px : int
+        Pixels trimmed from the left of the image (in original resolution).
+        Bottom and right trims do not affect coordinates — they just shrink
+        the target shape, so polygons drawn at the full resolution still
+        align after cropping.
 
     Returns
     -------
@@ -72,7 +78,8 @@ def load_valid_mask(
 
     H, W = image_shape
     mask = np.zeros((H, W), dtype=bool)
-    trim_offset = header_trim_px / downsample_factor
+    top_offset = header_trim_px / downsample_factor
+    left_offset = left_trim_px / downsample_factor
 
     n_rasterized = 0
     for idx in sorted(shapes):
@@ -86,8 +93,8 @@ def load_valid_mask(
             continue
 
         # Scale coordinates: full-res -> downsampled/trimmed space
-        rows = np.array([v[0] / downsample_factor - trim_offset for v in vertices])
-        cols = np.array([v[1] / downsample_factor for v in vertices])
+        rows = np.array([v[0] / downsample_factor - top_offset for v in vertices])
+        cols = np.array([v[1] / downsample_factor - left_offset for v in vertices])
 
         rr, cc = draw_polygon(rows, cols, shape=(H, W))
         mask[rr, cc] = True
