@@ -17,6 +17,18 @@
   <em>Automated mineral phase map of meteorite NWA 4587</em>
 </p>
 
+## Paper
+
+Karak accompanies the manuscript:
+
+> Izawa, M. R. M., Hall, B. J., Cao, F., Luo, T., Yokoyama, S. T., & Zhao, Y. S.
+> **Unsupervised mineral phase mapping from SEM-EDS element maps: a
+> density-based clustering pipeline with multi-resolution refinement.**
+> *Computers & Geosciences* (submitted 2026).
+
+If you use Karak in your research, please cite the paper and the software —
+citation metadata is provided in [`CITATION.cff`](CITATION.cff).
+
 ## Features
 
 - **End-to-end pipeline** — from raw jet-colormapped PNGs to labeled mineral phase maps in a single command
@@ -31,11 +43,18 @@
 
 ## Installation
 
+Requires Python 3.12+. Clone the repository and install with
+[uv](https://docs.astral.sh/uv/) (recommended — reproduces the exact locked
+environment used for the paper):
+
 ```bash
-pip install karak
+git clone https://github.com/brendonhall/karak.git
+cd karak
+uv sync            # creates .venv from uv.lock
+uv run karak --help
 ```
 
-Or install from source for development:
+Or install with pip into an existing environment:
 
 ```bash
 git clone https://github.com/brendonhall/karak.git
@@ -100,7 +119,12 @@ cd data
 karak
 ```
 
-That's it. Karak auto-detects `config.yaml` in the working directory, runs all five pipeline stages, and writes results to an HDF5 file alongside QC figures.
+That's it. Karak auto-detects the config file (`data/pipeline_config.yaml` or `../data/pipeline_config.yaml` relative to the working directory — or pass one explicitly with `-c config.yaml`), runs all five pipeline stages, and writes results to an HDF5 file alongside QC figures.
+
+> **Note:** The first run with a given colormap builds a 256³ RGB-to-scalar
+> lookup table (30–60 s). It is cached on disk and reused by all later runs.
+> For a fast installation check, run `karak --test-mode` (4 elements at 4x
+> downsample).
 
 ## Usage
 
@@ -194,6 +218,39 @@ cluster:
       n_components: 2           # e.g., pigeonite + augite
       features: ["Ca", "Mg", "Fe-K", "BSE"]
 ```
+
+## Documentation
+
+The **[User Guide](docs/user_guide.md)** covers input data expectations
+(element maps, BSE image, valid-region polygon mask), the five pipeline
+stages, the complete `pipeline_config.yaml` schema (every field with its
+default and meaning), the HDF5 output layout, checkpoint/resume, and
+reproducibility notes.
+
+## Hardware Requirements
+
+Karak is CPU-only (no GPU required). Development and the analyses in the
+paper were run on an **AMD Ryzen AI 5 340 with 32 GB RAM** (Linux).
+
+- Full-resolution runs (~7400 x 5400 px, 21 element channels) use
+  **~10–12 GB RAM**.
+- Memory can be bounded for larger images via `cluster.hdbscan.subsample_n`
+  or the `tiled` clustering strategy (constant per-tile memory).
+- `karak --test-mode` validates an installation in minutes on a laptop.
+
+## Testing
+
+A fast pytest suite (config round-trip, colormap-inversion round-trip on a
+synthetic ramp, mask utilities, and a synthetic end-to-end smoke test) runs
+in well under a minute:
+
+```bash
+uv sync
+uv run pytest
+```
+
+The same suite runs in CI on every push and pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 ## How It Works
 

@@ -1,0 +1,50 @@
+# TODO: add the software DOI once the Zenodo deposit is minted, e.g.:
+# doi: 10.5281/zenodo.XXXXXXX
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite both the software itself and the
+  companion paper (see preferred-citation).
+title: "karak: unsupervised mineral phase mapping from SEM-EDS element maps"
+type: software
+version: 0.1.0
+date-released: "2026-08-05"
+license: MIT
+repository-code: "https://github.com/brendonhall/karak"
+authors:
+  - family-names: Izawa
+    given-names: Matthew R. M.
+    orcid: "https://orcid.org/0000-0001-5456-2912"
+  - family-names: Hall
+    given-names: Brendon J.
+    orcid: "https://orcid.org/0000-0002-2244-4994"
+  - family-names: Cao
+    given-names: Fengke
+  - family-names: Luo
+    given-names: Tinyao
+  - family-names: Yokoyama
+    given-names: Sean T.
+  - family-names: Zhao
+    given-names: Yuyan Sara
+preferred-citation:
+  type: article
+  title: >-
+    Unsupervised mineral phase mapping from SEM-EDS element maps: a
+    density-based clustering pipeline with multi-resolution refinement
+  journal: "Computers & Geosciences"
+  year: 2026
+  notes: "Submitted 2026."
+  authors:
+    - family-names: Izawa
+      given-names: Matthew R. M.
+      orcid: "https://orcid.org/0000-0001-5456-2912"
+    - family-names: Hall
+      given-names: Brendon J.
+      orcid: "https://orcid.org/0000-0002-2244-4994"
+    - family-names: Cao
+      given-names: Fengke
+    - family-names: Luo
+      given-names: Tinyao
+    - family-names: Yokoyama
+      given-names: Sean T.
+    - family-names: Zhao
+      given-names: Yuyan Sara

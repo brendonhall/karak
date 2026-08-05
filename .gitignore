@@ -5,3 +5,5 @@ dist/
 build/
 .venv/
 *.h5
+.cache/
+.pytest_cache/
