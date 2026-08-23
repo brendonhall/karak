@@ -6,8 +6,7 @@ import numpy as np
 import pytest
 
 
-@pytest.fixture()
-def synthetic_scene():
+def make_synthetic_scene() -> np.ndarray:
     """64x64x3 cube: background strip + two chemically distinct phases."""
     rng = np.random.default_rng(0)
     H = W = 64
@@ -26,3 +25,8 @@ def synthetic_scene():
     cube[:, 8:, :] = np.clip(cube[:, 8:, :] + noise[:, 8:, :], 0.01, 1.0)
     # Columns 0..7 stay exactly zero = background / epoxy
     return cube
+
+
+@pytest.fixture()
+def synthetic_scene():
+    return make_synthetic_scene()

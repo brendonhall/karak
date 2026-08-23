@@ -40,7 +40,11 @@ def test_autoload_finds_phase_a_stages():
     import karak.stages  # noqa: F401 — package import fires autoload
 
     ids = {s["id"] for s in registry.list_stages()}
-    assert {"load_elements", "mask", "denoise", "normalize"} <= ids
+    assert {
+        "load_elements", "mask", "denoise", "normalize",
+        "pca", "hdbscan_global", "hdbscan_tiled", "rare_phase",
+        "noise_assign", "refine", "cluster_stats", "fingerprints",
+    } <= ids
 
 
 def test_list_stages_is_json_serializable():

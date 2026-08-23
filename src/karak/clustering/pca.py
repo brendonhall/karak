@@ -108,3 +108,25 @@ def select_components(
             f"n_keep={n_keep} exceeds available components {pca_features.shape[1]}"
         )
     return pca_features[:, :n_keep]
+
+
+def auto_n_components(
+    explained_variance_ratio: np.ndarray,
+    variance_threshold: float = 0.95,
+    min_components: int = 5,
+) -> int:
+    """Pick the component count reaching the cumulative-variance threshold.
+
+    Returns the index (1-based) of the first component whose cumulative
+    explained variance reaches ``variance_threshold``, floored at
+    ``min_components``. If the threshold is never reached, all components
+    are kept.
+    """
+    cumvar = np.cumsum(explained_variance_ratio)
+    candidates = np.where(cumvar >= variance_threshold)[0]
+    n_keep = (
+        int(candidates[0] + 1)
+        if len(candidates) > 0
+        else len(explained_variance_ratio)
+    )
+    return max(n_keep, min_components)
