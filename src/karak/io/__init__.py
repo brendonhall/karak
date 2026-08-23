@@ -8,14 +8,12 @@ from karak.io.masks import (
 )
 from karak.io.storage import (
     create_pipeline_hdf5,
-    get_completed_stages,
     load_bse,
     load_denoised_data,
     load_masks,
     load_mineral_names,
     load_normalized_data,
     load_raw_data,
-    mark_stage_complete,
     save_bse,
     save_denoised_data,
     save_mask,
@@ -41,8 +39,6 @@ __all__ = [
     "load_masks",
     "load_denoised_data",
     "load_normalized_data",
-    "get_completed_stages",
-    "mark_stage_complete",
     "save_mineral_names",
     "load_mineral_names",
 ]

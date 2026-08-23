@@ -494,18 +494,8 @@ def save_tiled_metadata(
 
 
 # ---------------------------------------------------------------------------
-# Read-back functions (for pipeline resume)
+# Read-back functions
 # ---------------------------------------------------------------------------
-
-# Maps HDF5 group names to pipeline stage names.
-_STAGE_GROUPS: dict[str, str] = {
-    "load": "raw",
-    "mask": "masks",
-    "denoise": "denoised",
-    "normalize": "normalized",
-    "cluster": "clusters",
-    "identification": "clusters",
-}
 
 
 def load_raw_data(
@@ -615,32 +605,6 @@ def load_normalized_data(
     return cube, means, stds, element_names
 
 
-def get_completed_stages(h5_path: str | Path) -> dict[str, str | None]:
-    """Check which pipeline stages have been completed in the HDF5 file.
-
-    A stage is considered complete if its HDF5 group has a
-    ``stage_completed`` attribute (a UTC ISO-8601 timestamp written by
-    :func:`mark_stage_complete`).
-
-    Returns
-    -------
-    dict[str, str | None]
-        Mapping of stage name -> completion timestamp (or *None*).
-    """
-    path = Path(h5_path)
-    if not path.exists():
-        return {stage: None for stage in _STAGE_GROUPS}
-
-    result: dict[str, str | None] = {}
-    with h5py.File(path, "r") as f:
-        for stage, grp_name in _STAGE_GROUPS.items():
-            if grp_name in f and "stage_completed" in f[grp_name].attrs:
-                result[stage] = str(f[grp_name].attrs["stage_completed"])
-            else:
-                result[stage] = None
-    return result
-
-
 def save_mineral_names(h5_path: str | Path, mineral_names: dict[int, str]) -> None:
     """Save mineral name mapping to the ``clusters/`` group attributes.
 
@@ -696,23 +660,3 @@ def load_mineral_names(h5_path: str | Path) -> dict[int, str] | None:
     mineral_names = {int(k): v for k, v in raw.items()}
     logger.info("Loaded mineral names from clusters/ group: %s", mineral_names)
     return mineral_names
-
-
-def mark_stage_complete(h5_path: str | Path, stage_name: str) -> None:
-    """Write a UTC timestamp to mark *stage_name* as complete.
-
-    Parameters
-    ----------
-    stage_name : str
-        One of ``"load"``, ``"mask"``, ``"denoise"``, ``"normalize"``, ``"cluster"``.
-    """
-    if stage_name not in _STAGE_GROUPS:
-        raise ValueError(
-            f"Unknown stage {stage_name!r}; expected one of {list(_STAGE_GROUPS)}"
-        )
-    grp_name = _STAGE_GROUPS[stage_name]
-    ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    with h5py.File(h5_path, "a") as f:
-        f[grp_name].attrs["stage_completed"] = ts
-        f.attrs["last_modified"] = ts
-    logger.info("Marked stage %s complete at %s", stage_name, ts)

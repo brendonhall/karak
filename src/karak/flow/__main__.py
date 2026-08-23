@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, reporter=None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.command == "schema":
@@ -112,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         out_base=args.out,
         work_dir=work_dir,
         cache=not args.no_cache,
+        reporter=reporter,
         skip_types=QC_STAGE_TYPES if args.no_qc else frozenset(),
     )
     cached = sum(1 for entry in summary.values() if entry.get("cached"))
