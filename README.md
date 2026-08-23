@@ -32,14 +32,16 @@ citation metadata is provided in [`CITATION.cff`](CITATION.cff).
 ## Features
 
 - **End-to-end pipeline** — from raw jet-colormapped PNGs to labeled mineral phase maps in a single command
+- **Modular stages** — each processing step is a self-describing stage with typed, bounded parameters and named input/output ports
+- **JSON flow graphs** — pipelines are DAGs of stages defined in JSON; three builtin flows cover the standard workflows
+- **Per-node caching** — content-addressed caching of every stage output; change one parameter and only downstream stages re-run
 - **HDBSCAN clustering** — density-based clustering discovers mineral phases without requiring a predefined number of clusters
 - **Tiled progressive strategy** — process large images tile-by-tile with automatic phase registry unification across tiles
 - **Two-pass workflow** — optional second pass to detect rare mineral phases with a finer clustering resolution
 - **Post-clustering refinement** — GMM-based splitting of composite phases (e.g., pyroxene into pigeonite + augite)
-- **Checkpoint/resume** — every stage writes to HDF5; resume from any prior stage without reprocessing
-- **Full provenance** — pipeline config, library versions, and timestamps embedded in every output file
-- **QC diagnostics** — generates detailed figures at each stage for visual validation
-- **YAML configuration** — all parameters in a single config file for reproducible analysis
+- **Full provenance** — the flow definition, library versions, and timestamps embedded in every output file
+- **QC diagnostics** — figure sinks generate detailed diagnostics at each stage for visual validation
+- **Legacy YAML mode** — existing `config.yaml` files keep working; they are converted to flows internally
 
 ## Installation
 
@@ -116,10 +118,16 @@ cluster:
 
 ```bash
 cd data
-karak
+karak                    # reads ./config.yaml
 ```
 
-That's it. Karak auto-detects the config file (`data/pipeline_config.yaml` or `../data/pipeline_config.yaml` relative to the working directory — or pass one explicitly with `-c config.yaml`), runs all five pipeline stages, and writes results to an HDF5 file alongside QC figures.
+Or skip the YAML file entirely and run a builtin flow:
+
+```bash
+karak run --builtin global --input data/ --out output/sample
+```
+
+Either way, Karak runs the full pipeline and writes results to an HDF5 file alongside QC figures.
 
 > **Note:** The first run with a given colormap builds a 256³ RGB-to-scalar
 > lookup table (30–60 s). It is cached on disk and reused by all later runs.
@@ -128,19 +136,58 @@ That's it. Karak auto-detects the config file (`data/pipeline_config.yaml` or `.
 
 ## Usage
 
+Flow mode (recommended):
+
 ```bash
-karak                              # run full pipeline
-karak -c path/to/config.yaml       # use a specific config file
-karak --from-stage denoise         # resume from a specific stage
+karak run --builtin global --input data/ --out output/sample     # standard pipeline
+karak run --builtin tiled --input data/ --out output/sample      # tiled clustering
+karak run --builtin tiled-rare --input data/ --out output/sample # tiled + rare phases
+karak run my_flow.json --input data/ --out output/sample         # custom flow
+karak run --builtin global --set hdb.min_cluster_size=500 ...    # override any parameter
+karak validate my_flow.json        # structural checks without running
+karak schema                       # print every stage's parameter schema as JSON
+```
+
+Legacy YAML mode (converted to a flow internally, results identical):
+
+```bash
+karak -c path/to/config.yaml       # run from a YAML config
 karak --test-mode                  # fast validation (4 elements, 4x downsample)
 karak --no-qc                      # skip QC figure generation
-karak --clean                      # delete previous HDF5 and start fresh
+karak --clean                      # delete previous HDF5 and cache, start fresh
+karak --emit-flow -c config.yaml   # print the equivalent flow JSON, then migrate
 karak -v                           # enable debug logging
 ```
 
+Re-running a flow is cheap: every stage output is cached under
+`<out dir>/work/cache/`, keyed by the stage's parameters, its upstream
+results, and the input files' signatures. Change one parameter and only the
+affected stages re-run. This replaces the old `--from-stage` resume flag.
+
+## Architecture
+
+Karak is built in three layers. Higher layers wrap lower ones and never
+reimplement the math.
+
+```
+┌─ flow/     graph model · validation · cache · executor · CLI   (orchestration)
+│            runs JSON DAGs of stages headlessly, caches every node output
+├─ stages/   self-describing steps: typed params + named ports    (composition)
+│            one thin class per operation, over the numeric core
+└─ io/ preprocessing/ clustering/ identification/ qc/             (numeric core)
+             pure functions on numpy arrays
+```
+
+Stages pass immutable payloads (element cubes, masks, PCA features, labels)
+between named ports. Each cube carries a space tag (`raw`, `denoised`,
+`normalized`) and each label array a state tag (`raw`, `cleaned`), so the
+validator rejects nonsensical connections before anything runs. `karak
+schema` prints the full stage palette — the contract a graphical editor
+would consume.
+
 ## Pipeline
 
-Karak processes data through five sequential stages. Each stage checkpoints its results to HDF5, so you can resume from any point.
+The builtin `global` flow runs the standard sequence:
 
 ```
     PNG element maps
@@ -168,6 +215,15 @@ Karak processes data through five sequential stages. Each stage checkpoints its 
     Phase map + chemical fingerprints
 ```
 
+In flow terms these are the stages `load_elements → mask → denoise →
+normalize → pca → hdbscan_global → noise_assign → cluster_stats →
+fingerprints → export_h5`, plus QC figure sinks. The `tiled` flow swaps in
+`hdbscan_tiled`; `tiled-rare` adds a `rare_phase` stage; a `refine` stage
+(olivine extraction + GMM split) can be added to any flow. Optional
+post-run stages `qc_named_phase_map` and the notebook helpers
+`save_mineral_names`/`load_mineral_names` attach researcher-assigned
+mineral names.
+
 ### Clustering Strategies
 
 | Strategy | Best for | Description |
@@ -179,7 +235,22 @@ The tiled strategy divides the image into spatial tiles, clusters each independe
 
 ## Configuration
 
-All pipeline parameters are controlled through a YAML config file validated by Pydantic. Below are some key parameters beyond the minimal example above.
+Flows are JSON: `nodes` (a stage `type` plus a `params` dict) connected by
+`edges` (output port to input port). Copy a builtin from
+[`src/karak/flow/flows/`](src/karak/flow/flows/) as a starting point, or
+print one from an existing YAML config with `karak --emit-flow -c
+config.yaml`. String parameters accept the run-scoped tokens `{input}`,
+`{out}`, and `{work}`, so one flow file works across datasets.
+
+```json
+{
+  "id": "dn", "type": "denoise",
+  "params": {"method": "bilateral", "sigma_spatial": 1.0}
+}
+```
+
+The legacy YAML config remains fully supported. Below are some key
+parameters beyond the minimal example above.
 
 ### Tiled clustering
 
@@ -241,8 +312,9 @@ paper were run on an **AMD Ryzen AI 5 340 with 32 GB RAM** (Linux).
 ## Testing
 
 A fast pytest suite (config round-trip, colormap-inversion round-trip on a
-synthetic ramp, mask utilities, and a synthetic end-to-end smoke test) runs
-in well under a minute:
+synthetic ramp, mask utilities, per-stage parity against the numeric core,
+flow validation/caching/executor behavior, and end-to-end flow runs on a
+synthetic two-phase scene) runs in well under a minute:
 
 ```bash
 uv sync

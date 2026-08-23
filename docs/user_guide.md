@@ -1,9 +1,9 @@
 # Karak User Guide
 
 Karak is an unsupervised mineral phase mapping pipeline for SEM-EDS element
-map stacks. This guide covers input data expectations, the five pipeline
-stages, the full configuration schema, the HDF5 output layout, and how to
-resume interrupted runs.
+map stacks. This guide covers input data expectations, the pipeline stages,
+flows, the legacy YAML configuration schema, the HDF5 output layout, and
+caching.
 
 For installation and a quickstart, see the [README](../README.md).
 
@@ -11,12 +11,13 @@ For installation and a quickstart, see the [README](../README.md).
 
 1. [Input data](#input-data)
 2. [Pipeline stages](#pipeline-stages)
-3. [Configuration reference](#configuration-reference)
-4. [HDF5 output layout](#hdf5-output-layout)
-5. [Checkpointing and resume](#checkpointing-and-resume)
-6. [CLI reference](#cli-reference)
-7. [Reproducibility](#reproducibility)
-8. [Computational requirements](#computational-requirements)
+3. [Flows](#flows)
+4. [Configuration reference](#configuration-reference)
+5. [HDF5 output layout](#hdf5-output-layout)
+6. [Caching and re-runs](#caching-and-re-runs)
+7. [CLI reference](#cli-reference)
+8. [Reproducibility](#reproducibility)
+9. [Computational requirements](#computational-requirements)
 
 ---
 
@@ -76,31 +77,73 @@ resolution.
 
 ## Pipeline stages
 
-The pipeline runs five sequential stages, each checkpointed to HDF5:
+Each processing step is a stage: a small module with typed parameters and
+named input/output ports. `karak schema` prints every stage's parameter
+schema as JSON. The processing stages:
 
 | Stage | What it does |
 |-------|--------------|
-| `load` | Discover element map files, trim annotation strips, downsample, invert the colormap to scalar [0, 1] intensities, stack into an (H, W, C) cube, and load the BSE image. |
-| `mask` | Rasterize the valid-region polygon (if provided), then flag pixels that are zero across *all* element channels as background/epoxy. The mineral mask is the intersection; components smaller than `mask.min_object_size` are removed. |
+| `load_elements` | Discover element map files, trim annotation strips, downsample, invert the colormap to scalar [0, 1] intensities, stack into an (H, W, C) cube, and load the BSE image. |
+| `mask` | Rasterize the valid-region polygon (if provided), then flag pixels that are zero across *all* element channels as background/epoxy. The mineral mask is the intersection; components smaller than `min_object_size` are removed. |
 | `denoise` | Edge-aware smoothing of the raw [0, 1] cube, channel by channel — bilateral filter (default) or anisotropic (Perona-Malik) diffusion. Operating on raw intensities preserves grain boundaries and physical signal. |
 | `normalize` | Per-channel z-score normalization: mean and standard deviation are computed over **mineral pixels only**, then `z = (x - mean) / std`. Non-mineral pixels are set to 0. |
-| `cluster` | PCA dimensionality reduction, HDBSCAN density-based clustering (global or tiled strategy), kNN reassignment of noise pixels, and optional post-clustering refinement. Per-cluster chemical fingerprints are computed from the denoised cube. |
+| `pca` | PCA fit + projection of mineral pixels. `n_components: 0` auto-selects the first count reaching 95% cumulative variance (minimum 5). |
+| `hdbscan_global` | Single HDBSCAN run over all mineral-pixel features. |
+| `hdbscan_tiled` | Per-tile HDBSCAN with cosine-similarity phase-registry merging across tiles. |
+| `rare_phase` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. |
+| `noise_assign` | Distance-weighted k-NN reassignment of every remaining unlabeled pixel. |
+| `refine` | Composite-phase splitting: threshold-based olivine extraction, then a GMM split of the target phase. |
+| `cluster_stats` | Cluster counts, sizes, and noise fraction. |
+| `fingerprints` | Per-cluster mean/std element intensities from the denoised cube, with cosine-similar pairs flagged. |
+| `export_h5` | Sink: writes the provenance HDF5 file (see [HDF5 output layout](#hdf5-output-layout)). |
+| `qc_*` | Sinks: diagnostic figures per step (`qc_mask`, `qc_denoise`, `qc_normalize`, `qc_scree`, `qc_phase_map`, `qc_cluster_summary`, `qc_tiled`, `qc_fingerprints`, `qc_named_phase_map`). |
 
 Cluster labels are anonymous phases (0, 1, 2, ...). Assigning mineral names
 is a human-in-the-loop step: inspect the per-cluster chemical fingerprints
 and QC figures, then record names with
-`karak.io.storage.save_mineral_names()`.
+`karak.io.storage.save_mineral_names()` and render a named map with the
+`qc_named_phase_map` stage. `preprocessing.denoise.compare_denoisers()` is
+a notebook helper for side-by-side denoiser comparison.
+
+---
+
+## Flows
+
+A flow is a JSON DAG of stages: `nodes` (stage `type` + `params`) connected
+by `edges` (output port to input port). Three builtins ship with karak:
+
+| Flow | Clustering path |
+|------|-----------------|
+| `global` | `hdbscan_global → noise_assign` |
+| `tiled` | `hdbscan_tiled → noise_assign` |
+| `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
+
+```bash
+karak run --builtin global --input data/ --out output/sample
+karak run my_flow.json --input data/ --out output/sample
+karak run --builtin global --set hdb.min_cluster_size=500 --set pca.n_components=8
+karak validate my_flow.json
+```
+
+To author a custom flow, copy a builtin from `src/karak/flow/flows/` or
+print the equivalent of an existing YAML config with `karak --emit-flow -c
+config.yaml`. String params accept run-scoped tokens: `{input}` (the
+`--input` directory), `{out}` (the `--out` basename), `{work}` (the work
+directory). `karak validate` reports structural errors — unknown stages,
+bad parameter values, unconnected required inputs, port type mismatches
+(for example wiring a raw cube into a stage that expects a denoised one),
+and cycles — before anything runs.
 
 ---
 
 ## Configuration reference
 
-All parameters live in a single YAML file validated by Pydantic
-(`karak.config.PipelineConfig`). The CLI auto-detects
-`data/pipeline_config.yaml` or `../data/pipeline_config.yaml` relative to
-the working directory, or accepts an explicit path via `karak -c
-path/to/config.yaml`. If no config is found, a default one is created at
-`data/pipeline_config.yaml`.
+This section documents the **legacy YAML mode**. The YAML is validated by
+Pydantic (`karak.config.PipelineConfig`) and converted to a flow internally
+(`karak --emit-flow -c config.yaml` shows the result). In flow mode the
+same knobs are node parameters; `karak schema` lists them with types,
+bounds, and help text. Run with `karak -c path/to/config.yaml` (default:
+`./config.yaml`).
 
 Relative paths (`input_dir`, `hdf5_output`, `figure_dir`,
 `mask.valid_mask_path`) are resolved **relative to the config file's
@@ -260,40 +303,57 @@ compression:
                   library_versions (JSON)
 ```
 
-Each group receives a `stage_completed` UTC-timestamp attribute when its
-stage finishes. Matching `load_*` functions in `karak.io.storage` read every
-group back for downstream analysis or resume.
+The `export_h5` sink writes the file; the executing flow JSON is embedded
+in its root attributes. Matching `load_*` functions in `karak.io.storage`
+read every group back for downstream analysis.
 
-## Checkpointing and resume
+## Caching and re-runs
 
-Because each stage checkpoints to HDF5, an interrupted or crashed run can
-resume without recomputing earlier stages:
+Every stage output is cached under `{work}/cache/` (default: `work/` next
+to the output), keyed by a recipe hash of the stage type, its parameters,
+its upstream results, and — for `load_elements` — the input files' sizes
+and modification times. Re-running a flow reuses everything that did not
+change:
 
 ```bash
-karak                          # skips stages already marked complete
-karak --from-stage denoise     # force re-run from denoise onward
-karak --clean                  # delete the HDF5 and start fresh
+karak run --builtin global --input data/ --out output/s1   # first run: all stages
+karak run --builtin global --input data/ --out output/s1   # warm: only sinks re-run
+karak run --builtin global --set refine.target_phase=3 ... # only refine + downstream
+karak run ... --no-cache                                   # force a clean run
+karak --clean                                              # delete HDF5 + cache
 ```
 
-`--from-stage STAGE` loads all prior stages' data from the HDF5 file and
-re-executes `STAGE` and everything after it. Valid stage names: `load`,
-`mask`, `denoise`, `normalize`, `cluster`. Typical use: tweak clustering
-parameters in the config, then `karak --from-stage cluster` to re-cluster
-without re-running preprocessing.
+An interrupted run resumes the same way: completed stage outputs are
+already in the cache, so the next invocation continues from the crash
+point. This replaces the old `--from-stage` flag, which is now a
+deprecated no-op.
 
 ## CLI reference
 
+Flow mode:
+
 ```
-karak [-c CONFIG] [--from-stage STAGE] [--no-qc] [--test-mode] [--clean] [-v]
+karak run (FLOW.json | --builtin global|tiled|tiled-rare)
+          --input DIR --out BASE [--work DIR] [--no-cache] [--no-qc]
+          [--set NODE.PARAM=VALUE ...]
+karak validate (FLOW.json | --builtin NAME)
+karak schema
+```
+
+Legacy YAML mode:
+
+```
+karak [-c CONFIG] [--no-qc] [--test-mode] [--clean] [--emit-flow] [--no-cache] [-v]
 ```
 
 | Flag | Meaning |
 |------|---------|
-| `-c, --config` | Path to `pipeline_config.yaml` (default: auto-detect `data/pipeline_config.yaml` or `../data/pipeline_config.yaml`; creates a default if none found). |
-| `--from-stage` | Force re-run from this stage onward (loads prior data from HDF5). |
-| `--no-qc` | Skip QC figure generation. |
+| `-c, --config` | Path to the YAML config (default: `./config.yaml`). |
+| `--no-qc` | Skip the QC figure sinks. |
 | `--test-mode` | Fast validation: 4 elements (Fe-K, Ca, Mg, Si) at 4x downsample. |
-| `--clean` | Delete the previous HDF5 file and start fresh. |
+| `--clean` | Delete the previous HDF5 file and flow cache. |
+| `--emit-flow` | Print the flow JSON equivalent of the config and exit. |
+| `--from-stage` | Deprecated no-op: caching resumes automatically. |
 | `-v` | Debug logging. |
 
 ## Reproducibility
@@ -302,10 +362,9 @@ karak [-c CONFIG] [--from-stage STAGE] [--no-qc] [--test-mode] [--clean] [-v]
   HDBSCAN fit subsampling, GMM fitting) is seeded through a `random_state`
   config field (default 42). Two runs with the same config, data, and
   library versions produce identical outputs.
-- **Embedded provenance** — the output HDF5 file records the full pipeline
-  config YAML, library versions, Python version, platform string, and
-  per-stage completion timestamps, making every result file
-  self-documenting.
+- **Embedded provenance** — the output HDF5 file records the executing flow
+  definition (or legacy config), library versions, Python version, and
+  platform string, making every result file self-documenting.
 - **Locked dependencies** — the repository ships a `uv.lock` file;
   `uv sync` reproduces the exact tested environment.
 
