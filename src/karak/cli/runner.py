@@ -268,7 +268,7 @@ def _run_load(
 
     # Create HDF5 if it doesn't exist or we're starting fresh
     if not Path(h5).exists():
-        create_pipeline_hdf5(h5, cfg)
+        create_pipeline_hdf5(h5, cfg.model_dump())
 
     console.print("  Saving to HDF5...", end=" ")
     save_raw_data(h5, elements, element_names)
@@ -327,7 +327,7 @@ def _run_mask(
     )
 
     console.print("  Saving to HDF5...", end=" ")
-    save_mask(h5, mineral_mask, valid_mask, mask_stats, cfg.mask)
+    save_mask(h5, mineral_mask, valid_mask, mask_stats, cfg.mask.model_dump())
     console.print("done")
 
     if do_qc:
@@ -389,7 +389,7 @@ def _run_denoise(
         progress.update(task, completed=1, total=1)
 
     console.print("  Saving to HDF5...", end=" ")
-    save_denoised_data(h5, denoised, element_names, cfg.denoise)
+    save_denoised_data(h5, denoised, element_names, cfg.denoise.model_dump())
     console.print("done")
 
     if do_qc:
@@ -436,7 +436,7 @@ def _run_normalize(
     console.print(f"  Validation: {status}")
 
     console.print("  Saving to HDF5...", end=" ")
-    save_normalized_data(h5, normalized, means, stds, element_names, cfg.normalize)
+    save_normalized_data(h5, normalized, means, stds, element_names, cfg.normalize.method)
     console.print("done")
 
     if do_qc:
@@ -663,7 +663,7 @@ def _run_cluster(
         console.print("  Saving to HDF5...", end=" ")
         save_cluster_data(
             h5, labels, cleaned_labels, probabilities,
-            evr, mineral_indices, stats, n_keep, cfg.cluster,
+            evr, mineral_indices, stats, n_keep, cfg.cluster.model_dump(),
         )
         save_tiled_metadata(h5, tile_results, phase_registry)
         console.print("done")
@@ -767,7 +767,7 @@ def _run_cluster(
         console.print("  Saving to HDF5...", end=" ")
         save_cluster_data(
             h5, labels, cleaned_labels, probabilities,
-            evr, mineral_indices, stats, n_keep, cfg.cluster,
+            evr, mineral_indices, stats, n_keep, cfg.cluster.model_dump(),
         )
         console.print("done")
 

@@ -140,6 +140,15 @@ class Stage:
         }
 
     @classmethod
+    def source_signature(cls, params: dict) -> str | None:
+        """Cache signature for source stages (no inputs).
+
+        Override in stages that read external data so the recipe hash
+        invalidates when that data changes. None = params-only hashing.
+        """
+        return None
+
+    @classmethod
     def coerce_params(cls, params: dict | None) -> dict:
         params = params or {}
         declared = {p.name for p in cls.PARAMS}

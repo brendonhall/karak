@@ -1,0 +1,513 @@
+{
+  "version": 1,
+  "name": "global",
+  "nodes": [
+    {
+      "id": "src",
+      "type": "load_elements",
+      "params": {
+        "input_dir": "{input}"
+      }
+    },
+    {
+      "id": "msk",
+      "type": "mask",
+      "params": {}
+    },
+    {
+      "id": "dn",
+      "type": "denoise",
+      "params": {}
+    },
+    {
+      "id": "nrm",
+      "type": "normalize",
+      "params": {}
+    },
+    {
+      "id": "pca",
+      "type": "pca",
+      "params": {}
+    },
+    {
+      "id": "hdb",
+      "type": "hdbscan_global",
+      "params": {}
+    },
+    {
+      "id": "knn",
+      "type": "noise_assign",
+      "params": {}
+    },
+    {
+      "id": "stats",
+      "type": "cluster_stats",
+      "params": {}
+    },
+    {
+      "id": "fp",
+      "type": "fingerprints",
+      "params": {}
+    },
+    {
+      "id": "exp",
+      "type": "export_h5",
+      "params": {}
+    },
+    {
+      "id": "qc_mask",
+      "type": "qc_mask",
+      "params": {}
+    },
+    {
+      "id": "qc_denoise",
+      "type": "qc_denoise",
+      "params": {}
+    },
+    {
+      "id": "qc_normalize",
+      "type": "qc_normalize",
+      "params": {}
+    },
+    {
+      "id": "qc_scree",
+      "type": "qc_scree",
+      "params": {}
+    },
+    {
+      "id": "qc_phase_map",
+      "type": "qc_phase_map",
+      "params": {}
+    },
+    {
+      "id": "qc_cluster_summary",
+      "type": "qc_cluster_summary",
+      "params": {}
+    },
+    {
+      "id": "qc_fingerprints",
+      "type": "qc_fingerprints",
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": {
+        "node": "src",
+        "port": "cube"
+      },
+      "to": {
+        "node": "msk",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e2",
+      "from": {
+        "node": "src",
+        "port": "cube"
+      },
+      "to": {
+        "node": "dn",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e3",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "dn",
+        "port": "masks"
+      }
+    },
+    {
+      "id": "e4",
+      "from": {
+        "node": "dn",
+        "port": "cube"
+      },
+      "to": {
+        "node": "nrm",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e5",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "nrm",
+        "port": "masks"
+      }
+    },
+    {
+      "id": "e6",
+      "from": {
+        "node": "nrm",
+        "port": "cube"
+      },
+      "to": {
+        "node": "pca",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e7",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "pca",
+        "port": "masks"
+      }
+    },
+    {
+      "id": "e8",
+      "from": {
+        "node": "pca",
+        "port": "features"
+      },
+      "to": {
+        "node": "hdb",
+        "port": "features"
+      }
+    },
+    {
+      "id": "e9",
+      "from": {
+        "node": "hdb",
+        "port": "labels"
+      },
+      "to": {
+        "node": "knn",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e10",
+      "from": {
+        "node": "pca",
+        "port": "features"
+      },
+      "to": {
+        "node": "knn",
+        "port": "features"
+      }
+    },
+    {
+      "id": "e11",
+      "from": {
+        "node": "knn",
+        "port": "labels"
+      },
+      "to": {
+        "node": "stats",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e12",
+      "from": {
+        "node": "knn",
+        "port": "labels"
+      },
+      "to": {
+        "node": "fp",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e13",
+      "from": {
+        "node": "dn",
+        "port": "cube"
+      },
+      "to": {
+        "node": "fp",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e14",
+      "from": {
+        "node": "src",
+        "port": "cube"
+      },
+      "to": {
+        "node": "exp",
+        "port": "cube_raw"
+      }
+    },
+    {
+      "id": "e15",
+      "from": {
+        "node": "src",
+        "port": "bse"
+      },
+      "to": {
+        "node": "exp",
+        "port": "bse"
+      }
+    },
+    {
+      "id": "e16",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "exp",
+        "port": "masks"
+      }
+    },
+    {
+      "id": "e17",
+      "from": {
+        "node": "dn",
+        "port": "cube"
+      },
+      "to": {
+        "node": "exp",
+        "port": "cube_denoised"
+      }
+    },
+    {
+      "id": "e18",
+      "from": {
+        "node": "nrm",
+        "port": "cube"
+      },
+      "to": {
+        "node": "exp",
+        "port": "cube_normalized"
+      }
+    },
+    {
+      "id": "e19",
+      "from": {
+        "node": "pca",
+        "port": "features"
+      },
+      "to": {
+        "node": "exp",
+        "port": "features"
+      }
+    },
+    {
+      "id": "e20",
+      "from": {
+        "node": "hdb",
+        "port": "labels"
+      },
+      "to": {
+        "node": "exp",
+        "port": "labels_raw"
+      }
+    },
+    {
+      "id": "e21",
+      "from": {
+        "node": "knn",
+        "port": "labels"
+      },
+      "to": {
+        "node": "exp",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e22",
+      "from": {
+        "node": "stats",
+        "port": "stats"
+      },
+      "to": {
+        "node": "exp",
+        "port": "stats"
+      }
+    },
+    {
+      "id": "e23",
+      "from": {
+        "node": "src",
+        "port": "bse"
+      },
+      "to": {
+        "node": "qc_mask",
+        "port": "bse"
+      }
+    },
+    {
+      "id": "e24",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "qc_mask",
+        "port": "masks"
+      }
+    },
+    {
+      "id": "e25",
+      "from": {
+        "node": "src",
+        "port": "cube"
+      },
+      "to": {
+        "node": "qc_mask",
+        "port": "cube_raw"
+      }
+    },
+    {
+      "id": "e26",
+      "from": {
+        "node": "src",
+        "port": "cube"
+      },
+      "to": {
+        "node": "qc_denoise",
+        "port": "cube_raw"
+      }
+    },
+    {
+      "id": "e27",
+      "from": {
+        "node": "dn",
+        "port": "cube"
+      },
+      "to": {
+        "node": "qc_denoise",
+        "port": "cube_denoised"
+      }
+    },
+    {
+      "id": "e28",
+      "from": {
+        "node": "src",
+        "port": "bse"
+      },
+      "to": {
+        "node": "qc_denoise",
+        "port": "bse"
+      }
+    },
+    {
+      "id": "e29",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "qc_denoise",
+        "port": "masks"
+      }
+    },
+    {
+      "id": "e30",
+      "from": {
+        "node": "nrm",
+        "port": "cube"
+      },
+      "to": {
+        "node": "qc_normalize",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e31",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "qc_normalize",
+        "port": "masks"
+      }
+    },
+    {
+      "id": "e32",
+      "from": {
+        "node": "pca",
+        "port": "features"
+      },
+      "to": {
+        "node": "qc_scree",
+        "port": "features"
+      }
+    },
+    {
+      "id": "e33",
+      "from": {
+        "node": "hdb",
+        "port": "labels"
+      },
+      "to": {
+        "node": "qc_phase_map",
+        "port": "labels_raw"
+      }
+    },
+    {
+      "id": "e34",
+      "from": {
+        "node": "knn",
+        "port": "labels"
+      },
+      "to": {
+        "node": "qc_phase_map",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e35",
+      "from": {
+        "node": "src",
+        "port": "bse"
+      },
+      "to": {
+        "node": "qc_phase_map",
+        "port": "bse"
+      }
+    },
+    {
+      "id": "e36",
+      "from": {
+        "node": "stats",
+        "port": "stats"
+      },
+      "to": {
+        "node": "qc_phase_map",
+        "port": "stats"
+      }
+    },
+    {
+      "id": "e37",
+      "from": {
+        "node": "stats",
+        "port": "stats"
+      },
+      "to": {
+        "node": "qc_cluster_summary",
+        "port": "stats"
+      }
+    },
+    {
+      "id": "e38",
+      "from": {
+        "node": "fp",
+        "port": "fingerprints"
+      },
+      "to": {
+        "node": "qc_fingerprints",
+        "port": "fingerprints"
+      }
+    }
+  ]
+}

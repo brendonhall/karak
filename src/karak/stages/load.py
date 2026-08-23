@@ -52,6 +52,31 @@ class LoadElementsStage(Stage):
         Param("downsample_factor", "int", 2, "Downsample factor", min=1),
     ]
 
+    @classmethod
+    def source_signature(cls, params: dict) -> str | None:
+        """(relpath, size, mtime_ns) of every matched input file.
+
+        Cheap change detection: the cache invalidates when files are added,
+        removed, or modified, without hashing gigabytes of image data.
+        """
+        import glob
+        import os
+
+        input_dir = params["input_dir"]
+        paths = sorted(glob.glob(os.path.join(input_dir, params["file_glob"])))
+        if params["bse_filename"]:
+            bse_path = os.path.join(input_dir, params["bse_filename"])
+            if bse_path not in paths and os.path.exists(bse_path):
+                paths.append(bse_path)
+        entries = []
+        for path in paths:
+            stat = os.stat(path)
+            entries.append(
+                f"{os.path.relpath(path, input_dir)}:"
+                f"{stat.st_size}:{stat.st_mtime_ns}"
+            )
+        return ";".join(entries)
+
     def apply(self, inputs: dict, params: dict) -> dict:
         downsample = DownsampleConfig(
             header_trim_px=params["header_trim_px"],

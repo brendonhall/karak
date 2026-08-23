@@ -37,13 +37,6 @@ import yaml
 
 if TYPE_CHECKING:
     from karak.clustering.tiling import PhaseEntry, TileResult
-    from karak.config import (
-        ClusterConfig,
-        DenoiseConfig,
-        MaskConfig,
-        NormalizeConfig,
-        PipelineConfig,
-    )
 
 from karak.config import get_software_versions
 
@@ -53,15 +46,16 @@ logger = logging.getLogger(__name__)
 _GROUPS = ["raw", "bse", "masks", "denoised", "normalized", "clusters"]
 
 
-def create_pipeline_hdf5(path: str | Path, config: PipelineConfig) -> None:
+def create_pipeline_hdf5(path: str | Path, config_dict: dict) -> None:
     """Create an HDF5 file with standard group structure and provenance.
 
     Parameters
     ----------
     path : str or Path
         Path for the new HDF5 file.
-    config : PipelineConfig
-        Pipeline configuration to embed as a YAML attribute.
+    config_dict : dict
+        Pipeline configuration (or flow definition) to embed as a YAML
+        attribute for provenance.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,7 +77,7 @@ def create_pipeline_hdf5(path: str | Path, config: PipelineConfig) -> None:
 
         # Embed full pipeline config as YAML
         config_yaml = yaml.dump(
-            config.model_dump(), default_flow_style=False, sort_keys=False
+            config_dict, default_flow_style=False, sort_keys=False
         )
         f.attrs["pipeline_config"] = config_yaml
 
@@ -161,7 +155,7 @@ def save_mask(
     mineral_mask: np.ndarray,
     valid_mask: np.ndarray | None,
     mask_stats: dict,
-    config: MaskConfig,
+    params: dict,
 ) -> None:
     """Write mask arrays and statistics to the ``masks/`` group.
 
@@ -175,8 +169,8 @@ def save_mask(
         (H, W) boolean valid-region mask (optional).
     mask_stats : dict
         Statistics from ``compute_mask_statistics()``.
-    config : MaskConfig
-        Mask configuration used to generate the mask.
+    params : dict
+        Masking parameters used to generate the mask (provenance).
     """
     with h5py.File(h5_path, "a") as f:
         grp = f["masks"]
@@ -198,7 +192,7 @@ def save_mask(
 
         # Mask config as YAML
         grp.attrs["mask_config"] = yaml.dump(
-            config.model_dump(), default_flow_style=False, sort_keys=False
+            params, default_flow_style=False, sort_keys=False
         )
 
     logger.info(
@@ -211,7 +205,7 @@ def save_denoised_data(
     h5_path: str | Path,
     denoised_cube: np.ndarray,
     element_names: list[str],
-    config: DenoiseConfig,
+    params: dict,
 ) -> None:
     """Write denoised raw [0,1] cube to the ``denoised/`` group in HDF5.
 
@@ -226,8 +220,8 @@ def save_denoised_data(
         (H, W, C) denoised raw [0,1] cube.
     element_names : list[str]
         Ordered element names.
-    config : DenoiseConfig
-        Denoising configuration used (method and parameters).
+    params : dict
+        Denoising parameters used (must include ``"method"``).
     """
     with h5py.File(h5_path, "a") as f:
         grp = f["denoised"]
@@ -240,24 +234,26 @@ def save_denoised_data(
         )
 
         # Record method and all parameters
-        grp.attrs["method"] = config.method
+        method = params.get("method", "bilateral")
+        grp.attrs["method"] = method
         grp.attrs["element_order"] = json.dumps(element_names)
 
-        if config.method == "bilateral":
+        if method == "bilateral":
+            sigma_color = params.get("sigma_color")
             grp.attrs["sigma_color"] = (
-                config.sigma_color if config.sigma_color is not None else "auto"
+                sigma_color if sigma_color is not None else "auto"
             )
-            grp.attrs["sigma_spatial"] = config.sigma_spatial
-        elif config.method == "anisotropic_diffusion":
-            grp.attrs["niter"] = config.niter
-            grp.attrs["kappa"] = config.kappa
-            grp.attrs["gamma"] = config.gamma
-            grp.attrs["option"] = config.option
+            grp.attrs["sigma_spatial"] = params.get("sigma_spatial", 1.0)
+        elif method == "anisotropic_diffusion":
+            grp.attrs["niter"] = params.get("niter", 10)
+            grp.attrs["kappa"] = params.get("kappa", 50)
+            grp.attrs["gamma"] = params.get("gamma", 0.1)
+            grp.attrs["option"] = params.get("option", 2)
 
     logger.info(
         "Saved denoised cube %s to denoised/ group (method=%s)",
         denoised_cube.shape,
-        config.method,
+        method,
     )
 
 
@@ -267,7 +263,7 @@ def save_normalized_data(
     means: np.ndarray,
     stds: np.ndarray,
     element_names: list[str],
-    config: NormalizeConfig,
+    method: str = "zscore",
 ) -> None:
     """Write z-score normalized cube to the ``normalized/`` group in HDF5.
 
@@ -288,8 +284,8 @@ def save_normalized_data(
         (C,) per-channel standard deviations used for normalization.
     element_names : list[str]
         Ordered element names.
-    config : NormalizeConfig
-        Normalization configuration used.
+    method : str
+        Normalization method used (provenance).
     """
     with h5py.File(h5_path, "a") as f:
         grp = f["normalized"]
@@ -305,14 +301,14 @@ def save_normalized_data(
         grp.create_dataset("means", data=means.astype(np.float32))
         grp.create_dataset("stds", data=stds.astype(np.float32))
 
-        grp.attrs["method"] = config.method
+        grp.attrs["method"] = method
         grp.attrs["element_order"] = json.dumps(element_names)
         grp.attrs["n_elements"] = len(element_names)
 
     logger.info(
         "Saved normalized cube %s to normalized/ group (method=%s)",
         normalized_cube.shape,
-        config.method,
+        method,
     )
 
 
@@ -325,7 +321,7 @@ def save_cluster_data(
     mineral_indices: np.ndarray,
     cluster_stats: dict,
     n_pca_components_used: int,
-    config: ClusterConfig,
+    params: dict,
 ) -> None:
     """Write clustering results to the ``clusters/`` group in HDF5.
 
@@ -354,8 +350,8 @@ def save_cluster_data(
         Summary statistics from compute_cluster_stats().
     n_pca_components_used : int
         Number of PCA components used for clustering.
-    config : ClusterConfig
-        Clustering configuration used.
+    params : dict
+        Clustering parameters used (should include ``"strategy"``).
     """
     with h5py.File(h5_path, "a") as f:
         if "clusters" not in f:
@@ -383,9 +379,9 @@ def save_cluster_data(
         grp.attrs["n_mineral_pixels"] = cluster_stats["n_total"]
         grp.attrs["cluster_stats"] = json.dumps(cluster_stats)
         grp.attrs["cluster_config"] = yaml.dump(
-            config.model_dump(), default_flow_style=False, sort_keys=False
+            params, default_flow_style=False, sort_keys=False
         )
-        grp.attrs["clustering_strategy"] = config.strategy
+        grp.attrs["clustering_strategy"] = params.get("strategy", "global")
 
     logger.info(
         "Saved cluster data to clusters/ group: %d clusters, %.1f%% noise",
