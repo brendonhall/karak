@@ -11,6 +11,8 @@
 
 **Karak** is an automated mineralogy pipeline that transforms SEM-EDS elemental map PNGs into mineral phase maps with chemical fingerprints. Named after the dwarven word for *stronghold*, it digs into the hidden structure of rocks, meteorites, and other geological samples.
 
+Since v0.2.0, the pipeline is a graph rather than a script. Every processing step is a node with typed parameters and named ports. A pipeline is a JSON file wiring nodes together. The engine validates the graph before anything runs, executes it headlessly, and caches every node's output by content. The paper's full analysis (12.5 million mineral pixels, 13 mineral phases) reproduces bit-for-bit on the flow engine, and changing one refinement threshold re-runs in minutes instead of two hours, because only the affected nodes execute.
+
 <p align="center">
   <img src="docs/images/phase_map_example.png" alt="Mineral phase map of meteorite NWA 4587" width="350">
   <br>
@@ -26,27 +28,28 @@ Karak accompanies the manuscript:
 > density-based clustering pipeline with multi-resolution refinement.**
 > *Computers & Geosciences* (submitted 2026).
 
-If you use Karak in your research, please cite the paper and the software —
-citation metadata is provided in [`CITATION.cff`](CITATION.cff).
+If you use Karak in your research, please cite the paper and the software.
+Citation metadata is provided in [`CITATION.cff`](CITATION.cff).
 
 ## Features
 
-- **End-to-end pipeline** — from raw jet-colormapped PNGs to labeled mineral phase maps in a single command
-- **Modular stages** — each processing step is a self-describing stage with typed, bounded parameters and named input/output ports
-- **JSON flow graphs** — pipelines are DAGs of stages defined in JSON; three builtin flows cover the standard workflows
-- **Per-node caching** — content-addressed caching of every stage output; change one parameter and only downstream stages re-run
-- **HDBSCAN clustering** — density-based clustering discovers mineral phases without requiring a predefined number of clusters
-- **Tiled progressive strategy** — process large images tile-by-tile with automatic phase registry unification across tiles
-- **Two-pass workflow** — optional second pass to detect rare mineral phases with a finer clustering resolution
-- **Post-clustering refinement** — GMM-based splitting of composite phases (e.g., pyroxene into pigeonite + augite)
-- **Full provenance** — the flow definition, library versions, and timestamps embedded in every output file
-- **QC diagnostics** — figure sinks generate detailed diagnostics at each stage for visual validation
-- **Legacy YAML mode** — existing `config.yaml` files keep working; they are converted to flows internally
+- **End-to-end pipeline**: from raw jet-colormapped PNGs to labeled mineral phase maps in a single command
+- **22 self-describing stages**: each declares typed, bounded parameters and named input/output ports; `karak schema` prints the whole contract as JSON
+- **JSON flow graphs**: pipelines are DAGs of stages; three builtin flows cover the standard workflows, and custom flows are plain JSON files
+- **Validation before compute**: the graph validator catches unknown stages, bad parameter values, unconnected inputs, port type mismatches, and cycles before a single pixel is processed
+- **Per-node caching**: every stage output is cached by a hash of its parameters, upstream results, and input files; change one parameter and only downstream stages re-run
+- **HDBSCAN clustering**: density-based clustering discovers mineral phases without a predefined cluster count
+- **Tiled progressive strategy**: large images process tile-by-tile with automatic phase registry unification across tiles
+- **Two-pass workflow**: an optional second pass detects rare mineral phases at a finer clustering resolution
+- **Post-clustering refinement**: GMM-based splitting of composite phases (e.g., pyroxene into pigeonite + augite)
+- **Full provenance**: the flow definition, library versions, and timestamps travel inside every output file
+- **QC diagnostics**: figure sinks render diagnostics at each stage for visual validation
+- **Legacy YAML mode**: existing `config.yaml` files keep working; they convert to flows internally, and the results match bit-for-bit
 
 ## Installation
 
 Requires Python 3.12+. Clone the repository and install with
-[uv](https://docs.astral.sh/uv/) (recommended — reproduces the exact locked
+[uv](https://docs.astral.sh/uv/) (recommended; reproduces the exact locked
 environment used for the paper):
 
 ```bash
@@ -85,7 +88,7 @@ data/
 ### 2. Create a configuration file
 
 ```yaml
-# config.yaml — minimal example
+# config.yaml - minimal example
 input_dir: "."
 hdf5_output: "eds_pipeline.h5"
 figure_dir: "figures"
@@ -181,9 +184,34 @@ reimplement the math.
 Stages pass immutable payloads (element cubes, masks, PCA features, labels)
 between named ports. Each cube carries a space tag (`raw`, `denoised`,
 `normalized`) and each label array a state tag (`raw`, `cleaned`), so the
-validator rejects nonsensical connections before anything runs. `karak
-schema` prints the full stage palette — the contract a graphical editor
-would consume.
+validator rejects nonsensical connections, such as wiring a raw cube into
+a stage that expects a denoised one, before anything runs.
+
+### Ready for a node editor
+
+Everything a visual flow editor needs already exists as data, with no
+pipeline logic left to write in a front-end:
+
+| Editor need | Already provided by |
+|-------------|---------------------|
+| Node palette with parameter widgets | `karak schema`: every stage's ports, types, defaults, bounds, and help as JSON |
+| Legal-wiring rules | named ports with space/state type tags |
+| Error badges on the canvas | `validate(graph)`, the same function the CLI uses |
+| Save / load | the flow JSON format, including a GUI-only `ui` field for node positions |
+| Run button | the headless executor with per-node progress events |
+
+### Ready for AI-driven workflows
+
+The same contract that serves a GUI serves an agent. A language model can
+read `karak schema`, compose a flow JSON for a new sample, check it with
+`karak validate` before spending compute, and run it headlessly. Typed,
+bounded parameters mean a generated flow is verified rather than trusted:
+a hallucinated stage name, an out-of-range sigma, or a mis-wired port is
+rejected at validation, not discovered two hours into a cluster run. The
+cache makes agent-driven parameter exploration cheap, since each variant
+re-runs only the stages it changed. Provenance closes the loop: every
+output HDF5 embeds the exact flow that produced it, so any result an
+agent produces can be audited and reproduced.
 
 ## Pipeline
 
@@ -329,16 +357,16 @@ The same suite runs in CI on every push and pull request
 
 ## How It Works
 
-**Jet colormap inversion** — SEM-EDS software commonly exports elemental maps as jet-colormapped PNGs. Karak inverts these back to scalar intensity values using a precomputed 256<sup>3</sup> RGB-to-scalar lookup table derived from matplotlib's jet colormap. The LUT is cached to disk and reused across runs.
+**Jet colormap inversion.** SEM-EDS software commonly exports elemental maps as jet-colormapped PNGs. Karak inverts these back to scalar intensity values using a precomputed 256<sup>3</sup> RGB-to-scalar lookup table derived from matplotlib's jet colormap. The LUT is cached to disk and reused across runs.
 
-**HDBSCAN clustering** — Unlike k-means, [HDBSCAN](https://hdbscan.readthedocs.io/) discovers the number of clusters automatically from data density. Pixels that don't belong to any dense region are labeled as noise and later reassigned to their nearest cluster via k-nearest-neighbor voting.
+**HDBSCAN clustering.** Unlike k-means, [HDBSCAN](https://hdbscan.readthedocs.io/) discovers the number of clusters automatically from data density. Pixels that don't belong to any dense region are labeled as noise and later reassigned to their nearest cluster via k-nearest-neighbor voting.
 
-**Provenance tracking** — Every HDF5 output file embeds the full pipeline YAML config, library versions (NumPy, scikit-learn, HDBSCAN, etc.), Python version, and platform info as root-level attributes. This means any output file is self-documenting and fully reproducible.
+**Provenance tracking.** Every HDF5 output file embeds the flow definition (or legacy YAML config), library versions (NumPy, scikit-learn, HDBSCAN, etc.), Python version, and platform info as root-level attributes. Any output file is self-documenting and reproducible.
 
 ## Authors
 
-- **Brendon Hall** — [@brendonhall](https://github.com/brendonhall) · [ORCID](https://orcid.org/0000-0002-2244-4994)
-- **Matthew Izawa** — [@matthewizawa](https://github.com/matthewizawa) · [ORCID](https://orcid.org/0000-0001-5456-2912)
+- **Brendon Hall**: [@brendonhall](https://github.com/brendonhall) · [ORCID](https://orcid.org/0000-0002-2244-4994)
+- **Matthew Izawa**: [@matthewizawa](https://github.com/matthewizawa) · [ORCID](https://orcid.org/0000-0001-5456-2912)
 
 ## Contributing
 
