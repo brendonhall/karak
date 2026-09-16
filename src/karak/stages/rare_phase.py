@@ -20,12 +20,18 @@ class RarePhaseStage(Stage):
         "this stage in a flow is what enables the two-pass workflow."
     )
     INPUTS = [
-        Port("labels", space=LabelState.RAW),
-        Port("features"),
-        Port("cube", space=Space.DENOISED),
-        Port("tiles"),
+        Port("labels", space=LabelState.RAW,
+             help="Pass-1 labels; -1 pixels are the recluster candidates"),
+        Port("features", help="PCA features for all mineral pixels"),
+        Port("cube", space=Space.DENOISED,
+             help="denoised cube; fingerprints rare clusters for matching"),
+        Port("tiles", help="phase registry from the tiled pass"),
     ]
-    OUTPUTS = [Port("labels", space=LabelState.RAW), Port("tiles")]
+    OUTPUTS = [
+        Port("labels", space=LabelState.RAW,
+             help="labels with rare phases assigned; residual -1 remains"),
+        Port("tiles", help="registry extended with the new rare phases"),
+    ]
     PARAMS = [
         Param("min_cluster_size", "int", 50, "Min cluster size", min=1,
               unit="px"),

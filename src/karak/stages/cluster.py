@@ -40,8 +40,11 @@ class HdbscanGlobalStage(Stage):
     id = "hdbscan_global"
     label = "HDBSCAN (global)"
     description = "Single HDBSCAN run over all mineral-pixel features."
-    INPUTS = [Port("features")]
-    OUTPUTS = [Port("labels", space=LabelState.RAW)]
+    INPUTS = [Port("features", help="PCA features for all mineral pixels")]
+    OUTPUTS = [
+        Port("labels", space=LabelState.RAW,
+             help="per-pixel phase labels; -1 = HDBSCAN noise"),
+    ]
     PARAMS = _HDBSCAN_PARAMS
 
     def apply(self, inputs: dict, params: dict) -> dict:
@@ -68,8 +71,17 @@ class HdbscanTiledStage(Stage):
         "Per-tile HDBSCAN with cosine-similarity phase-registry merging. "
         "Unassigned pixels are left at -1 for the noise_assign stage."
     )
-    INPUTS = [Port("features"), Port("cube", space=Space.DENOISED)]
-    OUTPUTS = [Port("labels", space=LabelState.RAW), Port("tiles")]
+    INPUTS = [
+        Port("features", help="PCA features for all mineral pixels"),
+        Port("cube", space=Space.DENOISED,
+             help="denoised cube; used to fingerprint tile clusters for "
+                  "registry matching"),
+    ]
+    OUTPUTS = [
+        Port("labels", space=LabelState.RAW,
+             help="registry-unified labels; -1 = unassigned/deferred"),
+        Port("tiles", help="per-tile diagnostics + the phase registry"),
+    ]
     PARAMS = _HDBSCAN_PARAMS + [
         Param("tile_size", "int", 512, "Tile size", min=1, unit="px"),
         Param("merge_threshold", "float", 0.92, "Merge threshold",

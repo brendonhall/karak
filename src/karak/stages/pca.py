@@ -18,8 +18,15 @@ class PCAStage(Stage):
         "into reduced feature space. n_components=0 auto-selects the first "
         "component count reaching the cumulative-variance threshold."
     )
-    INPUTS = [Port("cube", space=Space.NORMALIZED), Port("masks")]
-    OUTPUTS = [Port("features")]
+    INPUTS = [
+        Port("cube", space=Space.NORMALIZED, help="z-scored element cube"),
+        Port("masks", help="defines which pixels are fitted and projected"),
+    ]
+    OUTPUTS = [
+        Port("features",
+             help="(N_mineral, n_kept) PCA features + pixel coordinates + "
+                  "explained variance ratios"),
+    ]
     PARAMS = [
         Param("n_components", "int", 0, "Components",
               "Number of components to keep; 0 = auto from variance", min=0),

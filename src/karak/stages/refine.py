@@ -21,11 +21,16 @@ class RefineStage(Stage):
         "a GMM split of the remaining target-phase pixels."
     )
     INPUTS = [
-        Port("labels", space=LabelState.CLEANED),
-        Port("cube", space=Space.DENOISED),
-        Port("bse"),
+        Port("labels", space=LabelState.CLEANED,
+             help="cleaned labels containing the target composite phase"),
+        Port("cube", space=Space.DENOISED,
+             help="denoised intensities for thresholds and GMM features"),
+        Port("bse", help="BSE image; optional GMM feature channel"),
     ]
-    OUTPUTS = [Port("labels", space=LabelState.CLEANED)]
+    OUTPUTS = [
+        Port("labels", space=LabelState.CLEANED,
+             help="labels with the target phase split into sub-phases"),
+    ]
     PARAMS = [
         Param("target_phase", "int", 2, "Target phase",
               "Cluster label of the phase to refine"),

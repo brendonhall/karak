@@ -26,8 +26,8 @@ class QcMaskStage(Stage):
     label = "QC: mask"
     description = "Mask coverage overlay with optional TIMA reference panel."
     INPUTS = [
-        Port("bse"),
-        Port("masks"),
+        Port("bse", help="background image for the overlay"),
+        Port("masks", help="mineral + valid masks to visualize"),
         Port("cube_raw", space=Space.RAW, required=False,
              help="Supplies downsample/trim geometry for TIMA alignment"),
     ]
@@ -62,10 +62,10 @@ class QcDenoiseStage(Stage):
     label = "QC: denoise"
     description = "Before/after denoising comparison panels."
     INPUTS = [
-        Port("cube_raw", space=Space.RAW),
-        Port("cube_denoised", space=Space.DENOISED),
-        Port("bse"),
-        Port("masks"),
+        Port("cube_raw", space=Space.RAW, help="before panel"),
+        Port("cube_denoised", space=Space.DENOISED, help="after panel"),
+        Port("bse", help="context panel"),
+        Port("masks", help="restricts the compared pixels"),
     ]
     OUTPUTS: list = []
     PARAMS = [
@@ -95,7 +95,11 @@ class QcNormalizeStage(Stage):
     id = "qc_normalize"
     label = "QC: normalize"
     description = "Z-score histograms and channel correlation matrix."
-    INPUTS = [Port("cube", space=Space.NORMALIZED), Port("masks")]
+    INPUTS = [
+        Port("cube", space=Space.NORMALIZED,
+             help="z-scored cube for histograms + correlation matrix"),
+        Port("masks", help="restricts statistics to mineral pixels"),
+    ]
     OUTPUTS: list = []
     PARAMS = [_FIGURE_DIR]
 
@@ -122,7 +126,10 @@ class QcScreeStage(Stage):
     id = "qc_scree"
     label = "QC: scree plot"
     description = "PCA explained-variance scree plot with selection cutoff."
-    INPUTS = [Port("features")]
+    INPUTS = [
+        Port("features",
+             help="supplies explained variance ratios and the cutoff"),
+    ]
     OUTPUTS: list = []
     PARAMS = [_FIGURE_DIR]
 
@@ -144,10 +151,10 @@ class QcPhaseMapStage(Stage):
     label = "QC: phase map"
     description = "Raw vs cleaned phase map over the BSE image."
     INPUTS = [
-        Port("labels_raw", space=LabelState.RAW),
-        Port("labels", space=LabelState.CLEANED),
-        Port("bse"),
-        Port("stats"),
+        Port("labels_raw", space=LabelState.RAW, help="left panel"),
+        Port("labels", space=LabelState.CLEANED, help="right panel"),
+        Port("bse", help="grayscale underlay"),
+        Port("stats", help="cluster counts for the legend"),
     ]
     OUTPUTS: list = []
     PARAMS = [_FIGURE_DIR]
@@ -174,7 +181,9 @@ class QcClusterSummaryStage(Stage):
     id = "qc_cluster_summary"
     label = "QC: cluster summary"
     description = "Cluster size and probability summary chart."
-    INPUTS = [Port("stats")]
+    INPUTS = [
+        Port("stats", help="cluster sizes and probabilities to chart"),
+    ]
     OUTPUTS: list = []
     PARAMS = [_FIGURE_DIR]
 
@@ -193,7 +202,11 @@ class QcTiledStage(Stage):
         "Tile grid overlay and phase discovery chart. Recomputes the tile "
         "grid from the features payload."
     )
-    INPUTS = [Port("bse"), Port("tiles"), Port("features")]
+    INPUTS = [
+        Port("bse", help="underlay for the tile grid overlay"),
+        Port("tiles", help="tile diagnostics + registry to chart"),
+        Port("features", help="pixel coordinates to recompute the grid"),
+    ]
     OUTPUTS: list = []
     PARAMS = [
         _FIGURE_DIR,
@@ -233,7 +246,9 @@ class QcFingerprintsStage(Stage):
     id = "qc_fingerprints"
     label = "QC: fingerprints"
     description = "Per-cluster chemical fingerprint chart."
-    INPUTS = [Port("fingerprints")]
+    INPUTS = [
+        Port("fingerprints", help="per-cluster chemical signatures to chart"),
+    ]
     OUTPUTS: list = []
     PARAMS = [
         _FIGURE_DIR,
@@ -262,7 +277,10 @@ class QcNamedPhaseMapStage(Stage):
     id = "qc_named_phase_map"
     label = "QC: named phase map"
     description = "Final phase map with researcher-assigned mineral names."
-    INPUTS = [Port("labels", space=LabelState.CLEANED), Port("bse")]
+    INPUTS = [
+        Port("labels", space=LabelState.CLEANED, help="final phase labels"),
+        Port("bse", help="grayscale underlay"),
+    ]
     OUTPUTS: list = []
     PARAMS = [
         _FIGURE_DIR,

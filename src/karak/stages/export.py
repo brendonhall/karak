@@ -34,16 +34,25 @@ class ExportH5Stage(Stage):
         "groups are written."
     )
     INPUTS = [
-        Port("cube_raw", space=Space.RAW, required=False),
-        Port("bse", required=False),
-        Port("masks", required=False),
-        Port("cube_denoised", space=Space.DENOISED, required=False),
-        Port("cube_normalized", space=Space.NORMALIZED, required=False),
-        Port("features", required=False),
-        Port("labels_raw", space=LabelState.RAW, required=False),
-        Port("labels", space=LabelState.CLEANED, required=False),
-        Port("stats", required=False),
-        Port("tiles", required=False),
+        Port("cube_raw", space=Space.RAW, required=False,
+             help="written to the raw/ group, one dataset per element"),
+        Port("bse", required=False, help="written to bse/image"),
+        Port("masks", required=False,
+             help="written to masks/mineral and masks/valid"),
+        Port("cube_denoised", space=Space.DENOISED, required=False,
+             help="written to denoised/cube"),
+        Port("cube_normalized", space=Space.NORMALIZED, required=False,
+             help="written to normalized/{cube,means,stds}"),
+        Port("features", required=False,
+             help="supplies pca_variance_ratio and the component count"),
+        Port("labels_raw", space=LabelState.RAW, required=False,
+             help="written to clusters/raw_labels"),
+        Port("labels", space=LabelState.CLEANED, required=False,
+             help="written to clusters/cleaned_labels (+ probabilities)"),
+        Port("stats", required=False,
+             help="cluster statistics stored as clusters/ attributes"),
+        Port("tiles", required=False,
+             help="written to clusters/tiled/ (tile metadata + registry)"),
     ]
     OUTPUTS: list = []
     PARAMS = [

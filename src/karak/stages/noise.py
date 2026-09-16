@@ -16,8 +16,15 @@ class NoiseAssignStage(Stage):
         "Assign every remaining -1 pixel to its nearest phase by "
         "distance-weighted k-NN voting in feature space."
     )
-    INPUTS = [Port("labels", space=LabelState.RAW), Port("features")]
-    OUTPUTS = [Port("labels", space=LabelState.CLEANED)]
+    INPUTS = [
+        Port("labels", space=LabelState.RAW,
+             help="labels that may still contain -1 pixels"),
+        Port("features", help="PCA features; the k-NN voting space"),
+    ]
+    OUTPUTS = [
+        Port("labels", space=LabelState.CLEANED,
+             help="fully labeled pixels; probabilities pass through"),
+    ]
     PARAMS = [
         Param("k", "int", 5, "Neighbors", min=1),
     ]

@@ -17,8 +17,14 @@ class DenoiseStage(Stage):
         "Edge-aware denoising (bilateral or Perona-Malik anisotropic "
         "diffusion) applied per channel on raw intensities."
     )
-    INPUTS = [Port("cube", space=Space.RAW), Port("masks")]
-    OUTPUTS = [Port("cube", space=Space.DENOISED)]
+    INPUTS = [
+        Port("cube", space=Space.RAW, help="(H, W, C) raw element cube"),
+        Port("masks", help="mineral mask restricts smoothing to sample pixels"),
+    ]
+    OUTPUTS = [
+        Port("cube", space=Space.DENOISED,
+             help="(H, W, C) denoised cube, same channels and geometry"),
+    ]
     PARAMS = [
         Param("method", "enum", "bilateral", "Method",
               choices=("bilateral", "anisotropic_diffusion")),

@@ -293,10 +293,13 @@ cluster:
 ## Documentation
 
 The **[User Guide](docs/user_guide.md)** covers input data expectations
-(element maps, BSE image, valid-region polygon mask), the five pipeline
-stages, the complete `pipeline_config.yaml` schema (every field with its
-default and meaning), the HDF5 output layout, checkpoint/resume, and
-reproducibility notes.
+(element maps, BSE image, valid-region polygon mask), the stage table with
+inputs and outputs, payload types, flows, the legacy YAML config schema,
+the HDF5 output layout, caching, and reproducibility notes.
+
+The **[Stage Reference](docs/stage_reference.md)** documents every stage's
+ports and parameters (types, defaults, bounds, help). It is generated from
+the live registry and pinned by a test, so it cannot drift from the code.
 
 ## Hardware Requirements
 

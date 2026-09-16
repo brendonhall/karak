@@ -11,13 +11,16 @@ For installation and a quickstart, see the [README](../README.md).
 
 1. [Input data](#input-data)
 2. [Pipeline stages](#pipeline-stages)
-3. [Flows](#flows)
-4. [Configuration reference](#configuration-reference)
-5. [HDF5 output layout](#hdf5-output-layout)
-6. [Caching and re-runs](#caching-and-re-runs)
-7. [CLI reference](#cli-reference)
-8. [Reproducibility](#reproducibility)
-9. [Computational requirements](#computational-requirements)
+3. [Payloads](#payloads)
+4. [Flows](#flows)
+5. [Configuration reference](#configuration-reference)
+6. [HDF5 output layout](#hdf5-output-layout)
+7. [Caching and re-runs](#caching-and-re-runs)
+8. [CLI reference](#cli-reference)
+9. [Reproducibility](#reproducibility)
+10. [Computational requirements](#computational-requirements)
+
+Full per-stage port and parameter tables: [stage reference](stage_reference.md).
 
 ---
 
@@ -78,25 +81,37 @@ resolution.
 ## Pipeline stages
 
 Each processing step is a stage: a small module with typed parameters and
-named input/output ports. `karak schema` prints every stage's parameter
-schema as JSON. The processing stages:
+named input/output ports. Ports carry immutable payloads (see
+[Payloads](#payloads)); cubes are tagged with a space (`raw`, `denoised`,
+`normalized`) and label arrays with a state (`raw`, `cleaned`), written
+below as e.g. `cube:raw`. The **[stage reference](stage_reference.md)**
+documents every stage's full port and parameter contract, generated from
+the registry; `karak schema` prints the same contract as JSON.
 
-| Stage | What it does |
-|-------|--------------|
-| `load_elements` | Discover element map files, trim annotation strips, downsample, invert the colormap to scalar [0, 1] intensities, stack into an (H, W, C) cube, and load the BSE image. |
-| `mask` | Rasterize the valid-region polygon (if provided), then flag pixels that are zero across *all* element channels as background/epoxy. The mineral mask is the intersection; components smaller than `min_object_size` are removed. |
-| `denoise` | Edge-aware smoothing of the raw [0, 1] cube, channel by channel — bilateral filter (default) or anisotropic (Perona-Malik) diffusion. Operating on raw intensities preserves grain boundaries and physical signal. |
-| `normalize` | Per-channel z-score normalization: mean and standard deviation are computed over **mineral pixels only**, then `z = (x - mean) / std`. Non-mineral pixels are set to 0. |
-| `pca` | PCA fit + projection of mineral pixels. `n_components: 0` auto-selects the first count reaching 95% cumulative variance (minimum 5). |
-| `hdbscan_global` | Single HDBSCAN run over all mineral-pixel features. |
-| `hdbscan_tiled` | Per-tile HDBSCAN with cosine-similarity phase-registry merging across tiles. |
-| `rare_phase` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. |
-| `noise_assign` | Distance-weighted k-NN reassignment of every remaining unlabeled pixel. |
-| `refine` | Composite-phase splitting: threshold-based olivine extraction, then a GMM split of the target phase. |
-| `cluster_stats` | Cluster counts, sizes, and noise fraction. |
-| `fingerprints` | Per-cluster mean/std element intensities from the denoised cube, with cosine-similar pairs flagged. |
-| `export_h5` | Sink: writes the provenance HDF5 file (see [HDF5 output layout](#hdf5-output-layout)). |
-| `qc_*` | Sinks: diagnostic figures per step (`qc_mask`, `qc_denoise`, `qc_normalize`, `qc_scree`, `qc_phase_map`, `qc_cluster_summary`, `qc_tiled`, `qc_fingerprints`, `qc_named_phase_map`). |
+| Stage | Inputs → Outputs | What it does |
+|-------|------------------|--------------|
+| `load_elements` | – → `cube:raw`, `bse` | Discover element map files, trim annotation strips, downsample, invert the colormap to scalar [0, 1] intensities, stack into an (H, W, C) cube, and load the BSE image. |
+| `mask` | `cube:raw` → `masks` | Rasterize the valid-region polygon (if provided), then flag pixels that are zero across *all* element channels as background/epoxy. The mineral mask is the intersection; components smaller than `min_object_size` are removed. |
+| `denoise` | `cube:raw`, `masks` → `cube:denoised` | Edge-aware smoothing of the raw [0, 1] cube, channel by channel — bilateral filter (default) or anisotropic (Perona-Malik) diffusion. Operating on raw intensities preserves grain boundaries and physical signal. |
+| `normalize` | `cube:denoised`, `masks` → `cube:normalized` | Per-channel z-score normalization: mean and standard deviation are computed over **mineral pixels only**, then `z = (x - mean) / std`. Non-mineral pixels are set to 0. |
+| `pca` | `cube:normalized`, `masks` → `features` | PCA fit + projection of mineral pixels. `n_components: 0` auto-selects the first count reaching 95% cumulative variance (minimum 5). |
+| `hdbscan_global` | `features` → `labels:raw` | Single HDBSCAN run over all mineral-pixel features. |
+| `hdbscan_tiled` | `features`, `cube:denoised` → `labels:raw`, `tiles` | Per-tile HDBSCAN with cosine-similarity phase-registry merging across tiles. |
+| `rare_phase` | `labels:raw`, `features`, `cube:denoised`, `tiles` → `labels:raw`, `tiles` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. |
+| `noise_assign` | `labels:raw`, `features` → `labels:cleaned` | Distance-weighted k-NN reassignment of every remaining unlabeled pixel. |
+| `refine` | `labels:cleaned`, `cube:denoised`, `bse` → `labels:cleaned` | Composite-phase splitting: threshold-based olivine extraction, then a GMM split of the target phase. |
+| `cluster_stats` | `labels:cleaned` → `stats` | Cluster counts, sizes, and noise fraction. |
+| `fingerprints` | `labels:cleaned`, `cube:denoised` → `fingerprints` | Per-cluster mean/std element intensities from the denoised cube, with cosine-similar pairs flagged. |
+| `export_h5` | ten optional inputs → sink | Writes the provenance HDF5 file; only connected groups are written (see [HDF5 output layout](#hdf5-output-layout)). |
+| `qc_mask` | `bse`, `masks` (+`cube:raw`) → sink | Mask coverage overlay with optional TIMA reference panel. |
+| `qc_denoise` | `cube:raw`, `cube:denoised`, `bse`, `masks` → sink | Before/after denoising comparison panels. |
+| `qc_normalize` | `cube:normalized`, `masks` → sink | Z-score histograms and channel correlation matrix. |
+| `qc_scree` | `features` → sink | PCA explained-variance scree plot with the selection cutoff. |
+| `qc_phase_map` | `labels:raw`, `labels:cleaned`, `bse`, `stats` → sink | Raw vs cleaned phase map over the BSE image. |
+| `qc_cluster_summary` | `stats` → sink | Cluster size and probability summary chart. |
+| `qc_tiled` | `bse`, `tiles`, `features` → sink | Tile grid overlay and phase discovery chart. |
+| `qc_fingerprints` | `fingerprints` → sink | Per-cluster chemical fingerprint chart. |
+| `qc_named_phase_map` | `labels:cleaned`, `bse` → sink | Final phase map with researcher-assigned mineral names. |
 
 Cluster labels are anonymous phases (0, 1, 2, ...). Assigning mineral names
 is a human-in-the-loop step: inspect the per-cluster chemical fingerprints
@@ -104,6 +119,25 @@ and QC figures, then record names with
 `karak.io.storage.save_mineral_names()` and render a named map with the
 `qc_named_phase_map` stage. `preprocessing.denoise.compare_denoisers()` is
 a notebook helper for side-by-side denoiser comparison.
+
+---
+
+## Payloads
+
+Stages exchange immutable dataclasses (`karak.stages.payloads`). Each
+payload serializes to HDF5 for the node cache, and `apply()` returns new
+payloads via `.replace()` instead of mutating inputs.
+
+| Payload | Carried by ports | Contents |
+|---------|------------------|----------|
+| `ElementCube` | `cube`, `cube_raw`, `cube_denoised`, `cube_normalized` | (H, W, C) float32 pixels, element names, a `space` tag, per-channel means/stds when normalized, and the downsample/trim geometry (so polygon masks rasterize without a side channel). |
+| `BseImage` | `bse` | (H, W) float32 backscatter-electron image. |
+| `MaskSet` | `masks` | Boolean mineral mask, optional valid-region mask, and mask statistics. |
+| `PCAFeatures` | `features` | (N_mineral, n_kept) float32 features, (N_mineral, 2) pixel coordinates, image shape, full explained-variance ratios, and the kept component count. |
+| `Labels` | `labels`, `labels_raw` | (N_mineral,) int32 labels, optional membership probabilities, pixel coordinates, image shape, and a `state` tag (`raw` may contain -1; `cleaned` never does). |
+| `TiledArtifacts` | `tiles` | Per-tile diagnostic results and the global phase registry from tiled clustering. |
+| `ClusterStats` | `stats` | Cluster counts, sizes, and noise fraction as a dict. |
+| `Fingerprints` | `fingerprints` | Per-cluster mean/std element spectra, element ranking, and flagged similar pairs. |
 
 ---
 

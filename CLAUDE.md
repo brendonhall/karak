@@ -72,7 +72,10 @@ Three layers; each depends only on the one below it.
   `Reporter` (`flow/events.py`); matplotlib uses the Agg backend.
 - **Adding a stage**: drop a `@register`ed `Stage` subclass into
   `stages/` — autoload picks it up; add a parity test against the core
-  function it wraps (see `tests/test_stage_parity.py`).
+  function it wraps (see `tests/test_stage_parity.py`); give every Port a
+  `help` string; regenerate the doc with
+  `uv run python -m karak.stages.reference` (a drift test pins
+  `docs/stage_reference.md` to the registry).
 - **Notebook-facing APIs** kept outside the flows:
   `identification.fingerprint`, `storage.save/load_mineral_names`,
   `preprocessing.denoise.compare_denoisers`.

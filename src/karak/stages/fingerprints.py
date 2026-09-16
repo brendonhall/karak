@@ -20,10 +20,14 @@ class FingerprintsStage(Stage):
         "with cosine-similar cluster pairs flagged for review."
     )
     INPUTS = [
-        Port("labels", space=LabelState.CLEANED),
-        Port("cube", space=Space.DENOISED),
+        Port("labels", space=LabelState.CLEANED, help="final phase labels"),
+        Port("cube", space=Space.DENOISED,
+             help="denoised intensities the fingerprints are computed from"),
     ]
-    OUTPUTS = [Port("fingerprints")]
+    OUTPUTS = [
+        Port("fingerprints",
+             help="per-cluster mean/std spectra + flagged similar pairs"),
+    ]
     PARAMS = [
         Param("similarity_threshold", "float", 0.95, "Similarity threshold",
               "Cosine similarity above which cluster pairs are flagged",

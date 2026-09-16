@@ -13,7 +13,7 @@ def _autoload() -> None:
     import importlib
     import pkgutil
 
-    skip = {"base", "registry", "payloads"}     # infra, not stages
+    skip = {"base", "registry", "payloads", "reference"}   # infra, not stages
     for module in pkgutil.iter_modules(__path__):
         if module.name not in skip:
             importlib.import_module(f"{__name__}.{module.name}")

@@ -16,8 +16,14 @@ class NormalizeStage(Stage):
         "Per-channel z-score normalization over mineral pixels; "
         "non-mineral pixels are set to 0."
     )
-    INPUTS = [Port("cube", space=Space.DENOISED), Port("masks")]
-    OUTPUTS = [Port("cube", space=Space.NORMALIZED)]
+    INPUTS = [
+        Port("cube", space=Space.DENOISED, help="(H, W, C) denoised cube"),
+        Port("masks", help="statistics are computed over mineral pixels only"),
+    ]
+    OUTPUTS = [
+        Port("cube", space=Space.NORMALIZED,
+             help="z-scored cube; per-channel means/stds ride on the payload"),
+    ]
     PARAMS = [
         Param("method", "enum", "zscore", "Method", choices=("zscore",)),
     ]

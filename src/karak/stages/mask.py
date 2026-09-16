@@ -20,7 +20,10 @@ class MaskStage(Stage):
         "Boolean mineral-pixel mask: all-zero pixels are background; an "
         "optional napari polygon CSV restricts the valid sample region."
     )
-    INPUTS = [Port("cube", space=Space.RAW)]
+    INPUTS = [
+        Port("cube", space=Space.RAW,
+             help="(H, W, C) raw element cube; all-zero pixels = background"),
+    ]
     OUTPUTS = [Port("masks", help="mineral + valid masks with statistics")]
     PARAMS = [
         Param("min_object_size", "int", 100, "Min object size", min=0,

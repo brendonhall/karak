@@ -13,8 +13,13 @@ class ClusterStatsStage(Stage):
     id = "cluster_stats"
     label = "Cluster statistics"
     description = "Cluster counts, sizes, and noise fraction for the labels."
-    INPUTS = [Port("labels", space=LabelState.CLEANED)]
-    OUTPUTS = [Port("stats")]
+    INPUTS = [
+        Port("labels", space=LabelState.CLEANED,
+             help="final labels with membership probabilities"),
+    ]
+    OUTPUTS = [
+        Port("stats", help="cluster counts, sizes, and noise fraction"),
+    ]
     PARAMS: list = []
 
     def apply(self, inputs: dict, params: dict) -> dict:
