@@ -204,14 +204,14 @@ pipeline logic left to write in a front-end:
 
 The same contract that serves a GUI serves an agent. A language model can
 read `karak schema`, compose a flow JSON for a new sample, check it with
-`karak validate` before spending compute, and run it headlessly. Typed,
-bounded parameters mean a generated flow is verified rather than trusted:
-a hallucinated stage name, an out-of-range sigma, or a mis-wired port is
-rejected at validation, not discovered two hours into a cluster run. The
-cache makes agent-driven parameter exploration cheap, since each variant
-re-runs only the stages it changed. Provenance closes the loop: every
-output HDF5 embeds the exact flow that produced it, so any result an
-agent produces can be audited and reproduced.
+`karak validate` before spending compute, and run it headlessly. Because
+parameters are typed and bounded, the validator checks every generated
+flow before it runs: a hallucinated stage name, an out-of-range sigma, or
+a mis-wired port is rejected at validation, not discovered two hours into
+a cluster run. The cache makes agent-driven parameter exploration cheap,
+since each variant re-runs only the stages it changed. Every output HDF5
+embeds the exact flow that produced it, so any result an agent produces
+can be audited and reproduced.
 
 ## Pipeline
 
