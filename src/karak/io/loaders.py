@@ -251,6 +251,22 @@ def _apply_trim(
     return img[top:bottom, left:right]
 
 
+def _process_element_file(fpath, colormap, base_dir, factor, trims):
+    """Read one false-color map, invert, downsample, trim. Pool-safe."""
+    raw = imageio.imread(fpath)
+    scalar = invert_colormap(raw, colormap_spec=colormap, base_dir=base_dir)
+    ds = downscale_local_mean(scalar, (factor, factor))
+    return _apply_trim(ds, **trims).astype(np.float32)
+
+
+def _process_bse_file(fpath, factor, trims):
+    """Read the BSE/SEM image as grayscale, downsample, trim. Pool-safe."""
+    raw = imageio.imread(fpath)
+    gray = rgb2gray(raw) if raw.ndim == 3 else raw.astype(np.float32) / 255.0
+    ds = downscale_local_mean(gray, (factor, factor))
+    return _apply_trim(ds, **trims).astype(np.float32)
+
+
 def load_element_maps(
     input_dir: str,
     downsample_config: DownsampleConfig,
@@ -258,6 +274,7 @@ def load_element_maps(
     bse_channel: str = "SEM",
     include_elements: list[str] | None = None,
     loader_config: LoaderConfig | None = None,
+    workers: int = 1,
 ) -> tuple[dict[str, np.ndarray], np.ndarray, list[str]]:
     """Load, invert, downsample, and trim element maps and the BSE channel.
 
@@ -283,6 +300,10 @@ def load_element_maps(
         File discovery, filename parsing, and colormap parameters.
         If None, defaults are used (PNG glob, legacy filename heuristic,
         jet colormap) for backward compatibility with TIMA exports.
+    workers : int
+        Number of worker processes for per-file loading. 1 (default)
+        loads serially in this process; >1 uses a ``ProcessPoolExecutor``.
+        Output is byte-identical regardless of ``workers``.
 
     Returns
     -------
@@ -327,6 +348,12 @@ def load_element_maps(
 
     elements_dict: dict[str, np.ndarray] = {}
     bse_array: np.ndarray | None = None
+    trims = dict(
+        trim_top=trim_top,
+        trim_bottom=trim_bottom,
+        trim_left=trim_left,
+        trim_right=trim_right,
+    )
 
     # If a separate BSE filename is given, load it first
     if loader.bse_filename is not None:
@@ -350,6 +377,9 @@ def load_element_maps(
             bse_array.shape,
         )
 
+    # Decide: walk the file list and record what to do with each file,
+    # without doing any of the actual work yet.
+    jobs: list[tuple[str, str, str]] = []
     for fpath in files:
         filename = os.path.basename(fpath)
         # Skip the BSE file if it was already loaded separately
@@ -364,47 +394,57 @@ def load_element_maps(
             logger.debug("Filename did not match pattern, skipping: %s", filename)
             continue
 
-        raw = imageio.imread(fpath)
-
         if loader.bse_filename is None and element == bse_channel:
             # Legacy mode: BSE is in the main glob, identified by element name
-            gray = rgb2gray(raw) if raw.ndim == 3 else raw.astype(np.float32) / 255.0
-            ds = downscale_local_mean(gray, (factor, factor))
-            bse_array = _apply_trim(
-                ds,
-                trim_top=trim_top,
-                trim_bottom=trim_bottom,
-                trim_left=trim_left,
-                trim_right=trim_right,
-            ).astype(np.float32)
-            logger.info(
-                "Loaded BSE channel '%s': shape %s", element, bse_array.shape
-            )
+            jobs.append(("bse", element, fpath))
         elif element in skip:
             logger.info("Skipping excluded channel: %s", element)
         elif include is not None and element not in include:
             logger.debug("Skipping (not in include_elements): %s", element)
         else:
-            scalar = invert_colormap(
-                raw, colormap_spec=loader.colormap, base_dir=input_dir
-            )
-            ds = downscale_local_mean(scalar, (factor, factor))
-            trimmed = _apply_trim(
-                ds,
-                trim_top=trim_top,
-                trim_bottom=trim_bottom,
-                trim_left=trim_left,
-                trim_right=trim_right,
-            )
-            elements_dict[element] = trimmed.astype(np.float32)
+            jobs.append(("element", element, fpath))
+
+    # Execute: serial in-process, or fanned out to a process pool.
+    if workers > 1 and jobs:
+        # Warm the LUT cache once so pool workers load it from disk
+        # instead of each building a fresh one.
+        get_full_lut(loader.colormap, base_dir=input_dir)
+        from concurrent.futures import ProcessPoolExecutor
+
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            futures = []
+            for kind, key, fpath in jobs:
+                if kind == "bse":
+                    futures.append(pool.submit(_process_bse_file, fpath, factor, trims))
+                else:
+                    futures.append(pool.submit(
+                        _process_element_file, fpath, loader.colormap,
+                        input_dir, factor, trims,
+                    ))
+            arrays = [f.result() for f in futures]
+    else:
+        arrays = [
+            _process_bse_file(fpath, factor, trims) if kind == "bse"
+            else _process_element_file(fpath, loader.colormap, input_dir,
+                                       factor, trims)
+            for kind, key, fpath in jobs
+        ]
+
+    # Assemble: same log lines regardless of which path executed.
+    for (kind, key, fpath), arr in zip(jobs, arrays):
+        if kind == "bse":
+            bse_array = arr
+            logger.info("Loaded BSE channel '%s': shape %s", key, bse_array.shape)
+        else:
+            elements_dict[key] = arr
             logger.info(
                 "Loaded element '%s' (inverted via %s): shape %s, "
                 "range [%.4f, %.4f]",
-                element,
+                key,
                 loader.colormap,
-                trimmed.shape,
-                trimmed.min(),
-                trimmed.max(),
+                arr.shape,
+                arr.min(),
+                arr.max(),
             )
 
     if bse_array is None:

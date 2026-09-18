@@ -92,6 +92,8 @@ class LoadElementsStage(Stage):
             colormap=params["colormap"],
         )
         include = _split_csv(params["include_elements"]) or None
+        from karak.accel import resolve_workers
+
         elements, bse, names = load_element_maps(
             params["input_dir"],
             downsample,
@@ -99,6 +101,7 @@ class LoadElementsStage(Stage):
             bse_channel=params["bse_channel"],
             include_elements=include,
             loader_config=loader,
+            workers=resolve_workers(self.workers),
         )
         cube = build_compositional_cube(elements, names)
         return {
