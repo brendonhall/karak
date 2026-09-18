@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from karak.cli.bench import BenchConfig, parse_config, run_bench
+from karak.cli.bench import BenchConfig, bench_main, parse_config, run_bench
 from karak.flow.graph import Graph, Node
 from karak.stages import registry
 from karak.stages.base import Param, Port, Stage
@@ -79,3 +79,20 @@ def test_bench_json_round_trips(tmp_path):
     )
     text = json.dumps(result)
     assert json.loads(text) == result
+
+
+def test_compare_nonexistent_file_exits(tmp_path):
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps({"meta": {}, "configs": []}))
+    missing = tmp_path / "missing.json"
+    with pytest.raises(SystemExit):
+        bench_main(["--compare", str(missing), str(good)])
+
+
+def test_compare_malformed_json_exits(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not valid json")
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps({"meta": {}, "configs": []}))
+    with pytest.raises(SystemExit):
+        bench_main(["--compare", str(bad), str(good)])

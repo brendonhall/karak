@@ -153,10 +153,29 @@ def bench_main(argv: list[str] | None = None) -> int:
     if args.compare:
         merged = {"meta": None, "configs": []}
         for path in args.compare:
-            data = json.loads(Path(path).read_text())
+            try:
+                text = Path(path).read_text()
+            except OSError as exc:
+                raise SystemExit(f"error: cannot read compare file {path!r}: {exc}")
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(
+                    f"error: compare file {path!r} is not valid JSON: {exc}"
+                )
+            if "meta" not in data or "configs" not in data:
+                raise SystemExit(
+                    f"error: compare file {path!r} is missing "
+                    "the 'meta' or 'configs' key"
+                )
             stem = Path(path).stem
             merged["meta"] = merged["meta"] or data["meta"]
             for cfg in data["configs"]:
+                if "label" not in cfg:
+                    raise SystemExit(
+                        f"error: compare file {path!r} has a config "
+                        "entry missing the 'label' key"
+                    )
                 merged["configs"].append({**cfg, "label": f"{stem}:{cfg['label']}"})
         render_bench_table(merged)
         return 0
