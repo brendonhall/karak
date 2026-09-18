@@ -104,3 +104,18 @@ def test_apply_device_sets_denoise_device():
     assert modified.node("dn").params["device"] == "cuda"
     # other nodes should not have device param
     assert "device" not in modified.node("src").params
+
+
+def test_apply_device_no_declaring_nodes_is_identity():
+    from karak.flow.builtins import apply_device
+    from karak.flow.graph import Graph, Node
+
+    # Synthetic graph with only load_elements, which declares no device param
+    graph = Graph(
+        name="no_device",
+        nodes=(Node("src", "load_elements"),),
+        edges=(),
+    )
+    result = apply_device(graph, "cuda")
+    # When no nodes declare device, should return the same graph object
+    assert result is graph
