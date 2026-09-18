@@ -201,6 +201,22 @@ def override_params(graph: Graph, overrides: dict) -> Graph:
     )
 
 
+def apply_device(graph: Graph, device: str) -> Graph:
+    """Set ``device`` on every node whose stage declares that param.
+
+    Nodes without a declared ``device`` param are left untouched, so the
+    override is safe on any flow.
+    """
+    from karak.stages import registry
+
+    overrides = {
+        f"{node.id}.device": device
+        for node in graph.nodes
+        if any(p.name == "device" for p in registry.get(node.type).PARAMS)
+    }
+    return override_params(graph, overrides) if overrides else graph
+
+
 def _drop_none(params: dict) -> dict:
     return {k: v for k, v in params.items() if v is not None}
 

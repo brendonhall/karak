@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from karak.flow.builtins import builtin_flow, builtin_names, override_params
+from karak.flow.builtins import apply_device, builtin_flow, builtin_names, override_params
 from karak.flow.graph import Graph
 from karak.flow.validate import validate
 
@@ -78,6 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--set", action="append", default=[], metavar="NODE.PARAM=VALUE",
         help="Override a node parameter (repeatable)",
     )
+    run_parser.add_argument(
+        "--device", choices=["cpu", "cuda"], default=None,
+        help="Apply this device to every node that declares a device "
+             "param (cuda needs the karak[cuda] extra).",
+    )
 
     validate_parser = sub.add_parser("validate", help="Validate a flow")
     _add_flow_args(validate_parser)
@@ -110,6 +115,16 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
 
     if args.set:
         graph = override_params(graph, _parse_set(args.set))
+    if args.device:
+        graph = apply_device(graph, args.device)
+    if any(n.params.get("device") == "cuda" for n in graph.nodes):
+        import karak.accel as accel
+
+        if not accel.cuda_available():
+            raise SystemExit(
+                "error: device='cuda' requested but no usable GPU stack "
+                "was found. Install with: pip install 'karak[cuda]'"
+            )
     work_dir = args.work or str(Path(args.out).parent / "work")
     summary = run_flow(
         graph,

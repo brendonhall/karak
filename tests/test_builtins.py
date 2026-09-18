@@ -61,3 +61,42 @@ def test_override_params():
 def test_override_unknown_node_raises():
     with pytest.raises(KeyError):
         override_params(builtin_flow("global"), {"ghost.param": 1})
+
+
+def test_apply_device_sets_only_declaring_nodes():
+    from karak.flow.builtins import apply_device, builtin_flow
+    from karak.stages import registry
+    from karak.stages.base import Param, Port, Stage
+    from karak.flow.graph import Graph, Node
+
+    class FakeCudaStage(Stage):
+        id = "fake_cuda_stage"
+        label = "Fake CUDA stage"
+        OUTPUTS = [Port("x")]
+        PARAMS = [Param("device", "str", "cpu", choices=("cpu", "cuda"))]
+
+        def apply(self, inputs, params):
+            return {}
+
+    registry.register(FakeCudaStage)
+    try:
+        graph = Graph(
+            name="g",
+            nodes=(
+                Node("a", "fake_cuda_stage"),
+                Node("b", "load_elements"),
+            ),
+            edges=(),
+        )
+        out = apply_device(graph, "cuda")
+        assert out.node("a").params["device"] == "cuda"
+        assert "device" not in out.node("b").params
+    finally:
+        registry._REGISTRY.pop(FakeCudaStage.id, None)
+
+
+def test_apply_device_no_declaring_nodes_is_identity():
+    from karak.flow.builtins import apply_device, builtin_flow
+
+    graph = builtin_flow("global")
+    assert apply_device(graph, "cuda") is graph
