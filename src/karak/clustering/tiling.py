@@ -476,6 +476,7 @@ def run_tiled_hdbscan(
     config: ClusterConfig,
     progress_callback: Callable[[int, int, TileResult], None] | None = None,
     skip_knn: bool = False,
+    workers: int = 1,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[TileResult], list[PhaseEntry]]:
     """Run tiled progressive HDBSCAN with phase registry unification.
 
@@ -491,6 +492,11 @@ def run_tiled_hdbscan(
         (H, W, C) float32 denoised element cube [0, 1].
     config : ClusterConfig
         Full clustering config (pca, hdbscan, tiled sub-configs).
+    workers : int
+        Number of processes for the per-tile HDBSCAN calls. 1 = serial
+        (default). >1 parallelizes only the per-tile clustering; the
+        merge loop stays sequential, so results are byte-identical to
+        workers=1.
 
     Returns
     -------
@@ -529,6 +535,24 @@ def run_tiled_hdbscan(
     tile_results: list[TileResult] = []
     next_global_id = 0
 
+    # Step 1b: Optionally precompute per-tile HDBSCAN in parallel. The
+    # registry merge below is order-dependent (running-mean fingerprints,
+    # registry matching), so only this per-tile clustering call parallelizes;
+    # the merge loop stays sequential in tile order for byte-identical
+    # results regardless of worker count.
+    tile_hdbscan: dict[int, tuple] | None = None
+    if workers > 1 and len(tiles) > 1:
+        from concurrent.futures import ProcessPoolExecutor
+
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                tile.tile_id: pool.submit(
+                    run_hdbscan, pca_features[tile.pixel_indices], hdb_cfg,
+                )
+                for tile in tiles
+            }
+            tile_hdbscan = {tid: f.result() for tid, f in futures.items()}
+
     # Step 2: Process each tile
     min_clusters = tiled_cfg.min_clusters_per_tile
     n_deferred_tiles = 0
@@ -536,8 +560,12 @@ def run_tiled_hdbscan(
     for tile in tiles:
         tile_features = pca_features[tile.pixel_indices]
 
-        # Run per-tile HDBSCAN (reuse existing function)
-        tile_labels, tile_probs, _ = run_hdbscan(tile_features, hdb_cfg)
+        # Run per-tile HDBSCAN (reuse existing function, or read the
+        # precomputed parallel result).
+        if tile_hdbscan is not None:
+            tile_labels, tile_probs, _ = tile_hdbscan[tile.tile_id]
+        else:
+            tile_labels, tile_probs, _ = run_hdbscan(tile_features, hdb_cfg)
 
         n_noise = int(np.sum(tile_labels == -1))
         n_clusters = len(set(tile_labels.tolist()) - {-1})

@@ -95,6 +95,7 @@ class HdbscanTiledStage(Stage):
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
+        from karak.accel import resolve_workers
         from karak.clustering.tiling import run_tiled_hdbscan
 
         features, cube = inputs["features"], inputs["cube"]
@@ -116,6 +117,7 @@ class HdbscanTiledStage(Stage):
                 cube.pixels,
                 config,
                 skip_knn=True,
+                workers=resolve_workers(self.workers),
             )
         )
         return {
