@@ -31,11 +31,37 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _bilateral_channel(channel, mask, sigma_color, sigma_spatial):
+    """One channel of bilateral_denoise_cube. Pool-safe."""
+    channel = channel.copy()
+    channel[~mask] = np.nanmean(channel[mask])
+    return denoise_bilateral(
+        channel, sigma_color=sigma_color, sigma_spatial=sigma_spatial,
+    )
+
+
+def _anisotropic_channel(channel, mask, niter, kappa, gamma, option):
+    """One channel of anisotropic_denoise_cube. Pool-safe."""
+    channel = channel.copy()
+    channel[~mask] = np.nanmean(channel[mask])
+    cmin = channel[mask].min()
+    cmax = channel[mask].max()
+    if cmax > cmin:
+        channel_scaled = (channel - cmin) / (cmax - cmin)
+    else:
+        return channel
+    diffused = anisotropic_diffusion(
+        channel_scaled, niter=niter, kappa=kappa, gamma=gamma, option=option,
+    )
+    return diffused * (cmax - cmin) + cmin
+
+
 def bilateral_denoise_cube(
     cube: np.ndarray,
     mask: np.ndarray,
     sigma_color: float | None = None,
     sigma_spatial: float = 1.0,
+    workers: int = 1,
 ) -> np.ndarray:
     """Apply bilateral filter independently to each channel.
 
@@ -54,6 +80,8 @@ def bilateral_denoise_cube(
         auto-calculate from the image standard deviation.
     sigma_spatial : float
         Spatial distance sigma (default 1.0).
+    workers : int
+        Number of parallel workers (default 1).
 
     Returns
     -------
@@ -63,18 +91,17 @@ def bilateral_denoise_cube(
     H, W, C = cube.shape
     denoised = np.zeros_like(cube)
 
-    for i in range(C):
-        channel = cube[:, :, i].copy()
+    args = [(cube[:, :, i].copy(), mask, sigma_color, sigma_spatial)
+            for i in range(C)]
+    if workers > 1:
+        from concurrent.futures import ProcessPoolExecutor
 
-        # Fill masked pixels with mineral-pixel mean (Pitfall 3)
-        channel[~mask] = np.nanmean(channel[mask])
-
-        denoised[:, :, i] = denoise_bilateral(
-            channel,
-            sigma_color=sigma_color,
-            sigma_spatial=sigma_spatial,
-        )
-
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            channels = list(pool.map(_bilateral_channel, *zip(*args)))
+    else:
+        channels = [_bilateral_channel(*a) for a in args]
+    for i, ch in enumerate(channels):
+        denoised[:, :, i] = ch
         logger.info("Bilateral denoise: channel %d/%d done", i + 1, C)
 
     # Re-apply mask
@@ -96,6 +123,7 @@ def anisotropic_denoise_cube(
     kappa: float = 50,
     gamma: float = 0.1,
     option: int = 2,
+    workers: int = 1,
 ) -> np.ndarray:
     """Apply Perona-Malik anisotropic diffusion independently per channel.
 
@@ -118,6 +146,8 @@ def anisotropic_denoise_cube(
     option : int
         Perona-Malik option: 1 = favours high contrast edges,
         2 = favours wide regions over smaller ones (default 2).
+    workers : int
+        Number of parallel workers (default 1).
 
     Returns
     -------
@@ -127,35 +157,17 @@ def anisotropic_denoise_cube(
     H, W, C = cube.shape
     denoised = np.zeros_like(cube)
 
-    for i in range(C):
-        channel = cube[:, :, i].copy()
+    args = [(cube[:, :, i].copy(), mask, niter, kappa, gamma, option)
+            for i in range(C)]
+    if workers > 1:
+        from concurrent.futures import ProcessPoolExecutor
 
-        # Fill masked pixels with mineral-pixel mean
-        channel[~mask] = np.nanmean(channel[mask])
-
-        # Scale to [0, 1] using mineral-pixel range for medpy
-        cmin = channel[mask].min()
-        cmax = channel[mask].max()
-
-        if cmax > cmin:
-            channel_scaled = (channel - cmin) / (cmax - cmin)
-        else:
-            channel_scaled = np.zeros_like(channel)
-
-        diffused = anisotropic_diffusion(
-            channel_scaled,
-            niter=niter,
-            kappa=kappa,
-            gamma=gamma,
-            option=option,
-        )
-
-        # Scale back to original range
-        if cmax > cmin:
-            denoised[:, :, i] = diffused * (cmax - cmin) + cmin
-        else:
-            denoised[:, :, i] = channel
-
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            channels = list(pool.map(_anisotropic_channel, *zip(*args)))
+    else:
+        channels = [_anisotropic_channel(*a) for a in args]
+    for i, ch in enumerate(channels):
+        denoised[:, :, i] = ch
         logger.info("Anisotropic denoise: channel %d/%d done", i + 1, C)
 
     # Re-apply mask
@@ -365,6 +377,7 @@ def denoise_cube(
     cube: np.ndarray,
     mask: np.ndarray,
     config: DenoiseConfig,
+    workers: int = 1,
 ) -> np.ndarray:
     """Dispatch to bilateral or anisotropic denoiser based on config.
 
@@ -376,6 +389,8 @@ def denoise_cube(
         (H, W) boolean mineral mask.
     config : DenoiseConfig
         Denoising configuration with ``method`` field.
+    workers : int
+        Number of parallel workers (default 1).
 
     Returns
     -------
@@ -388,6 +403,7 @@ def denoise_cube(
             mask,
             sigma_color=config.sigma_color,
             sigma_spatial=config.sigma_spatial,
+            workers=workers,
         )
     elif config.method == "anisotropic_diffusion":
         return anisotropic_denoise_cube(
@@ -397,6 +413,7 @@ def denoise_cube(
             kappa=config.kappa,
             gamma=config.gamma,
             option=config.option,
+            workers=workers,
         )
     else:
         raise ValueError(

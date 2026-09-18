@@ -40,6 +40,8 @@ class DenoiseStage(Stage):
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
+        from karak.accel import resolve_workers
+
         cube = inputs["cube"]
         config = DenoiseConfig(
             method=params["method"],
@@ -51,6 +53,7 @@ class DenoiseStage(Stage):
             option=params["option"],
         )
         denoised = denoise_cube(
-            cube.pixels, inputs["masks"].mineral_mask, config
+            cube.pixels, inputs["masks"].mineral_mask, config,
+            workers=resolve_workers(self.workers)
         )
         return {"cube": cube.replace(pixels=denoised, space=Space.DENOISED)}
