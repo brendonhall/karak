@@ -88,10 +88,20 @@ def build_parser() -> argparse.ArgumentParser:
     _add_flow_args(validate_parser)
 
     sub.add_parser("schema", help="Print the stage palette as JSON")
+    sub.add_parser("bench", help="Time flow nodes across configurations",
+                    add_help=False)
     return parser
 
 
 def main(argv: list[str] | None = None, reporter=None) -> int:
+    raw = sys.argv[2:] if argv is None else argv[1:]
+    if (argv is not None and argv and argv[0] == "bench") or (
+        argv is None and len(sys.argv) > 1 and sys.argv[1] == "bench"
+    ):
+        from karak.cli.bench import bench_main  # lazy: Rich stays in cli/
+
+        return bench_main(raw)
+
     args = build_parser().parse_args(argv)
 
     if args.command == "schema":

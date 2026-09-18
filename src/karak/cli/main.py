@@ -113,6 +113,10 @@ def _legacy_main(argv: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "bench":
+        from karak.cli.bench import bench_main
+
+        return bench_main(argv[1:])
     if argv and argv[0] in _FLOW_COMMANDS:
         from karak.cli.reporter import RichReporter
         from karak.flow.__main__ import main as flow_main
