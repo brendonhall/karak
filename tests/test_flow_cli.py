@@ -36,3 +36,19 @@ def test_validate_broken_flow_fails(tmp_path, capsys):
 def test_run_requires_flow_or_builtin():
     with pytest.raises(SystemExit):
         main(["run"])
+
+
+def test_run_parser_accepts_workers():
+    from karak.flow.__main__ import build_parser
+
+    args = build_parser().parse_args(
+        ["run", "--builtin", "global", "--workers", "4"]
+    )
+    assert args.workers == 4
+
+
+def test_run_parser_workers_default_none():
+    from karak.flow.__main__ import build_parser
+
+    args = build_parser().parse_args(["run", "--builtin", "global"])
+    assert args.workers is None

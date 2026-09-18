@@ -103,6 +103,7 @@ class Stage:
     PARAMS: list = []               # list[Param]
 
     reporter: Any = None            # injected by the flow executor; duck-typed
+    workers: int | None = None       # injected by the flow executor; None = serial
 
     @classmethod
     def schema(cls) -> dict:

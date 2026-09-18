@@ -125,6 +125,7 @@ def run(
     work_dir: str = "work",
     cache: bool = True,
     reporter=None,
+    workers: int | None = None,
     skip_types: frozenset | set = frozenset(),
     spill_threshold: int = 256 * 1024 * 1024,
 ) -> dict:
@@ -215,6 +216,7 @@ def run(
             }
             stage = cls()
             stage.reporter = reporter
+            stage.workers = workers
             reporter.node_started(node_id, cls.label or cls.id)
             try:
                 outputs = stage.run(inputs, params)

@@ -70,6 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--no-qc", action="store_true",
                             help="Skip QC figure sinks")
     run_parser.add_argument(
+        "--workers", type=int, default=None, metavar="N",
+        help="CPU worker processes for stages that parallelize "
+             "(0 = all cores; default: serial). Never changes results.",
+    )
+    run_parser.add_argument(
         "--set", action="append", default=[], metavar="NODE.PARAM=VALUE",
         help="Override a node parameter (repeatable)",
     )
@@ -113,6 +118,7 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         work_dir=work_dir,
         cache=not args.no_cache,
         reporter=reporter,
+        workers=args.workers,
         skip_types=QC_STAGE_TYPES if args.no_qc else frozenset(),
     )
     cached = sum(1 for entry in summary.values() if entry.get("cached"))

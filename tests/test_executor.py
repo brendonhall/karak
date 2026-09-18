@@ -213,3 +213,40 @@ def test_branching_graph_both_consumers_get_payload(tmp_path):
     run(graph, input_path="/in", out_base="o", work_dir=str(tmp_path))
     sink_values = sorted(r[1] for r in RECORD if r[0] == "fake_sink")
     assert sink_values == [6, 7]
+
+
+class FakeWorkerProbe(Stage):
+    id = "fake_worker_probe"
+    label = "Fake worker probe"
+    OUTPUTS = [Port("num")]
+    PARAMS = [Param("value", "int", 1)]
+
+    def apply(self, inputs, params):
+        RECORD.append(("workers", self.workers))
+        return {"num": ClusterStats(stats={"value": params["value"]})}
+
+
+def _probe_graph():
+    return Graph(
+        name="probe",
+        nodes=(Node("p", "fake_worker_probe"),),
+        edges=(),
+    )
+
+
+def test_executor_injects_workers(tmp_path):
+    registry.register(FakeWorkerProbe)
+    try:
+        run(_probe_graph(), work_dir=str(tmp_path), cache=False, workers=5)
+        assert ("workers", 5) in RECORD
+    finally:
+        registry._REGISTRY.pop(FakeWorkerProbe.id, None)
+
+
+def test_executor_workers_default_none(tmp_path):
+    registry.register(FakeWorkerProbe)
+    try:
+        run(_probe_graph(), work_dir=str(tmp_path), cache=False)
+        assert ("workers", None) in RECORD
+    finally:
+        registry._REGISTRY.pop(FakeWorkerProbe.id, None)
