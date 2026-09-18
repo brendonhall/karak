@@ -147,8 +147,13 @@ karak run --builtin tiled --input data/ --out output/sample      # tiled cluster
 karak run --builtin tiled-rare --input data/ --out output/sample # tiled + rare phases
 karak run my_flow.json --input data/ --out output/sample         # custom flow
 karak run --builtin global --set hdb.min_cluster_size=500 ...    # override any parameter
+karak run ... --workers 0                  # parallel stages on all cores (same results)
+karak run ... --device cuda                # GPU paths where stages support it
 karak validate my_flow.json        # structural checks without running
 karak schema                       # print every stage's parameter schema as JSON
+karak bench --builtin tiled --input DIR --out BASE \
+    --config baseline --config workers=0   # per-node timing comparison
+karak bench --compare a.json b.json        # cross-machine table
 ```
 
 Legacy YAML mode (converted to a flow internally, results identical):

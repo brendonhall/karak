@@ -22,8 +22,13 @@ karak run FLOW.json --input DIR --out BASE           # run a custom flow
 karak run ... --set NODE.PARAM=VALUE                 # override any node param
 karak run ... --no-qc                                # skip QC figure sinks
 karak run ... --no-cache                             # ignore the node cache
+karak run ... --workers 0                  # parallel stages on all cores (same results)
+karak run ... --device cuda                # GPU paths where stages support it
 karak validate (FLOW.json | --builtin NAME)          # structural validation
 karak schema                                         # stage palette as JSON
+karak bench --builtin tiled --input DIR --out BASE \
+    --config baseline --config workers=0   # per-node timing comparison
+karak bench --compare a.json b.json        # cross-machine table
 
 karak -c config.yaml                # legacy YAML mode (runs via the flow engine)
 karak --test-mode                   # fast validation: 4 elements, 4x downsample
