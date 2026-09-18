@@ -37,6 +37,10 @@ class DenoiseStage(Stage):
         Param("gamma", "float", 0.1, "Gamma",
               "Diffusion speed (0-0.25 stable)", min=0.0, max=0.25),
         Param("option", "int", 2, "Perona-Malik option", choices=(1, 2)),
+        Param("device", "str", "cpu", "Device",
+              "cpu or cuda (GPU bilateral via cuCIM; needs karak[cuda]). "
+              "Results match cpu within float tolerance.",
+              choices=("cpu", "cuda")),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
@@ -54,6 +58,7 @@ class DenoiseStage(Stage):
         )
         denoised = denoise_cube(
             cube.pixels, inputs["masks"].mineral_mask, config,
-            workers=resolve_workers(self.workers)
+            workers=resolve_workers(self.workers),
+            device=params["device"]
         )
         return {"cube": cube.replace(pixels=denoised, space=Space.DENOISED)}

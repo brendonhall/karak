@@ -95,8 +95,12 @@ def test_apply_device_sets_only_declaring_nodes():
         registry._REGISTRY.pop(FakeCudaStage.id, None)
 
 
-def test_apply_device_no_declaring_nodes_is_identity():
+def test_apply_device_sets_denoise_device():
     from karak.flow.builtins import apply_device, builtin_flow
 
     graph = builtin_flow("global")
-    assert apply_device(graph, "cuda") is graph
+    modified = apply_device(graph, "cuda")
+    # denoise stage now declares device parameter
+    assert modified.node("dn").params["device"] == "cuda"
+    # other nodes should not have device param
+    assert "device" not in modified.node("src").params

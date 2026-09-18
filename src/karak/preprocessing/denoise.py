@@ -62,6 +62,7 @@ def bilateral_denoise_cube(
     sigma_color: float | None = None,
     sigma_spatial: float = 1.0,
     workers: int = 1,
+    device: str = "cpu",
 ) -> np.ndarray:
     """Apply bilateral filter independently to each channel.
 
@@ -82,12 +83,39 @@ def bilateral_denoise_cube(
         Spatial distance sigma (default 1.0).
     workers : int
         Number of parallel workers (default 1).
+    device : str
+        Device to use: "cpu" or "cuda" (default "cpu").
 
     Returns
     -------
     denoised : np.ndarray
         (H, W, C) denoised cube with masked pixels set to 0.
     """
+    if device == "cuda":
+        from karak.accel import get_array_module, to_numpy
+
+        cp = get_array_module(device)  # raises StageError without CUDA
+        from cucim.skimage.restoration import denoise_bilateral as gpu_bilateral
+
+        gpu_cube = cp.asarray(cube)
+        gpu_mask = cp.asarray(mask)
+        H, W, C = gpu_cube.shape
+        out = cp.zeros_like(gpu_cube)
+        for i in range(C):
+            channel = gpu_cube[:, :, i].copy()
+            channel[~gpu_mask] = cp.nanmean(channel[gpu_mask])
+            out[:, :, i] = gpu_bilateral(
+                channel, sigma_color=sigma_color, sigma_spatial=sigma_spatial,
+            )
+        out[~gpu_mask] = 0.0
+        logger.info(
+            "Bilateral denoise complete (GPU): shape %s, sigma_color=%s, sigma_spatial=%s",
+            out.shape,
+            sigma_color,
+            sigma_spatial,
+        )
+        return to_numpy(out).astype(cube.dtype)
+
     H, W, C = cube.shape
     denoised = np.zeros_like(cube)
 
@@ -378,6 +406,7 @@ def denoise_cube(
     mask: np.ndarray,
     config: DenoiseConfig,
     workers: int = 1,
+    device: str = "cpu",
 ) -> np.ndarray:
     """Dispatch to bilateral or anisotropic denoiser based on config.
 
@@ -391,12 +420,21 @@ def denoise_cube(
         Denoising configuration with ``method`` field.
     workers : int
         Number of parallel workers (default 1).
+    device : str
+        Device to use: "cpu" or "cuda" (default "cpu").
 
     Returns
     -------
     denoised : np.ndarray
         (H, W, C) denoised cube.
     """
+    if device == "cuda" and config.method == "anisotropic_diffusion":
+        from karak.stages.base import StageError
+        raise StageError(
+            "device='cuda' supports only method='bilateral'; "
+            "anisotropic diffusion has no GPU path"
+        )
+
     if config.method == "bilateral":
         return bilateral_denoise_cube(
             cube,
@@ -404,6 +442,7 @@ def denoise_cube(
             sigma_color=config.sigma_color,
             sigma_spatial=config.sigma_spatial,
             workers=workers,
+            device=device,
         )
     elif config.method == "anisotropic_diffusion":
         return anisotropic_denoise_cube(

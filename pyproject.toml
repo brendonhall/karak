@@ -20,6 +20,13 @@ dependencies = [
     "rich>=13.0",
 ]
 
+[project.optional-dependencies]
+cuda = [
+    "cupy-cuda12x>=13",
+    "cuml-cu12>=25.2",
+    "cucim-cu12>=25.2",
+]
+
 [project.scripts]
 karak = "karak.cli.runner:main"
 

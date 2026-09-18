@@ -63,6 +63,7 @@ Edge-aware denoising (bilateral or Perona-Malik anisotropic diffusion) applied p
 | `kappa` | float | `50.0` | 0.0.. | Conductance coefficient for diffusion |
 | `gamma` | float | `0.1` | 0.0..0.25 | Diffusion speed (0-0.25 stable) |
 | `option` | int | `2` | 1 \| 2 | Perona-Malik option |
+| `device` | str | `cpu` | cpu \| cuda | cpu or cuda (GPU bilateral via cuCIM; needs karak[cuda]). Results match cpu within float tolerance. |
 
 ## `export_h5` — Export HDF5
 
