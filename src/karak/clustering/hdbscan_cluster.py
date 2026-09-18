@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 def run_hdbscan(
     pca_features: np.ndarray,
     config: HDBSCANConfig,
+    device: str = "cpu",
 ) -> tuple[np.ndarray, np.ndarray, hdbscan.HDBSCAN]:
     """Run HDBSCAN on PCA-reduced mineral pixel features.
 
@@ -34,6 +35,8 @@ def run_hdbscan(
         (N_mineral, n_components) PCA-transformed mineral pixel features.
     config : HDBSCANConfig
         HDBSCAN configuration parameters.
+    device : str
+        Device for clustering: "cpu" (hdbscan package) or "cuda" (cuML).
 
     Returns
     -------
@@ -44,6 +47,23 @@ def run_hdbscan(
     clusterer : hdbscan.HDBSCAN
         Fitted HDBSCAN model (for approximate_predict if needed later).
     """
+    if device == "cuda":
+        from karak.accel import get_array_module, to_numpy
+
+        cp = get_array_module(device)  # raises StageError without CUDA
+        from cuml.cluster import HDBSCAN as CumlHDBSCAN
+
+        min_samples = (config.min_samples if config.min_samples is not None
+                       else config.min_cluster_size)
+        model = CumlHDBSCAN(
+            min_cluster_size=config.min_cluster_size,
+            min_samples=min_samples,
+        )
+        model.fit(cp.asarray(pca_features, dtype=cp.float32))
+        labels = to_numpy(model.labels_).astype(np.int32)
+        probabilities = to_numpy(model.probabilities_).astype(np.float32)
+        return labels, probabilities, model
+
     n_mineral = pca_features.shape[0]
     min_samples = config.min_samples if config.min_samples is not None else config.min_cluster_size
 

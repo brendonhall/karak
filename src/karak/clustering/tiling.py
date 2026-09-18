@@ -477,6 +477,7 @@ def run_tiled_hdbscan(
     progress_callback: Callable[[int, int, TileResult], None] | None = None,
     skip_knn: bool = False,
     workers: int = 1,
+    device: str = "cpu",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[TileResult], list[PhaseEntry]]:
     """Run tiled progressive HDBSCAN with phase registry unification.
 
@@ -497,6 +498,8 @@ def run_tiled_hdbscan(
         (default). >1 parallelizes only the per-tile clustering; the
         merge loop stays sequential, so results are byte-identical to
         workers=1.
+    device : str
+        Device for clustering: "cpu" (hdbscan package) or "cuda" (cuML).
 
     Returns
     -------
@@ -541,13 +544,14 @@ def run_tiled_hdbscan(
     # the merge loop stays sequential in tile order for byte-identical
     # results regardless of worker count.
     tile_hdbscan: dict[int, tuple] | None = None
-    if workers > 1 and len(tiles) > 1:
+    if workers > 1 and len(tiles) > 1 and device == "cpu":
         from concurrent.futures import ProcessPoolExecutor
 
         with ProcessPoolExecutor(max_workers=workers) as pool:
             futures = {
                 tile.tile_id: pool.submit(
                     run_hdbscan, pca_features[tile.pixel_indices], hdb_cfg,
+                    device=device,
                 )
                 for tile in tiles
             }
@@ -565,7 +569,8 @@ def run_tiled_hdbscan(
         if tile_hdbscan is not None:
             tile_labels, tile_probs, _ = tile_hdbscan[tile.tile_id]
         else:
-            tile_labels, tile_probs, _ = run_hdbscan(tile_features, hdb_cfg)
+            tile_labels, tile_probs, _ = run_hdbscan(tile_features, hdb_cfg,
+                                                     device=device)
 
         n_noise = int(np.sum(tile_labels == -1))
         n_clusters = len(set(tile_labels.tolist()) - {-1})

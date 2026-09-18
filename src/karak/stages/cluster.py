@@ -23,6 +23,11 @@ _HDBSCAN_PARAMS = [
           "Max pixels for fitting (rest via approximate_predict); 0 = all",
           min=0),
     Param("random_state", "int", 42, "Random seed"),
+    Param("device", "str", "cpu", "Device",
+          "cpu (hdbscan package, exact baseline) or cuda (cuML; needs "
+          "karak[cuda]). cuda results differ from cpu and ignore "
+          "subsample_n.",
+          choices=("cpu", "cuda")),
 ]
 
 
@@ -50,7 +55,8 @@ class HdbscanGlobalStage(Stage):
     def apply(self, inputs: dict, params: dict) -> dict:
         features = inputs["features"]
         labels, probabilities, _ = run_hdbscan(
-            features.features, _hdbscan_config(params)
+            features.features, _hdbscan_config(params),
+            device=params["device"]
         )
         return {
             "labels": Labels(
@@ -118,6 +124,7 @@ class HdbscanTiledStage(Stage):
                 config,
                 skip_knn=True,
                 workers=resolve_workers(self.workers),
+                device=params["device"],
             )
         )
         return {
