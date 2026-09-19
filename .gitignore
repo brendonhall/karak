@@ -7,3 +7,6 @@ build/
 *.h5
 .cache/
 .pytest_cache/
+notebooks/data/
+notebooks/.ipynb_checkpoints/
+.superpowers/
