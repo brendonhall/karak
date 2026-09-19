@@ -24,9 +24,36 @@ from scipy.spatial.distance import cosine
 from sklearn.neighbors import KNeighborsClassifier
 
 if TYPE_CHECKING:
-    from karak.config import ClusterConfig
+    from karak.config import ClusterConfig, HDBSCANConfig
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Pool worker
+# ---------------------------------------------------------------------------
+
+
+def _run_hdbscan_for_pool(
+    features: np.ndarray,
+    hdb_cfg: "HDBSCANConfig",
+    device: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run HDBSCAN in a pool worker and return only labels/probabilities.
+
+    Drops the fitted model (the third element of ``run_hdbscan``'s return)
+    before it gets pickled back to the parent process — each tile's fitted
+    model holds prediction data that is never used after the merge loop
+    reads labels and probabilities, and pickling/holding all of them at
+    once is wasted memory and IPC cost. Caps hdbscan's internal joblib
+    parallelism to 1, since the pool already parallelizes across tiles.
+    """
+    from karak.clustering.hdbscan_cluster import run_hdbscan
+
+    labels, probs, _ = run_hdbscan(
+        features, hdb_cfg, device=device, core_dist_n_jobs=1,
+    )
+    return labels, probs
 
 
 # ---------------------------------------------------------------------------
@@ -545,13 +572,17 @@ def run_tiled_hdbscan(
     # results regardless of worker count.
     tile_hdbscan: dict[int, tuple] | None = None
     if workers > 1 and len(tiles) > 1 and device == "cpu":
+        import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
 
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        mp_context = multiprocessing.get_context("forkserver")
+        with ProcessPoolExecutor(
+            max_workers=workers, mp_context=mp_context,
+        ) as pool:
             futures = {
                 tile.tile_id: pool.submit(
-                    run_hdbscan, pca_features[tile.pixel_indices], hdb_cfg,
-                    device=device,
+                    _run_hdbscan_for_pool,
+                    pca_features[tile.pixel_indices], hdb_cfg, device,
                 )
                 for tile in tiles
             }
@@ -567,7 +598,7 @@ def run_tiled_hdbscan(
         # Run per-tile HDBSCAN (reuse existing function, or read the
         # precomputed parallel result).
         if tile_hdbscan is not None:
-            tile_labels, tile_probs, _ = tile_hdbscan[tile.tile_id]
+            tile_labels, tile_probs = tile_hdbscan[tile.tile_id]
         else:
             tile_labels, tile_probs, _ = run_hdbscan(tile_features, hdb_cfg,
                                                      device=device)

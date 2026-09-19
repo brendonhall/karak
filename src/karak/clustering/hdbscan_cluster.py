@@ -22,6 +22,7 @@ def run_hdbscan(
     pca_features: np.ndarray,
     config: HDBSCANConfig,
     device: str = "cpu",
+    core_dist_n_jobs: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, hdbscan.HDBSCAN]:
     """Run HDBSCAN on PCA-reduced mineral pixel features.
 
@@ -37,6 +38,11 @@ def run_hdbscan(
         HDBSCAN configuration parameters.
     device : str
         Device for clustering: "cpu" (hdbscan package) or "cuda" (cuML).
+    core_dist_n_jobs : int or None
+        Forwarded to ``hdbscan.HDBSCAN`` when not None, to cap joblib's
+        core-distance parallelism (e.g. when called from a worker pool
+        where each process should stay single-threaded internally). None
+        leaves hdbscan's own default (4 jobs) untouched.
 
     Returns
     -------
@@ -69,6 +75,10 @@ def run_hdbscan(
 
     rng = np.random.default_rng(config.random_state)
 
+    hdbscan_kwargs: dict = {}
+    if core_dist_n_jobs is not None:
+        hdbscan_kwargs["core_dist_n_jobs"] = core_dist_n_jobs
+
     if config.subsample_n is not None and config.subsample_n < n_mineral:
         # Subsample fitting
         n_fit = config.subsample_n
@@ -85,6 +95,7 @@ def run_hdbscan(
             min_cluster_size=config.min_cluster_size,
             min_samples=min_samples,
             prediction_data=True,
+            **hdbscan_kwargs,
         )
         clusterer.fit(fit_features)
 
@@ -106,6 +117,7 @@ def run_hdbscan(
             min_cluster_size=config.min_cluster_size,
             min_samples=min_samples,
             prediction_data=True,
+            **hdbscan_kwargs,
         )
         clusterer.fit(pca_features)
 

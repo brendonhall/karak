@@ -122,9 +122,13 @@ def bilateral_denoise_cube(
     args = [(cube[:, :, i].copy(), mask, sigma_color, sigma_spatial)
             for i in range(C)]
     if workers > 1:
+        import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
 
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        mp_context = multiprocessing.get_context("forkserver")
+        with ProcessPoolExecutor(
+            max_workers=workers, mp_context=mp_context,
+        ) as pool:
             channels = list(pool.map(_bilateral_channel, *zip(*args)))
     else:
         channels = [_bilateral_channel(*a) for a in args]
@@ -188,9 +192,13 @@ def anisotropic_denoise_cube(
     args = [(cube[:, :, i].copy(), mask, niter, kappa, gamma, option)
             for i in range(C)]
     if workers > 1:
+        import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
 
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        mp_context = multiprocessing.get_context("forkserver")
+        with ProcessPoolExecutor(
+            max_workers=workers, mp_context=mp_context,
+        ) as pool:
             channels = list(pool.map(_anisotropic_channel, *zip(*args)))
     else:
         channels = [_anisotropic_channel(*a) for a in args]
@@ -429,7 +437,7 @@ def denoise_cube(
         (H, W, C) denoised cube.
     """
     if device == "cuda" and config.method == "anisotropic_diffusion":
-        from karak.stages.base import StageError
+        from karak.errors import StageError
         raise StageError(
             "device='cuda' supports only method='bilateral'; "
             "anisotropic diffusion has no GPU path"

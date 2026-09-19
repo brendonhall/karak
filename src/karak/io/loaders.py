@@ -409,9 +409,13 @@ def load_element_maps(
         # Warm the LUT cache once so pool workers load it from disk
         # instead of each building a fresh one.
         get_full_lut(loader.colormap, base_dir=input_dir)
+        import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
 
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        mp_context = multiprocessing.get_context("forkserver")
+        with ProcessPoolExecutor(
+            max_workers=workers, mp_context=mp_context,
+        ) as pool:
             futures = []
             for kind, key, fpath in jobs:
                 if kind == "bse":

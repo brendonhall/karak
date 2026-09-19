@@ -10,7 +10,7 @@ import os
 
 import numpy as np
 
-from karak.stages.base import StageError
+from karak.errors import StageError
 
 _INSTALL_HINT = (
     "device='cuda' requested but no usable GPU stack was found. "

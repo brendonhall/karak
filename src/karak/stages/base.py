@@ -11,9 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from karak.errors import StageError
 
-class StageError(Exception):
-    """Raised when a stage receives invalid inputs or parameters."""
+__all__ = ["StageError", "Param", "Port", "Stage"]
 
 
 _TRUE_STRINGS = {"true", "1", "yes", "on"}
