@@ -3,8 +3,9 @@
 TIMA renders element maps through a fixed 256-entry palette: black at
 index 0 (zero counts), then a jet ramp from (0, 0, 132) to (128, 0, 0) in
 steps of about 4. Matplotlib's jet cuts the cyan and yellow corners of
-that ramp by up to 23 counts, so inverting TIMA exports against it merges
-neighbouring levels. The palette ships with karak, recovered from the
+that ramp and places its breakpoints differently, so inverting TIMA
+exports against it merges neighbouring levels and shifts others by up to
+8 levels. The palette ships with karak, recovered from the
 NWA 4587 exports, where all 256 entries occur.
 """
 

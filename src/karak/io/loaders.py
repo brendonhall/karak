@@ -70,7 +70,8 @@ def _resolve_palette(
       - ``'tima:NAME'`` — a palette shipped in ``karak/io/palettes/``.
         ``'tima:jet'`` is TIMA's 256-entry jet: black (zero counts) at
         index 0, then a ramp that reaches the cyan and yellow corners
-        matplotlib's jet cuts. Index k inverts to exactly k/255.
+        matplotlib's jet cuts, with MATLAB-layout breakpoints. Index k
+        inverts to exactly k/255.
       - ``'cmap:NAME'`` — matplotlib colormap (sampled at _CMAP_PALETTE_N points)
       - ``'lut:PATH'`` — (N, 3) uint8 LUT loaded from an .npy file. Path is
         resolved relative to ``base_dir`` if not absolute.

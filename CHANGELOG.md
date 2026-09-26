@@ -15,9 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The default colormap is now `tima:jet` instead of `cmap:jet`.
-  Matplotlib's jet cuts the cyan and yellow corners of TIMA's ramp by up to
-  23 counts, so on TIMA exports it merged 22 of 255 levels and shifted
-  intensities by 1.2 levels on average (max 8 levels, 0.032).
+  Matplotlib's jet cuts the cyan and yellow corners of TIMA's ramp and
+  places its segment breakpoints differently, so on TIMA exports it merged
+  22 of 255 levels and shifted intensities by 1.2 levels on average (max 8
+  levels, 0.032).
 - The default `header_trim_px` is now 0 instead of 100. TIMA element-map
   exports carry no header band; the old trim removed 100 rows of sample.
   Valid-mask CSVs are in full-resolution coordinates and still align.
