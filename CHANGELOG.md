@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `colormap: tima:jet`, the 256-entry palette TIMA renders element maps
+  with, recovered from the NWA 4587 exports (all 256 entries occur there).
+  Level k inverts to exactly k/255.
+
+### Changed
+
+- The default colormap is now `tima:jet` instead of `cmap:jet`.
+  Matplotlib's jet cuts the cyan and yellow corners of TIMA's ramp by up to
+  23 counts, so on TIMA exports it merged 22 of 255 levels and shifted
+  intensities by 1.2 levels on average (max 8 levels, 0.032).
+- The default `header_trim_px` is now 0 instead of 100. TIMA element-map
+  exports carry no header band; the old trim removed 100 rows of sample.
+  Valid-mask CSVs are in full-resolution coordinates and still align.
+- To reproduce results from 0.2.0 and earlier exactly, set
+  `colormap: cmap:jet` and `header_trim_px: 100`
+  (`--set src.colormap=cmap:jet --set src.header_trim_px=100`).
+
 ## [0.2.0] - 2026-08-22
 
 Modular re-architecture into three layers (numeric core, stages, flow),

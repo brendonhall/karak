@@ -195,11 +195,11 @@ Load false-color element map images, invert the colormap to scalar [0, 1] intens
 | `file_glob` | str | `*.png` | - | Glob pattern (relative to input_dir) for element map files |
 | `filename_pattern` | str | `None` | - | Pattern with {element} placeholder; None = legacy TIMA heuristic |
 | `bse_filename` | str | `None` | - | Exact BSE file name when it does not match the glob |
-| `colormap` | str | `cmap:jet` | - | 'cmap:NAME' or 'lut:PATH' inversion spec |
+| `colormap` | str | `tima:jet` | - | 'tima:jet', 'cmap:NAME' or 'lut:PATH' inversion spec |
 | `exclude_elements` | str | `Fe-L` | - | Comma-separated element names to skip |
 | `include_elements` | str | `None` | - | Comma-separated allowlist; None = load all |
 | `bse_channel` | str | `SEM` | - | Element name of the BSE/SEM channel |
-| `header_trim_px` | int | `100` | 0.., px | Header trim |
+| `header_trim_px` | int | `0` | 0.., px | Header trim |
 | `bottom_trim_px` | int | `0` | 0.., px | Bottom trim |
 | `left_trim_px` | int | `0` | 0.., px | Left trim |
 | `right_trim_px` | int | `0` | 0.., px | Right trim |

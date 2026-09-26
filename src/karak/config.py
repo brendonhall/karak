@@ -29,8 +29,11 @@ class DownsampleConfig(BaseModel):
     """Image downsampling and edge-trimming parameters."""
 
     header_trim_px: int = Field(
-        default=100,
-        description="Pixels to trim from top of each image (scale bar region)",
+        default=0,
+        description=(
+            "Pixels to trim from top of each image, for exports with a "
+            "scale-bar header. TIMA element-map exports have none."
+        ),
     )
     bottom_trim_px: int = Field(
         default=0,
@@ -81,9 +84,10 @@ class LoaderConfig(BaseModel):
         ),
     )
     colormap: str = Field(
-        default="cmap:jet",
+        default="tima:jet",
         description=(
             "Colormap specification for inverting false-color element maps. "
+            "'tima:jet' is the 256-entry palette TIMA renders with. "
             "'cmap:NAME' looks up a matplotlib colormap by name (e.g. "
             "'cmap:jet', 'cmap:gist_ncar'). 'lut:PATH' loads a (N, 3) uint8 "
             "LUT from an .npy file (path is resolved relative to input_dir "

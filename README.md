@@ -97,7 +97,7 @@ exclude_elements: ["Fe-L"]
 bse_channel: "SEM"
 
 downsample:
-  header_trim_px: 100
+  header_trim_px: 0
   downsample_factor: 2
 
 mask:

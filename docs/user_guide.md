@@ -200,17 +200,17 @@ directory**, so a config can travel with its data.
 | `file_glob` | `"*.png"` | Glob pattern (relative to `input_dir`) for element map files. |
 | `filename_pattern` | `null` | Pattern with `{element}` placeholder (optional `{sample}` wildcard) to extract element names. `null` = legacy heuristic: split basename on `-`, join parts[2:]. |
 | `bse_filename` | `null` | Exact filename of the BSE channel when it does not match `file_glob`. `null` = find BSE within the glob by matching `bse_channel`. |
-| `colormap` | `"cmap:jet"` | Colormap spec for inversion: `cmap:NAME` (matplotlib colormap) or `lut:PATH` ((N, 3) uint8 `.npy` LUT; relative paths resolve against `input_dir`). Bare `jet` is accepted as shorthand. |
+| `colormap` | `"tima:jet"` | Colormap spec for inversion: `tima:jet` (the 256-entry palette TIMA renders with; level k inverts to exactly k/255), `cmap:NAME` (matplotlib colormap) or `lut:PATH` ((N, 3) uint8 `.npy` LUT; relative paths resolve against `input_dir`). Bare `jet` is accepted as shorthand. |
 
 The first run with a given colormap builds a 256³ RGB-to-scalar lookup
-table (30–60 s for a 4096-entry palette). It is cached on disk under the
+table (about 10 s for `tima:jet`, 30–60 s for a 4096-entry palette). It is cached on disk under the
 package's `.cache/` directory and reused by all later runs.
 
 ### `downsample` (`DownsampleConfig`)
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `header_trim_px` | `100` | Pixels trimmed from the top of each image (scale bar region). |
+| `header_trim_px` | `0` | Pixels trimmed from the top of each image, for exports with a scale-bar header. TIMA element-map exports have none. |
 | `bottom_trim_px` | `0` | Pixels trimmed from the bottom (annotation strip). |
 | `left_trim_px` | `0` | Pixels trimmed from the left edge. |
 | `right_trim_px` | `0` | Pixels trimmed from the right edge (annotation/colorbar strip). |

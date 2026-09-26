@@ -5,9 +5,9 @@ Element maps are false-color RGB images. Each map is converted to a scalar
 grayscale (R==G==B) and uses standard ``rgb2gray``.
 
 The colormap is configurable per-dataset via ``LoaderConfig.colormap``:
-``'cmap:NAME'`` looks up a matplotlib colormap; ``'lut:PATH'`` loads a
-(N, 3) uint8 LUT from an .npy file. Default is ``'cmap:jet'`` (TIMA
-convention). Filenames are parsed with a configurable
+``'tima:jet'`` (the default) is the 256-entry palette TIMA renders with,
+recovered from real exports; ``'cmap:NAME'`` looks up a matplotlib
+colormap; ``'lut:PATH'`` loads a (N, 3) uint8 LUT from an .npy file. Filenames are parsed with a configurable
 ``filename_pattern`` (e.g. ``'NAW 4587-2_S3858-{element}.png'``).
 
 All channels are uniformly downsampled and edge-trimmed.
@@ -45,6 +45,9 @@ _NON_ELEMENT_FILES = {"Phases"}
 # LUT uses however many entries it contains.
 _CMAP_PALETTE_N = 4096
 
+# Palettes that ship with karak, addressed as 'tima:NAME'
+_PALETTE_DIR = Path(__file__).resolve().parent / "palettes"
+
 # Cache directory for the full RGB→scalar lookup tables (one per palette)
 _CACHE_DIR = Path(__file__).resolve().parent.parent.parent.parent / ".cache"
 
@@ -64,12 +67,21 @@ def _resolve_palette(
     in [0, 1] giving the scalar value at each palette index.
 
     Accepts:
+      - ``'tima:NAME'`` — a palette shipped in ``karak/io/palettes/``.
+        ``'tima:jet'`` is TIMA's 256-entry jet: black (zero counts) at
+        index 0, then a ramp that reaches the cyan and yellow corners
+        matplotlib's jet cuts. Index k inverts to exactly k/255.
       - ``'cmap:NAME'`` — matplotlib colormap (sampled at _CMAP_PALETTE_N points)
       - ``'lut:PATH'`` — (N, 3) uint8 LUT loaded from an .npy file. Path is
         resolved relative to ``base_dir`` if not absolute.
       - bare matplotlib cmap name (e.g. ``'jet'``) — equivalent to ``'cmap:jet'``
     """
     spec = colormap_spec.strip()
+    if spec.startswith("tima:"):
+        path = _PALETTE_DIR / f"tima_{spec[len('tima:'):]}.npy"
+        if not path.exists():
+            raise ValueError(f"Unknown built-in palette: {colormap_spec!r}")
+        return _resolve_palette(f"lut:{path}")
     if spec.startswith("cmap:"):
         name = spec[len("cmap:"):]
         scalars = np.linspace(0, 1, _CMAP_PALETTE_N, dtype=np.float32)
@@ -97,7 +109,7 @@ def _resolve_palette(
         return _resolve_palette(f"cmap:{spec}", base_dir=base_dir)
     raise ValueError(
         f"Unrecognized colormap spec: {colormap_spec!r}. "
-        f"Use 'cmap:NAME' or 'lut:PATH'."
+        f"Use 'tima:jet', 'cmap:NAME' or 'lut:PATH'."
     )
 
 
@@ -167,7 +179,7 @@ def get_full_lut(
 
 def invert_colormap(
     rgb_image: np.ndarray,
-    colormap_spec: str = "cmap:jet",
+    colormap_spec: str = "tima:jet",
     *,
     base_dir: str | Path | None = None,
 ) -> np.ndarray:
@@ -178,7 +190,7 @@ def invert_colormap(
     rgb_image : np.ndarray
         (H, W, 3) uint8 RGB image.
     colormap_spec : str
-        Colormap specification — ``'cmap:NAME'`` or ``'lut:PATH'``.
+        Colormap specification — ``'tima:jet'``, ``'cmap:NAME'`` or ``'lut:PATH'``.
         See :func:`_resolve_palette`.
     base_dir : str or Path, optional
         Base directory for resolving relative ``lut:`` paths.
@@ -280,7 +292,7 @@ def load_element_maps(
 
     Element maps are false-color RGB images. Each is inverted to a scalar
     [0, 1] intensity using the colormap specified by ``loader_config``
-    (default ``'cmap:jet'``). The BSE channel is true grayscale.
+    (default ``'tima:jet'``). The BSE channel is true grayscale.
 
     Parameters
     ----------
