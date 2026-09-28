@@ -64,3 +64,60 @@ def test_parallel_load_is_byte_identical(scene_dir):
     assert np.array_equal(b1, b4)
     for name in n1:
         assert np.array_equal(e1[name], e4[name]), name
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_on_file_fires_once_per_file(scene_dir, workers):
+    from karak.config import LoaderConfig
+
+    data_dir, colormap = scene_dir
+    calls = []
+    load_element_maps(
+        str(data_dir),
+        DownsampleConfig(header_trim_px=0, downsample_factor=1),
+        exclude_elements=[],
+        loader_config=LoaderConfig(colormap=colormap),
+        workers=workers,
+        on_file=lambda done, total, element: calls.append((done, total, element)),
+    )
+    assert [c[0] for c in calls] == [1, 2, 3, 4]
+    assert {c[1] for c in calls} == {4}
+    assert sorted(c[2] for c in calls) == ["A", "B", "C", "SEM"]
+
+
+def test_loader_logs_discovery_line(scene_dir, caplog):
+    import logging
+
+    from karak.config import LoaderConfig
+
+    data_dir, colormap = scene_dir
+    with caplog.at_level(logging.INFO, logger="karak.io.loaders"):
+        load_element_maps(
+            str(data_dir),
+            DownsampleConfig(header_trim_px=0, downsample_factor=1),
+            exclude_elements=["C"],
+            loader_config=LoaderConfig(colormap=colormap),
+        )
+    assert (
+        "Found 4 matching files: 3 to load (BSE channel 'SEM'), excluded: C"
+        in caplog.text
+    )
+
+
+def test_load_stage_reports_progress(scene_dir):
+    from karak.stages.load import LoadElementsStage
+
+    data_dir, colormap = scene_dir
+    events = []
+
+    class Recorder:
+        def progress(self, node_id, done, total, msg=""):
+            events.append((node_id, done, total, msg))
+
+    stage = LoadElementsStage()
+    stage.reporter = Recorder()
+    stage.node_id = "src"
+    stage.run({}, {"input_dir": str(data_dir), "colormap": colormap,
+                   "exclude_elements": ""})
+    assert [e[1] for e in events] == [1, 2, 3, 4]
+    assert all(e[0] == "src" and e[2] == 4 for e in events)

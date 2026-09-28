@@ -94,6 +94,12 @@ class LoadElementsStage(Stage):
         include = _split_csv(params["include_elements"]) or None
         from karak.accel import resolve_workers
 
+        reporter, node_id = self.reporter, self.node_id
+
+        def on_file(done: int, total: int, element: str) -> None:
+            if reporter is not None:
+                reporter.progress(node_id, done, total, element)
+
         elements, bse, names = load_element_maps(
             params["input_dir"],
             downsample,
@@ -102,6 +108,7 @@ class LoadElementsStage(Stage):
             include_elements=include,
             loader_config=loader,
             workers=resolve_workers(self.workers),
+            on_file=on_file,
         )
         cube = build_compositional_cube(elements, names)
         return {

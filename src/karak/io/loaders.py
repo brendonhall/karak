@@ -16,6 +16,7 @@ All channels are uniformly downsampled and edge-trimmed.
 from __future__ import annotations
 
 import glob
+from collections.abc import Callable
 import hashlib
 import logging
 import os
@@ -288,6 +289,7 @@ def load_element_maps(
     include_elements: list[str] | None = None,
     loader_config: LoaderConfig | None = None,
     workers: int = 1,
+    on_file: Callable[[int, int, str], None] | None = None,
 ) -> tuple[dict[str, np.ndarray], np.ndarray, list[str]]:
     """Load, invert, downsample, and trim element maps and the BSE channel.
 
@@ -317,6 +319,10 @@ def load_element_maps(
         Number of worker processes for per-file loading. 1 (default)
         loads serially in this process; >1 uses a ``ProcessPoolExecutor``.
         Output is byte-identical regardless of ``workers``.
+    on_file : callable, optional
+        Called as ``on_file(done, total, element)`` after each file is
+        loaded (elements and BSE alike), in completion order. Lets callers
+        show progress without the loader knowing about any UI.
 
     Returns
     -------
@@ -393,6 +399,7 @@ def load_element_maps(
     # Decide: walk the file list and record what to do with each file,
     # without doing any of the actual work yet.
     jobs: list[tuple[str, str, str]] = []
+    excluded: list[str] = []
     for fpath in files:
         filename = os.path.basename(fpath)
         # Skip the BSE file if it was already loaded separately
@@ -412,10 +419,17 @@ def load_element_maps(
             jobs.append(("bse", element, fpath))
         elif element in skip:
             logger.info("Skipping excluded channel: %s", element)
+            excluded.append(element)
         elif include is not None and element not in include:
             logger.debug("Skipping (not in include_elements): %s", element)
         else:
             jobs.append(("element", element, fpath))
+
+    logger.info(
+        "Found %d matching files: %d to load (BSE channel %r), excluded: %s",
+        len(files), len(jobs), bse_channel, ", ".join(excluded) or "none",
+    )
+    total = len(jobs)
 
     # Execute: serial in-process, or fanned out to a process pool.
     if workers > 1 and jobs:
@@ -423,29 +437,39 @@ def load_element_maps(
         # instead of each building a fresh one.
         get_full_lut(loader.colormap, base_dir=input_dir)
         import multiprocessing
-        from concurrent.futures import ProcessPoolExecutor
+        from concurrent.futures import ProcessPoolExecutor, as_completed
 
         mp_context = multiprocessing.get_context("forkserver")
+        arrays: list = [None] * len(jobs)
         with ProcessPoolExecutor(
             max_workers=workers, mp_context=mp_context,
         ) as pool:
-            futures = []
-            for kind, key, fpath in jobs:
+            futures = {}
+            for index, (kind, key, fpath) in enumerate(jobs):
                 if kind == "bse":
-                    futures.append(pool.submit(_process_bse_file, fpath, factor, trims))
+                    future = pool.submit(_process_bse_file, fpath, factor, trims)
                 else:
-                    futures.append(pool.submit(
+                    future = pool.submit(
                         _process_element_file, fpath, loader.colormap,
                         input_dir, factor, trims,
-                    ))
-            arrays = [f.result() for f in futures]
+                    )
+                futures[future] = index
+            for done, future in enumerate(as_completed(futures), start=1):
+                index = futures[future]
+                arrays[index] = future.result()
+                if on_file is not None:
+                    on_file(done, total, jobs[index][1])
     else:
-        arrays = [
-            _process_bse_file(fpath, factor, trims) if kind == "bse"
-            else _process_element_file(fpath, loader.colormap, input_dir,
-                                       factor, trims)
-            for kind, key, fpath in jobs
-        ]
+        arrays = []
+        for kind, key, fpath in jobs:
+            if kind == "bse":
+                arrays.append(_process_bse_file(fpath, factor, trims))
+            else:
+                arrays.append(_process_element_file(
+                    fpath, loader.colormap, input_dir, factor, trims,
+                ))
+            if on_file is not None:
+                on_file(len(arrays), total, key)
 
     # Assemble: same log lines regardless of which path executed.
     for (kind, key, fpath), arr in zip(jobs, arrays):
