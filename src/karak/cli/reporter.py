@@ -16,7 +16,8 @@ class RichReporter:
     """Line-based output: `karak run --plain`, or any non-terminal stdout."""
 
     def __init__(self, console: Console | None = None):
-        self.console = console or Console()
+        # soft_wrap: log files and pipes get whole lines, not 80-column pieces
+        self.console = console or Console(soft_wrap=True)
         self._hashes: dict[str, str] = {}
         self._closed = False
 

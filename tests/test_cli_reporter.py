@@ -73,3 +73,10 @@ def test_close_is_idempotent():
     reporter.close("interrupted")
     reporter.close()
     assert console.export_text().count("interrupted") == 1
+
+
+def test_plain_default_console_does_not_wrap_long_lines(capsys):
+    reporter = RichReporter()
+    long_line = "Loaded element 'Si' (inverted via tima:jet): " + "x" * 150
+    reporter.log("info", long_line)
+    assert long_line in capsys.readouterr().out
