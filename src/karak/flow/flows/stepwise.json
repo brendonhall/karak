@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "stepwise",
+  "nodes": [
+    {
+      "id": "src",
+      "type": "load_elements",
+      "params": {
+        "input_dir": "{input}"
+      }
+    }
+  ],
+  "edges": []
+}

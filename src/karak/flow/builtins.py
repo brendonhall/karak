@@ -164,10 +164,23 @@ def tiled_rare_flow() -> Graph:
     return _assemble("tiled-rare", tiled=True, rare=True)
 
 
+def stepwise_flow() -> Graph:
+    """The flow the run dashboard is built against, one step at a time.
+
+    It gains a node each time a pipeline step joins the dashboard work;
+    today it holds only the load step.
+    """
+    return Graph(
+        name="stepwise",
+        nodes=(Node("src", "load_elements", {"input_dir": "{input}"}),),
+    )
+
+
 _BUILTINS = {
     "global": global_flow,
     "tiled": tiled_flow,
     "tiled-rare": tiled_rare_flow,
+    "stepwise": stepwise_flow,
 }
 
 

@@ -12,7 +12,7 @@ from karak.flow.graph import Graph
 from karak.flow.validate import validate
 
 
-@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare"])
+@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise"])
 def test_builtin_flows_validate_clean(name):
     graph = builtin_flow(name)
     errors = [i for i in validate(graph) if i.level == "error"]
@@ -24,7 +24,7 @@ def test_unknown_builtin_raises():
         builtin_flow("nope")
 
 
-@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare"])
+@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise"])
 def test_shipped_json_matches_builtin(name):
     graph = builtin_flow(name)
     shipped = json.loads(
@@ -119,3 +119,9 @@ def test_apply_device_no_declaring_nodes_is_identity():
     result = apply_device(graph, "cuda")
     # When no nodes declare device, should return the same graph object
     assert result is graph
+
+
+def test_stepwise_starts_with_the_load_step():
+    graph = builtin_flow("stepwise")
+    assert [(n.id, n.type) for n in graph.nodes] == [("src", "load_elements")]
+    assert graph.node("src").params == {"input_dir": "{input}"}

@@ -1,7 +1,7 @@
 """karak CLI: flow subcommands plus the legacy YAML config path.
 
 New style:
-    karak run (FLOW.json | --builtin global|tiled|tiled-rare) --input DIR --out BASE
+    karak run (FLOW.json | --builtin global|tiled|tiled-rare|stepwise) --input DIR --out BASE
     karak validate (FLOW.json | --builtin NAME)
     karak schema
 
