@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `karak run` shows a live dashboard on a terminal: run context, the
+  running step's parameters (changed ones first), per-file progress for
+  the load step, output summaries, cache status with recipe hashes,
+  memory use, and the latest log lines. The final frame stays on screen
+  as the run summary. `--plain` (automatic when stdout is not a terminal)
+  prints the same information as lines.
+- `stepwise` builtin flow, which grows one step at a time; it currently
+  runs the load step only.
+- Payloads have `summary()`; the cache stores it next to each payload.
+- Exit codes for `karak run`: 1 when a step fails, 130 on Ctrl-C.
+
 - `colormap: tima:jet`, the 256-entry palette TIMA renders element maps
   with, recovered from the NWA 4587 exports (all 256 entries occur there).
   Level k inverts to exactly k/255.

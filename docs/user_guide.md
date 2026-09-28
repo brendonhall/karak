@@ -144,13 +144,17 @@ payloads via `.replace()` instead of mutating inputs.
 ## Flows
 
 A flow is a JSON DAG of stages: `nodes` (stage `type` + `params`) connected
-by `edges` (output port to input port). Three builtins ship with karak:
+by `edges` (output port to input port). Four builtins ship with karak:
 
 | Flow | Clustering path |
 |------|-----------------|
 | `global` | `hdbscan_global → noise_assign` |
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
+| `stepwise` | none yet: load step only |
+
+`stepwise` grows one step at a time as steps join the dashboard work;
+today it runs only the load step (`src`).
 
 ```bash
 karak run --builtin global --input data/ --out output/sample
@@ -367,12 +371,27 @@ deprecated no-op.
 Flow mode:
 
 ```
-karak run (FLOW.json | --builtin global|tiled|tiled-rare)
+karak run (FLOW.json | --builtin global|tiled|tiled-rare|stepwise)
           --input DIR --out BASE [--work DIR] [--no-cache] [--no-qc]
-          [--set NODE.PARAM=VALUE ...]
+          [--set NODE.PARAM=VALUE ...] [--plain]
 karak validate (FLOW.json | --builtin NAME)
 karak schema
 ```
+
+On a terminal, `karak run` shows a live dashboard: the run context
+(input, output, workers, device, cache, memory), a table of steps with
+their status and time, the running step's parameters with changed values
+first, a progress bar where the stage reports progress (the load step
+reports one tick per file), output summaries such as
+`ElementCube 6525×3990×19 float32 1.98 GB space=raw`, and the last five
+log lines. A cached step shows the first 8 characters of its recipe hash.
+When the run ends, the last frame stays on screen as the summary.
+
+With `--plain`, or when stdout is not a terminal (a pipe, `nohup`, a CI
+log), the same information prints as plain lines.
+
+`karak run` exits with 1 when a step fails and with 130 on Ctrl-C;
+completed steps stay cached.
 
 Legacy YAML mode:
 

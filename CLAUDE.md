@@ -21,6 +21,8 @@ karak run --builtin tiled|tiled-rare ...             # tiled variants
 karak run FLOW.json --input DIR --out BASE           # run a custom flow
 karak run ... --set NODE.PARAM=VALUE                 # override any node param
 karak run ... --no-qc                                # skip QC figure sinks
+karak run --builtin stepwise --input DIR --out BASE  # the growing step-by-step flow (load only, for now)
+karak run ... --plain                      # line output instead of the live dashboard
 karak run ... --no-cache                             # ignore the node cache
 karak run ... --workers 0                  # parallel stages on all cores (same results)
 karak run ... --device cuda                # GPU paths where stages support it
