@@ -104,6 +104,7 @@ class Stage:
 
     reporter: Any = None            # injected by the flow executor; duck-typed
     workers: int | None = None       # injected by the flow executor; None = serial
+    node_id: str = ""               # injected by the flow executor
 
     @classmethod
     def schema(cls) -> dict:

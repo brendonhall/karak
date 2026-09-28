@@ -19,10 +19,12 @@ import numpy as np
 from karak.flow.cache import (
     has_payload,
     load_payload,
+    load_summary,
     recipe_hash,
     store_payload,
+    store_summary,
 )
-from karak.flow.events import NullReporter
+from karak.flow.events import NullReporter, ParamValue, RunInfo
 from karak.flow.graph import Graph
 from karak.flow.validate import validate
 from karak.stages import registry
@@ -117,6 +119,27 @@ def _resolve_tokens(params: dict, tokens: dict) -> dict:
     return resolved
 
 
+def _emit(reporter, event: str, *args) -> None:
+    """Call an optional reporter method; older reporters may lack it."""
+    method = getattr(reporter, event, None)
+    if method is not None:
+        method(*args)
+
+
+def _karak_version() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("karak")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _summarize(payload) -> str:
+    summary = getattr(payload, "summary", None)
+    return summary() if callable(summary) else type(payload).__name__
+
+
 def run(
     graph: Graph,
     *,
@@ -168,6 +191,25 @@ def run(
         spill_threshold=spill_threshold if cache else None,
     )
     summary: dict = {}
+    run_started_at = time.monotonic()
+    order = [n for n in _topo_order(graph) if n not in skipped]
+    devices = set()
+    for node_id in order:
+        node = graph.node(node_id)
+        coerced = registry.get(node.type).coerce_params(node.params)
+        if "device" in coerced:
+            devices.add(str(coerced["device"]))
+    _emit(reporter, "run_started", RunInfo(
+        flow=graph.name,
+        input_path=input_path,
+        out_base=out_base,
+        work_dir=str(work_dir),
+        cache=cache,
+        workers=workers,
+        device=",".join(sorted(devices)) or "cpu",
+        version=_karak_version(),
+        nodes=tuple((n, graph.node(n).type) for n in order),
+    ))
 
     for node_id in _topo_order(graph):
         node = graph.node(node_id)
@@ -187,6 +229,11 @@ def run(
         node_hash = recipe_hash(node.type, params, upstream, source_sig)
         for port in cls.OUTPUTS:
             hashes[(node_id, port.name)] = node_hash
+        defaults = _resolve_tokens(cls.coerce_params({}), tokens)
+        _emit(reporter, "node_params", node_id, [
+            ParamValue(p.name, params[p.name], params[p.name] == defaults[p.name])
+            for p in cls.PARAMS
+        ])
 
         is_sink = not cls.OUTPUTS
         started = time.monotonic()
@@ -198,6 +245,8 @@ def run(
                 for port in cls.OUTPUTS
             )
         )
+        _emit(reporter, "node_cache", node_id, node_hash, cached_hit,
+              str(cache_dir))
 
         if cached_hit:
             # Outputs come from the cache; inputs are not consumed, but the
@@ -209,6 +258,12 @@ def run(
                 for port in cls.OUTPUTS
                 if consumers.get((node_id, port.name), 0) > 0
             }
+            summaries = {
+                port.name: load_summary(node_hash, port.name, cache_dir)
+                or (_summarize(outputs[port.name]) if port.name in outputs
+                    else "(no summary recorded)")
+                for port in cls.OUTPUTS
+            }
         else:
             inputs = {
                 e.dst.port: store.get(e.src.node, e.src.port)
@@ -217,20 +272,28 @@ def run(
             stage = cls()
             stage.reporter = reporter
             stage.workers = workers
+            stage.node_id = node_id
             reporter.node_started(node_id, cls.label or cls.id)
             try:
                 outputs = stage.run(inputs, params)
             except Exception as exc:
+                _emit(reporter, "node_failed", node_id, str(exc))
                 raise FlowError(f"node {node_id!r} ({node.type}): {exc}") from exc
+            summaries = {name: _summarize(p) for name, p in outputs.items()}
             if cache and not is_sink:
                 for port_name, payload in outputs.items():
                     store_payload(node_hash, port_name, payload, cache_dir)
+                    store_summary(node_hash, port_name, summaries[port_name],
+                                  cache_dir)
 
         for port_name, payload in outputs.items():
             store.put(node_id, port_name, payload)
 
         elapsed = time.monotonic() - started
+        if summaries:
+            _emit(reporter, "node_outputs", node_id, summaries)
         reporter.node_finished(node_id, elapsed, cached_hit)
         summary[node_id] = {"cached": cached_hit, "seconds": elapsed}
 
+    _emit(reporter, "run_finished", summary, time.monotonic() - run_started_at)
     return summary
