@@ -53,6 +53,21 @@ class _Replaceable:
         return dataclasses.replace(self, **changes)
 
 
+def format_bytes(n: int) -> str:
+    """Human-readable byte count: '1.98 GB', '104 MB', '2 kB', '512 B'."""
+    if n >= 1e9:
+        return f"{n / 1e9:.2f} GB"
+    if n >= 1e6:
+        return f"{n / 1e6:.0f} MB"
+    if n >= 1e3:
+        return f"{n / 1e3:.0f} kB"
+    return f"{n} B"
+
+
+def _shape(shape) -> str:
+    return "×".join(str(int(s)) for s in shape)
+
+
 @_payload
 @dataclass(frozen=True)
 class ElementCube(_Replaceable):
@@ -68,6 +83,12 @@ class ElementCube(_Replaceable):
     downsample_factor: int = 1
     header_trim_px: int = 0
     left_trim_px: int = 0
+
+    def summary(self) -> str:
+        return (
+            f"ElementCube {_shape(self.pixels.shape)} {self.pixels.dtype} "
+            f"{format_bytes(self.pixels.nbytes)} space={self.space.value}"
+        )
 
     def to_h5(self, group) -> None:
         group.attrs["payload_type"] = self.payload_type
@@ -105,6 +126,12 @@ class BseImage(_Replaceable):
 
     pixels: np.ndarray
 
+    def summary(self) -> str:
+        return (
+            f"BseImage {_shape(self.pixels.shape)} {self.pixels.dtype} "
+            f"{format_bytes(self.pixels.nbytes)}"
+        )
+
     def to_h5(self, group) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.create_dataset("pixels", data=self.pixels, compression="gzip")
@@ -124,6 +151,12 @@ class MaskSet(_Replaceable):
     mineral_mask: np.ndarray                # (H, W) bool
     valid_mask: np.ndarray | None = None    # (H, W) bool
     stats: dict = dataclasses.field(default_factory=dict)
+
+    def summary(self) -> str:
+        text = f"MaskSet mineral {100 * self.mineral_mask.mean():.1f}%"
+        if self.valid_mask is not None:
+            text += f" · valid {100 * self.valid_mask.mean():.1f}%"
+        return text
 
     def to_h5(self, group) -> None:
         group.attrs["payload_type"] = self.payload_type
@@ -161,6 +194,13 @@ class PCAFeatures(_Replaceable):
     explained_variance_ratio: np.ndarray    # full EVR from the PCA fit
     n_kept: int
 
+    def summary(self) -> str:
+        kept = float(np.sum(self.explained_variance_ratio[: self.n_kept]))
+        return (
+            f"PCAFeatures {self.features.shape[0]:,} px × {self.n_kept} "
+            f"components ({kept:.1%} variance)"
+        )
+
     def to_h5(self, group) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["image_shape"] = list(self.image_shape)
@@ -196,6 +236,15 @@ class Labels(_Replaceable):
     mineral_indices: np.ndarray             # (N_mineral, 2) int32
     image_shape: tuple                      # (H, W)
     state: LabelState
+
+    def summary(self) -> str:
+        labels = self.labels
+        phases = np.unique(labels[labels >= 0]).size
+        noise = int((labels < 0).sum())
+        text = f"Labels {labels.size:,} px · {phases} phases"
+        if noise:
+            text += f" · {noise:,} noise"
+        return text + f" · state={self.state.value}"
 
     def to_h5(self, group) -> None:
         group.attrs["payload_type"] = self.payload_type
@@ -233,6 +282,12 @@ class TiledArtifacts(_Replaceable):
     tile_results: tuple                     # tuple[TileResult, ...]
     phase_registry: tuple                   # tuple[PhaseEntry, ...]
     tile_size: int
+
+    def summary(self) -> str:
+        return (
+            f"TiledArtifacts {len(self.tile_results)} tiles · "
+            f"{len(self.phase_registry)} phases · tile_size={self.tile_size}"
+        )
 
     def to_h5(self, group) -> None:
         group.attrs["payload_type"] = self.payload_type
@@ -325,6 +380,9 @@ class ClusterStats(_Replaceable):
 
     stats: dict
 
+    def summary(self) -> str:
+        return f"ClusterStats {len(self.stats)} entries"
+
     def to_h5(self, group) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["stats"] = json.dumps(_jsonable(self.stats))
@@ -343,6 +401,12 @@ class Fingerprints(_Replaceable):
 
     data: dict                              # compute_fingerprints() result
     similar_pairs: list = dataclasses.field(default_factory=list)
+
+    def summary(self) -> str:
+        return (
+            f"Fingerprints {len(self.data)} entries · "
+            f"{len(self.similar_pairs)} similar pairs"
+        )
 
     def to_h5(self, group) -> None:
         group.attrs["payload_type"] = self.payload_type
