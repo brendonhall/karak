@@ -62,3 +62,28 @@ def load_payload(recipe: str, port: str, cache_dir: str | Path):
 
 def has_payload(recipe: str, port: str, cache_dir: str | Path) -> bool:
     return _payload_path(recipe, port, cache_dir).exists()
+
+
+def _summary_path(recipe: str, port: str, cache_dir: str | Path) -> Path:
+    return Path(cache_dir) / f"{recipe}__{port}.summary.txt"
+
+
+def store_summary(
+    recipe: str, port: str, text: str, cache_dir: str | Path
+) -> None:
+    """Store a payload's one-line summary next to its cached payload.
+
+    A cached step whose output nobody consumes is never loaded, so the
+    run dashboard reads this text instead of the payload.
+    """
+    path = _summary_path(recipe, port, cache_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def load_summary(recipe: str, port: str, cache_dir: str | Path) -> str | None:
+    """The stored summary text, or None for entries cached without one."""
+    path = _summary_path(recipe, port, cache_dir)
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")

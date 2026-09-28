@@ -39,3 +39,19 @@ def test_store_and_load_roundtrip(tmp_path):
 
 def test_load_missing_returns_none(tmp_path):
     assert load_payload("no_such", "stats", tmp_path) is None
+
+
+def test_summary_sidecar_roundtrip(tmp_path):
+    from karak.flow.cache import load_summary, store_summary
+
+    store_summary("deadbeef", "cube", "ElementCube 2×2×1 float32 16 B space=raw", tmp_path)
+    assert load_summary("deadbeef", "cube", tmp_path) == (
+        "ElementCube 2×2×1 float32 16 B space=raw"
+    )
+    assert (tmp_path / "deadbeef__cube.summary.txt").exists()
+
+
+def test_missing_summary_returns_none(tmp_path):
+    from karak.flow.cache import load_summary
+
+    assert load_summary("nope", "cube", tmp_path) is None
