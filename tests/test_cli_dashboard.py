@@ -147,3 +147,45 @@ def test_live_mode_leaves_final_summary_on_screen():
     d.node_finished("src", 0.5, False)
     d.run_finished({"src": {"cached": False, "seconds": 0.5}}, 0.6)
     assert "finished in 0.6s" in buf.getvalue()
+
+
+def test_render_is_safe_while_the_main_thread_updates_state():
+    import threading
+
+    d = _dashboard()
+    d.run_started(_info())
+    d.node_params("src", _params())
+    d.node_started("src", "Load elements")
+    errors = []
+    stop = threading.Event()
+
+    def refresher():
+        while not stop.is_set():
+            try:
+                d.render()
+            except Exception as exc:  # the Live refresh thread would die here
+                errors.append(exc)
+
+    thread = threading.Thread(target=refresher)
+    thread.start()
+    try:
+        for i in range(20_000):
+            d.log("info", f"line {i}")
+            d.progress("src", i % 20 + 1, 20, "Si")
+            if i % 50 == 0:
+                d.node_finished("src", 1.0, False)
+                d.node_started("src", "Load elements")
+    finally:
+        stop.set()
+        thread.join()
+    assert errors == []
+
+
+def test_close_failed_marks_running_step_failed():
+    d = _dashboard()
+    d.run_started(_info())
+    d.node_started("src", "Load elements")
+    d.close("failed")
+    assert d.status == "failed"
+    assert d.steps["src"].status == "failed"
+    assert "running" not in _text(d)

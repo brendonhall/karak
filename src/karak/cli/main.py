@@ -138,6 +138,9 @@ def _run_command(argv: list[str]) -> int:
     except KeyboardInterrupt:
         reporter.close("interrupted")
         return 130
+    except Exception:
+        reporter.close("failed")
+        raise
     finally:
         reporter.close()
 

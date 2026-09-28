@@ -138,3 +138,23 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     assert "src: cached (" in out
     assert "src.cube -> ElementCube 32×32×3" in out
     assert "(0 ran, 1 cached)" in out
+
+
+def test_unexpected_error_closes_reporter_as_failed(tmp_path, monkeypatch):
+    import karak.cli.main as cli_main
+    import karak.flow.executor as executor
+
+    closed = []
+
+    class Recorder(RichReporter):
+        def close(self, status=None):
+            closed.append(status)
+
+    def disk_full(*args, **kwargs):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(executor, "run", disk_full)
+    monkeypatch.setattr(cli_main, "_run_reporter", lambda plain, isatty: Recorder())
+    with pytest.raises(OSError):
+        main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"), "--plain"])
+    assert closed[0] == "failed"

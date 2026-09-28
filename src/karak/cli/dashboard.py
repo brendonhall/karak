@@ -7,6 +7,7 @@ When the run ends the last frame stays on screen as the run summary.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -49,6 +50,13 @@ def _gb(n: int | None) -> str:
 
 
 class DashboardReporter:
+    """Event-driven model of a run, drawn by Rich ``Live``.
+
+    ``Live`` calls ``render()`` from its refresh thread while events arrive
+    on the main thread, so every state change and every render holds
+    ``_lock``. ``_stop()`` never holds it while joining the refresh thread.
+    """
+
     def __init__(self, console: Console | None = None, *, live: bool = True,
                  sampler=None):
         self.console = console or Console()
@@ -62,12 +70,14 @@ class DashboardReporter:
         self.current: str | None = None
         self.status = "running"  # running|done|failed|interrupted
         self.total_seconds: float | None = None
+        self._lock = threading.RLock()
 
     # -- reporter protocol --------------------------------------------------
 
     def run_started(self, info) -> None:
-        self.info = info
-        self.steps = {nid: _Step(nid, stage) for nid, stage in info.nodes}
+        with self._lock:
+            self.info = info
+            self.steps = {nid: _Step(nid, stage) for nid, stage in info.nodes}
         self.sampler.start()
         if self._use_live:
             self._live = Live(
@@ -77,57 +87,69 @@ class DashboardReporter:
             self._live.start()
 
     def node_params(self, node_id: str, params) -> None:
-        self._step(node_id).params = list(params)
-        self.current = node_id
+        with self._lock:
+            self._step(node_id).params = list(params)
+            self.current = node_id
 
     def node_cache(self, node_id: str, recipe_hash: str, cached: bool,
                    cache_dir: str) -> None:
-        step = self._step(node_id)
-        step.recipe_hash = recipe_hash
-        if cached:
-            step.status = "cached"
+        with self._lock:
+            step = self._step(node_id)
+            step.recipe_hash = recipe_hash
+            if cached:
+                step.status = "cached"
 
     def node_started(self, node_id: str, label: str) -> None:
-        step = self._step(node_id)
-        step.status = "running"
-        step.started = time.monotonic()
-        self.current = node_id
+        with self._lock:
+            step = self._step(node_id)
+            step.status = "running"
+            step.started = time.monotonic()
+            self.current = node_id
 
     def progress(self, node_id: str, done: int, total: int, msg: str = "") -> None:
-        self._step(node_id).progress = (done, total, msg)
+        with self._lock:
+            self._step(node_id).progress = (done, total, msg)
 
     def log(self, level: str, msg: str) -> None:
-        self.logs.append((level, msg))
+        with self._lock:
+            self.logs.append((level, msg))
 
     def node_outputs(self, node_id: str, summaries: dict) -> None:
-        self._step(node_id).outputs = dict(summaries)
+        with self._lock:
+            self._step(node_id).outputs = dict(summaries)
 
     def node_finished(self, node_id: str, seconds: float, cached: bool) -> None:
-        step = self._step(node_id)
-        step.seconds = seconds
-        step.status = "cached" if cached else "done"
-        step.progress = None
-        if self.current == node_id:
-            self.current = None
+        with self._lock:
+            step = self._step(node_id)
+            step.seconds = seconds
+            step.status = "cached" if cached else "done"
+            step.progress = None
+            if self.current == node_id:
+                self.current = None
 
     def node_failed(self, node_id: str, message: str) -> None:
-        step = self._step(node_id)
-        step.status = "failed"
-        step.error = message
-        self.status = "failed"
+        with self._lock:
+            step = self._step(node_id)
+            step.status = "failed"
+            step.error = message
+            self.status = "failed"
         self._stop()
 
     def run_finished(self, summary: dict, seconds: float) -> None:
-        self.total_seconds = seconds
-        self.status = "done"
+        with self._lock:
+            self.total_seconds = seconds
+            self.status = "done"
         self._stop()
 
     def close(self, status: str | None = None) -> None:
-        if status == "interrupted" and self.status == "running":
-            self.status = "interrupted"
-            for step in self.steps.values():
-                if step.status == "running":
-                    step.status = "interrupted"
+        """Stop the display; ``status`` is "interrupted" or "failed" when the
+        run ended without ``run_finished`` or ``node_failed``."""
+        with self._lock:
+            if status in ("interrupted", "failed") and self.status == "running":
+                self.status = status
+                for step in self.steps.values():
+                    if step.status == "running":
+                        step.status = status
         self._stop()
 
     # -- internals ----------------------------------------------------------
@@ -148,6 +170,10 @@ class DashboardReporter:
     # -- rendering ----------------------------------------------------------
 
     def render(self) -> Panel:
+        with self._lock:
+            return self._render()
+
+    def _render(self) -> Panel:
         parts = [self._header(), self._steps_table()]
         outputs = self._outputs()
         if outputs is not None:
