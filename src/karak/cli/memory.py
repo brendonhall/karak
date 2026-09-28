@@ -22,13 +22,19 @@ def current_rss() -> int | None:
 
 
 def peak_rss() -> int:
-    """Peak resident set size of this process in bytes (0 if unknown)."""
+    """Peak resident set size of this process in bytes (0 if unknown).
+
+    ``ru_maxrss`` and ``/proc/self/statm`` count pages slightly differently,
+    so the peak is never reported below the current RSS.
+    """
+    current = current_rss() or 0
     try:
         import resource
     except ImportError:
-        return current_rss() or 0
+        return current
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    return peak if sys.platform == "darwin" else peak * 1024
+    peak = peak if sys.platform == "darwin" else peak * 1024
+    return max(peak, current)
 
 
 class MemorySampler:
@@ -43,7 +49,7 @@ class MemorySampler:
 
     def sample(self) -> None:
         self.current = current_rss()
-        self.peak = peak_rss()
+        self.peak = max(self.peak, peak_rss())
 
     def _loop(self) -> None:
         while not self._stop.wait(self.interval):
