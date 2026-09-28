@@ -16,11 +16,11 @@ All channels are uniformly downsampled and edge-trimmed.
 from __future__ import annotations
 
 import glob
-from collections.abc import Callable
 import hashlib
 import logging
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
