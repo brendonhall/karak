@@ -111,18 +111,49 @@ def _legacy_main(argv: list[str]) -> int:
     return 0
 
 
+def _run_reporter(plain: bool, isatty: bool):
+    """The live dashboard on a terminal; line output with --plain or a pipe."""
+    if plain or not isatty:
+        from karak.cli.reporter import RichReporter
+
+        return RichReporter()
+    from karak.cli.dashboard import DashboardReporter
+
+    return DashboardReporter()
+
+
+def _run_command(argv: list[str]) -> int:
+    from karak.cli.logs import capture_logs
+    from karak.flow.__main__ import main as flow_main
+    from karak.flow.executor import FlowError
+
+    reporter = _run_reporter("--plain" in argv, sys.stdout.isatty())
+    try:
+        with capture_logs(reporter):
+            return flow_main(argv, reporter=reporter)
+    except FlowError as exc:
+        reporter.close()
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        reporter.close("interrupted")
+        return 130
+    finally:
+        reporter.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] == "bench":
         from karak.cli.bench import bench_main
 
         return bench_main(argv[1:])
+    if argv and argv[0] == "run":
+        return _run_command(argv)
     if argv and argv[0] in _FLOW_COMMANDS:
-        from karak.cli.reporter import RichReporter
         from karak.flow.__main__ import main as flow_main
 
-        reporter = RichReporter() if argv[0] == "run" else None
-        return flow_main(argv, reporter=reporter)
+        return flow_main(argv)
     return _legacy_main(argv)
 
 

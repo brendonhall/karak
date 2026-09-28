@@ -83,6 +83,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Apply this device to every node that declares a device "
              "param (cuda needs the karak[cuda] extra).",
     )
+    run_parser.add_argument(
+        "--plain", action="store_true",
+        help="Line-based output instead of the live dashboard "
+             "(automatic when stdout is not a terminal).",
+    )
 
     validate_parser = sub.add_parser("validate", help="Validate a flow")
     _add_flow_args(validate_parser)
@@ -146,9 +151,10 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         workers=args.workers,
         skip_types=QC_STAGE_TYPES if args.no_qc else frozenset(),
     )
-    cached = sum(1 for entry in summary.values() if entry.get("cached"))
-    print(f"{len(summary)} nodes: {cached} cached, "
-          f"{len(summary) - cached} executed")
+    if reporter is None:
+        cached = sum(1 for entry in summary.values() if entry.get("cached"))
+        print(f"{len(summary)} nodes: {cached} cached, "
+              f"{len(summary) - cached} executed")
     return 0
 
 
