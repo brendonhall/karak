@@ -121,3 +121,51 @@ def test_load_stage_reports_progress(scene_dir):
                    "exclude_elements": ""})
     assert [e[1] for e in events] == [1, 2, 3, 4]
     assert all(e[0] == "src" and e[2] == 4 for e in events)
+
+
+def _warn_and_return(value):
+    import warnings
+
+    warnings.warn("careful: big image", UserWarning)
+    return value
+
+
+def test_run_captured_returns_warnings_from_a_worker_process():
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    from karak.io.loaders import _run_captured
+
+    ctx = multiprocessing.get_context("forkserver")
+    with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as pool:
+        value, messages = pool.submit(_run_captured, _warn_and_return, 7).result()
+    assert value == 7
+    assert messages == ["UserWarning: careful: big image"]
+
+
+def test_image_warnings_are_logged_once_and_not_printed(scene_dir, caplog, monkeypatch):
+    import logging
+    import warnings
+
+    from PIL import Image
+
+    from karak.config import LoaderConfig
+
+    # 64x64 = 4096 px: over this limit PIL warns; the error limit is 2x.
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 3000)
+    data_dir, colormap = scene_dir
+    with warnings.catch_warnings(record=True) as leaked, \
+            caplog.at_level(logging.INFO, logger="karak.io.loaders"):
+        warnings.simplefilter("always")
+        load_element_maps(
+            str(data_dir),
+            DownsampleConfig(header_trim_px=0, downsample_factor=1),
+            exclude_elements=[],
+            loader_config=LoaderConfig(colormap=colormap),
+        )
+    assert leaked == []
+    bombs = [r for r in caplog.records
+             if "DecompressionBombWarning" in r.getMessage()]
+    assert len(bombs) == 1
+    assert bombs[0].levelname == "WARNING"
+    assert "s-01-A.png" in bombs[0].getMessage()

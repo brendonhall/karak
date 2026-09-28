@@ -20,6 +20,7 @@ import hashlib
 import logging
 import os
 import re
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -265,6 +266,19 @@ def _apply_trim(
     return img[top:bottom, left:right]
 
 
+def _run_captured(fn, *args):
+    """Run ``fn(*args)`` and return ``(result, warning_texts)``. Pool-safe.
+
+    Warnings raised in a worker process go straight to the terminal, past
+    any live display. Capturing them here lets the parent log them through
+    the ``karak`` logger instead, the same way in serial and parallel runs.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = fn(*args)
+    return result, [f"{w.category.__name__}: {w.message}" for w in caught]
+
+
 def _process_element_file(fpath, colormap, base_dir, factor, trims):
     """Read one false-color map, invert, downsample, trim. Pool-safe."""
     raw = imageio.imread(fpath)
@@ -430,6 +444,15 @@ def load_element_maps(
         len(files), len(jobs), bse_channel, ", ".join(excluded) or "none",
     )
     total = len(jobs)
+    seen_warnings: set[str] = set()
+
+    def report_warnings(index: int, messages: list[str]) -> None:
+        # Exports of one scan share a size, so the same warning would
+        # repeat for every file; log each distinct message once.
+        for text in messages:
+            if text not in seen_warnings:
+                seen_warnings.add(text)
+                logger.warning("%s: %s", os.path.basename(jobs[index][2]), text)
 
     # Execute: serial in-process, or fanned out to a process pool.
     if workers > 1 and jobs:
@@ -447,27 +470,35 @@ def load_element_maps(
             futures = {}
             for index, (kind, key, fpath) in enumerate(jobs):
                 if kind == "bse":
-                    future = pool.submit(_process_bse_file, fpath, factor, trims)
+                    future = pool.submit(
+                        _run_captured, _process_bse_file, fpath, factor, trims,
+                    )
                 else:
                     future = pool.submit(
-                        _process_element_file, fpath, loader.colormap,
-                        input_dir, factor, trims,
+                        _run_captured, _process_element_file, fpath,
+                        loader.colormap, input_dir, factor, trims,
                     )
                 futures[future] = index
             for done, future in enumerate(as_completed(futures), start=1):
                 index = futures[future]
-                arrays[index] = future.result()
+                arrays[index], messages = future.result()
+                report_warnings(index, messages)
                 if on_file is not None:
                     on_file(done, total, jobs[index][1])
     else:
         arrays = []
-        for kind, key, fpath in jobs:
+        for index, (kind, key, fpath) in enumerate(jobs):
             if kind == "bse":
-                arrays.append(_process_bse_file(fpath, factor, trims))
+                array, messages = _run_captured(
+                    _process_bse_file, fpath, factor, trims,
+                )
             else:
-                arrays.append(_process_element_file(
-                    fpath, loader.colormap, input_dir, factor, trims,
-                ))
+                array, messages = _run_captured(
+                    _process_element_file, fpath, loader.colormap,
+                    input_dir, factor, trims,
+                )
+            arrays.append(array)
+            report_warnings(index, messages)
             if on_file is not None:
                 on_file(len(arrays), total, key)
 

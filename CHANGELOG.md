@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs the load step only.
 - Payloads have `summary()`; the cache stores it next to each payload.
 - Exit codes for `karak run`: 1 when a step fails, 130 on Ctrl-C.
+- Warnings raised while loading maps (for example PIL's
+  `DecompressionBombWarning` on 104 Mpx exports) are logged once through
+  the `karak` logger, in serial and `--workers` runs alike, so they show
+  in the dashboard log panel instead of breaking the live display.
 
 - `colormap: tima:jet`, the 256-entry palette TIMA renders element maps
   with, recovered from the NWA 4587 exports (all 256 entries occur there).
