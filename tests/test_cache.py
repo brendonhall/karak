@@ -37,6 +37,17 @@ def test_store_and_load_roundtrip(tmp_path):
     assert back.stats == {"n_clusters": 4}
 
 
+def test_store_records_the_upstream_recipes(tmp_path):
+    from karak.flow.cache import load_upstream
+
+    payload = ClusterStats(stats={})
+    path = store_payload("abc", "stats", payload, tmp_path,
+                         upstream={"labels": "111", "cube": "222"})
+    assert load_upstream(path) == {"labels": "111", "cube": "222"}
+    bare = store_payload("def", "stats", payload, tmp_path)
+    assert load_upstream(bare) == {}
+
+
 def test_load_missing_returns_none(tmp_path):
     assert load_payload("no_such", "stats", tmp_path) is None
 

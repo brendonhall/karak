@@ -131,13 +131,18 @@ def _node_params(node, tokens: dict) -> dict:
     return _resolve_tokens(params, tokens)
 
 
-def _node_recipe(graph: Graph, node_id: str, params: dict, hashes: dict) -> str:
-    """Recipe hash of one node, given the hashes of its upstream outputs."""
-    node = graph.node(node_id)
-    upstream = {
+def _upstream_recipes(graph: Graph, node_id: str, hashes: dict) -> dict:
+    """input port -> recipe hash of the output it consumes."""
+    return {
         f"{e.dst.port}": hashes[(e.src.node, e.src.port)]
         for e in graph.in_edges(node_id)
     }
+
+
+def _node_recipe(graph: Graph, node_id: str, params: dict, hashes: dict) -> str:
+    """Recipe hash of one node, given the hashes of its upstream outputs."""
+    node = graph.node(node_id)
+    upstream = _upstream_recipes(graph, node_id, hashes)
     source_sig = registry.get(node.type).source_signature(params)
     return recipe_hash(node.type, params, upstream, source_sig)
 
@@ -340,8 +345,10 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
                 raise FlowError(f"node {node_id!r} ({node.type}): {exc}") from exc
             summaries = {name: _summarize(p) for name, p in outputs.items()}
             if cache and not is_sink:
+                upstream = _upstream_recipes(graph, node_id, hashes)
                 for port_name, payload in outputs.items():
-                    store_payload(node_hash, port_name, payload, cache_dir)
+                    store_payload(node_hash, port_name, payload, cache_dir,
+                                  upstream=upstream)
                     store_summary(node_hash, port_name, summaries[port_name],
                                   cache_dir)
 

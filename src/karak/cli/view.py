@@ -1,10 +1,12 @@
-"""karak view: open a run's cached load outputs in napari.
+"""karak view: open a run's cached load and mask outputs in napari.
 
 It opens the outputs listed in the run's latest record
 (``{out}/runs/latest/run.json``): the first ElementCube in flow order (the
-load step's) and the BseImage from the same step. Without a record it scans
-the cache, which names files by recipe hash, reading each file's
-``payload_type`` to find the newest ElementCube. Layers are placed in full-resolution coordinates
+load step's), the BseImage from the same step, and the first MaskSet (the
+mask step's). Without a record it scans the cache, which names files by
+recipe hash, reading each file's ``payload_type`` to find the newest of
+each. Elements and BSE are image layers; the mineral mask and the valid
+mask are labels layers. Layers are placed in full-resolution coordinates
 (scale = downsample factor, offset = trims) so positions match the
 original exports and the napari shapes the valid mask was drawn with.
 
@@ -18,7 +20,7 @@ import importlib.util
 import json
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import h5py
@@ -37,6 +39,7 @@ class CacheFile:
     port: str
     payload_type: str
     mtime: float
+    upstream: dict = field(default_factory=dict)  # input port -> recipe
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,17 @@ class LayerSpec:
     visible: bool
     colormap: str = "gray"
     contrast_limits: tuple = (0.0, 1.0)
+    kind: str = "image"   # "image" (add_image) or "labels" (add_labels)
+
+
+@dataclass(frozen=True)
+class PickedOutputs:
+    """The cache files `karak view` opens: one cube, its BSE, the masks."""
+
+    cube: CacheFile
+    bse: CacheFile | None
+    masks: CacheFile | None
+    other_cubes: list
 
 
 def _cache_dir_for(target: Path) -> Path:
@@ -65,9 +79,12 @@ def _read_entry(path: Path) -> CacheFile | None:
     try:
         with h5py.File(path, "r") as fh:
             payload_type = str(fh["payload"].attrs["payload_type"])
+            raw = fh["payload"].attrs.get("upstream")
     except (OSError, KeyError):
         return None
-    return CacheFile(path, recipe, port, payload_type, path.stat().st_mtime)
+    upstream = json.loads(str(raw)) if raw is not None else {}
+    return CacheFile(path, recipe, port, payload_type, path.stat().st_mtime,
+                     upstream)
 
 
 def find_cache_files(target: str | Path) -> list[CacheFile]:
@@ -107,11 +124,15 @@ def find_run_outputs(target: str | Path) -> list[CacheFile] | None:
     return entries or None
 
 
-def pick_outputs(entries: list[CacheFile], newest_first: bool = True):
-    """An ElementCube, the BseImage from the same step, and other cubes.
+def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedOutputs:
+    """An ElementCube, the BseImage from the same step, the MaskSet computed
+    from that cube, and the other cubes.
 
     ``newest_first`` picks the most recent cube (cache scan); otherwise the
-    first in list order (a run record lists outputs in flow order).
+    first in list order (a run record lists outputs in flow order). In a
+    cache scan the masks must name the cube as their upstream ``cube``
+    (see ``store_payload``), so another run's masks are never overlaid;
+    with a record, the run itself links them.
     """
     cubes = [e for e in entries if e.payload_type == "element_cube"]
     if newest_first:
@@ -122,11 +143,19 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True):
     bses = [e for e in entries if e.payload_type == "bse_image"]
     same_step = [e for e in bses if e.recipe == cube.recipe]
     bse = (same_step or sorted(bses, key=lambda e: e.mtime, reverse=True) or [None])[0]
-    return cube, bse, cubes[1:]
+    mask_sets = [e for e in entries if e.payload_type == "mask_set"]
+    if newest_first:
+        mask_sets = sorted(
+            (e for e in mask_sets if e.upstream.get("cube") == cube.recipe),
+            key=lambda e: e.mtime, reverse=True,
+        )
+    masks = (mask_sets or [None])[0]
+    return PickedOutputs(cube, bse, masks, cubes[1:])
 
 
-def layer_specs(cube, bse, show=("Fe-K",)) -> list[LayerSpec]:
-    """BSE plus one layer per element, placed in full-resolution pixels."""
+def layer_specs(cube, bse, masks=None, show=("Fe-K",)) -> list[LayerSpec]:
+    """BSE, one layer per element, then the masks as labels layers, all
+    placed in full-resolution pixels."""
     factor = cube.downsample_factor
     offset = (factor - 1) / 2  # a block's center, in full-resolution pixels
     translate = (
@@ -142,6 +171,12 @@ def layer_specs(cube, bse, show=("Fe-K",)) -> list[LayerSpec]:
     for i, name in enumerate(names):
         specs.append(LayerSpec(name, cube.pixels[..., i], scale, translate,
                                name in visible))
+    if masks is not None:
+        specs.append(LayerSpec("mineral mask", masks.mineral_mask.astype(np.uint8),
+                               scale, translate, True, kind="labels"))
+        if masks.valid_mask is not None:
+            specs.append(LayerSpec("valid mask", masks.valid_mask.astype(np.uint8),
+                                   scale, translate, False, kind="labels"))
     return specs
 
 
@@ -154,6 +189,12 @@ def open_viewer(specs: list[LayerSpec], shapes) -> None:
 
     viewer = napari.Viewer(title="karak view")
     for spec in specs:
+        if spec.kind == "labels":
+            viewer.add_labels(
+                spec.data, name=spec.name, scale=spec.scale,
+                translate=spec.translate, visible=spec.visible,
+            )
+            continue
         viewer.add_image(
             spec.data, name=spec.name, scale=spec.scale,
             translate=spec.translate, visible=spec.visible,
@@ -172,7 +213,7 @@ def open_viewer(specs: list[LayerSpec], shapes) -> None:
 def view_main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="karak view",
-        description="Open the cached load outputs of a run in napari.",
+        description="Open the cached load and mask outputs of a run in napari.",
     )
     parser.add_argument(
         "path",
@@ -197,11 +238,10 @@ def view_main(argv: list[str]) -> int:
     recorded = find_run_outputs(args.path)
     if recorded is not None:
         print(f"run record: {latest_run_dir(args.path)}")
-        cube_file, bse_file, other_cubes = pick_outputs(recorded, newest_first=False)
+        picked = pick_outputs(recorded, newest_first=False)
     else:
-        cube_file, bse_file, other_cubes = pick_outputs(
-            find_cache_files(args.path))
-    for other in other_cubes:
+        picked = pick_outputs(find_cache_files(args.path))
+    for other in picked.other_cubes:
         print(f"other cube: {other.path.name} "
               f"({time.strftime('%Y-%m-%d %H:%M', time.localtime(other.mtime))})")
 
@@ -214,9 +254,10 @@ def view_main(argv: list[str]) -> int:
                       or payload.summary()))
         return payload
 
-    cube = load(cube_file)
-    bse = load(bse_file) if bse_file is not None else None
-    specs = layer_specs(cube, bse, show=tuple(args.show.split(",")))
+    cube = load(picked.cube)
+    bse = load(picked.bse) if picked.bse is not None else None
+    masks = load(picked.masks) if picked.masks is not None else None
+    specs = layer_specs(cube, bse, masks, show=tuple(args.show.split(",")))
     shapes = read_napari_shapes(args.mask) if args.mask else []
     open_viewer(specs, shapes)
     return 0
