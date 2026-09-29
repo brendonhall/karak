@@ -119,6 +119,38 @@ def _resolve_tokens(params: dict, tokens: dict) -> dict:
     return resolved
 
 
+def _node_params(node, tokens: dict) -> dict:
+    """A node's parameters, coerced and with run tokens resolved."""
+    cls = registry.get(node.type)
+    # Coerce first so Param defaults (which may contain tokens, e.g. a
+    # sink's "{out}") are present, then resolve tokens on the result.
+    return _resolve_tokens(cls.coerce_params(node.params), tokens)
+
+
+def _node_recipe(graph: Graph, node_id: str, params: dict, hashes: dict) -> str:
+    """Recipe hash of one node, given the hashes of its upstream outputs."""
+    node = graph.node(node_id)
+    upstream = {
+        f"{e.dst.port}": hashes[(e.src.node, e.src.port)]
+        for e in graph.in_edges(node_id)
+    }
+    source_sig = registry.get(node.type).source_signature(params)
+    return recipe_hash(node.type, params, upstream, source_sig)
+
+
+def plan_recipes(graph: Graph, tokens: dict) -> dict[str, str]:
+    """Recipe hash of every node, without running anything."""
+    hashes: dict = {}
+    recipes: dict[str, str] = {}
+    for node_id in _topo_order(graph):
+        node = graph.node(node_id)
+        node_hash = _node_recipe(graph, node_id, _node_params(node, tokens), hashes)
+        for port in registry.get(node.type).OUTPUTS:
+            hashes[(node_id, port.name)] = node_hash
+        recipes[node_id] = node_hash
+    return recipes
+
+
 def _emit(reporter, event: str, *args) -> None:
     """Call an optional reporter method; older reporters may lack it."""
     method = getattr(reporter, event, None)
@@ -218,15 +250,8 @@ def run(
                                 "skipped": True}
             continue
         cls = registry.get(node.type)
-        # Coerce first so Param defaults (which may contain tokens, e.g. a
-        # sink's "{out}") are present, then resolve tokens on the result.
-        params = _resolve_tokens(cls.coerce_params(node.params), tokens)
-        upstream = {
-            f"{e.dst.port}": hashes[(e.src.node, e.src.port)]
-            for e in graph.in_edges(node_id)
-        }
-        source_sig = cls.source_signature(params)
-        node_hash = recipe_hash(node.type, params, upstream, source_sig)
+        params = _node_params(node, tokens)
+        node_hash = _node_recipe(graph, node_id, params, hashes)
         for port in cls.OUTPUTS:
             hashes[(node_id, port.name)] = node_hash
         defaults = _resolve_tokens(cls.coerce_params({}), tokens)
