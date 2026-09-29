@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameters from the stage templates, prints what it added, and upgrades
   format version 1 flows.
 - `Stage.template()` returns a stage's template parameter values.
+- Run records: every `karak run` writes `{out}/runs/<UTC time>/flow.json`
+  (the complete flow as executed, after overrides) and `run.json` (status,
+  times, argv, paths, settings, overrides, karak version and git commit,
+  library versions, host, and per node the resolved parameters, recipe
+  hash, cache status, time, and output files). Failed and interrupted runs
+  are recorded too; `{out}/runs/latest` points at the newest. The dashboard
+  and `--plain` output show the record path.
 
 - `karak run` shows a live dashboard on a terminal: run context, the
   running step's parameters (changed ones first), per-file progress for

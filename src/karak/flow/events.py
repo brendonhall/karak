@@ -26,6 +26,7 @@ class RunInfo:
     device: str
     version: str
     nodes: tuple  # ((node_id, stage_type), ...) in execution order
+    record: str = ""  # run record directory, when the run is recorded
 
 
 @dataclass(frozen=True)

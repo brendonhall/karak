@@ -20,6 +20,7 @@ from karak.flow.cache import (
     has_payload,
     load_payload,
     load_summary,
+    payload_path,
     recipe_hash,
     store_payload,
     store_summary,
@@ -27,6 +28,7 @@ from karak.flow.cache import (
 from karak.flow.events import NullReporter, ParamValue, RunInfo
 from karak.flow.graph import Graph
 from karak.flow.validate import validate
+from karak.provenance import karak_version
 from karak.stages import registry
 
 
@@ -160,15 +162,6 @@ def _emit(reporter, event: str, *args) -> None:
         method(*args)
 
 
-def _karak_version() -> str:
-    from importlib.metadata import PackageNotFoundError, version
-
-    try:
-        return version("karak")
-    except PackageNotFoundError:
-        return "unknown"
-
-
 def _summarize(payload) -> str:
     summary = getattr(payload, "summary", None)
     return summary() if callable(summary) else type(payload).__name__
@@ -185,8 +178,37 @@ def run(
     workers: int | None = None,
     skip_types: frozenset | set = frozenset(),
     spill_threshold: int = 256 * 1024 * 1024,
+    record=None,
 ) -> dict:
-    """Execute a flow. Returns {node_id: {"cached": bool, "seconds": float}}."""
+    """Execute a flow. Returns {node_id: {"cached": bool, "seconds": float}}.
+
+    ``record`` (a ``flow.record.RunRecord``) is started before validation
+    and finished as ok, failed or interrupted, so every run leaves one.
+    """
+    if record is not None:
+        record.start()
+    try:
+        summary = _execute(
+            graph, input_path=input_path, out_base=out_base,
+            work_dir=work_dir, cache=cache, reporter=reporter,
+            workers=workers, skip_types=skip_types,
+            spill_threshold=spill_threshold, record=record,
+        )
+    except KeyboardInterrupt:
+        if record is not None:
+            record.finish("interrupted", "interrupted (Ctrl-C)")
+        raise
+    except BaseException as exc:
+        if record is not None:
+            record.finish("failed", str(exc))
+        raise
+    if record is not None:
+        record.finish("ok")
+    return summary
+
+
+def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
+             reporter, workers, skip_types, spill_threshold, record) -> dict:
     errors = [i for i in validate(graph) if i.level == "error"]
     if errors:
         detail = "; ".join(f"[{i.where}] {i.message}" for i in errors)
@@ -242,8 +264,9 @@ def run(
         cache=cache,
         workers=workers,
         device=",".join(sorted(devices)) or "cpu",
-        version=_karak_version(),
+        version=karak_version(),
         nodes=tuple((n, graph.node(n).type) for n in order),
+        record="" if record is None else str(record.path),
     ))
 
     for node_id in _topo_order(graph):
@@ -251,6 +274,8 @@ def run(
         if node_id in skipped:
             summary[node_id] = {"cached": False, "seconds": 0.0,
                                 "skipped": True}
+            if record is not None:
+                record.node(node_id, status="skipped")
             continue
         cls = registry.get(node.type)
         params = _node_params(node, tokens)
@@ -276,6 +301,9 @@ def run(
         )
         _emit(reporter, "node_cache", node_id, node_hash, cached_hit,
               str(cache_dir))
+        if record is not None:
+            record.node(node_id, params=params, recipe=node_hash,
+                        status="cached" if cached_hit else "running")
 
         if cached_hit:
             # Outputs come from the cache; inputs are not consumed, but the
@@ -307,6 +335,8 @@ def run(
                 outputs = stage.run(inputs, params)
             except Exception as exc:
                 _emit(reporter, "node_failed", node_id, str(exc))
+                if record is not None:
+                    record.node(node_id, status="failed", error=str(exc))
                 raise FlowError(f"node {node_id!r} ({node.type}): {exc}") from exc
             summaries = {name: _summarize(p) for name, p in outputs.items()}
             if cache and not is_sink:
@@ -323,6 +353,20 @@ def run(
             _emit(reporter, "node_outputs", node_id, summaries)
         reporter.node_finished(node_id, elapsed, cached_hit)
         summary[node_id] = {"cached": cached_hit, "seconds": elapsed}
+        if record is not None:
+            record.node(
+                node_id,
+                status="cached" if cached_hit else "ran",
+                seconds=round(elapsed, 3),
+                outputs={
+                    port: {
+                        "file": (str(payload_path(node_hash, port, cache_dir))
+                                 if cache and not is_sink else None),
+                        "summary": text,
+                    }
+                    for port, text in summaries.items()
+                },
+            )
 
     _emit(reporter, "run_finished", summary, time.monotonic() - run_started_at)
     return summary

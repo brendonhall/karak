@@ -311,5 +311,7 @@ class DashboardReporter:
         elif self.status == "interrupted":
             lines.append(Text("interrupted", style="yellow"))
         if self.info is not None:
+            if getattr(self.info, "record", ""):
+                lines.append(Text(f"record {self.info.record}", style="dim"))
             lines.append(Text(f"cache {self.info.work_dir}/cache", style="dim"))
         return Group(*lines)

@@ -176,10 +176,12 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
 
     # run
     from karak.flow.executor import run as run_flow
+    from karak.flow.record import RunRecord
 
+    overrides = _parse_set(args.set) if args.set else {}
     try:
-        if args.set:
-            graph = override_params(graph, _parse_set(args.set))
+        if overrides:
+            graph = override_params(graph, overrides)
         if args.device:
             graph = apply_device(graph, args.device)
     except (KeyError, ValueError) as exc:
@@ -194,6 +196,15 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
                 "was found. Install with: pip install 'karak[cuda]'"
             )
     work_dir = args.work or str(Path(args.out).parent / "work")
+    record = RunRecord(
+        args.out, graph,
+        argv=list(sys.argv[1:] if argv is None else argv),
+        source=args.flow or f"builtin:{args.builtin}",
+        tokens={"input": args.input, "out": args.out, "work": work_dir},
+        settings={"workers": args.workers, "cache": not args.no_cache,
+                  "no_qc": args.no_qc, "device": args.device},
+        overrides=overrides,
+    )
     summary = run_flow(
         graph,
         input_path=args.input,
@@ -203,8 +214,10 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         reporter=reporter,
         workers=args.workers,
         skip_types=QC_STAGE_TYPES if args.no_qc else frozenset(),
+        record=record,
     )
     if reporter is None:
+        print(f"run record: {record.path}")
         cached = sum(1 for entry in summary.values() if entry.get("cached"))
         print(f"{len(summary)} nodes: {cached} cached, "
               f"{len(summary) - cached} executed")

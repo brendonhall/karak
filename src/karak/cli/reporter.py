@@ -34,6 +34,8 @@ class RichReporter:
             f"  workers {workers}   device {info.device}   "
             f"cache {'on' if info.cache else 'off'}"
         )
+        if getattr(info, "record", ""):
+            self.console.print(f"  record  {escape(info.record)}")
 
     def node_params(self, node_id: str, params) -> None:
         changed = [p for p in params if not p.is_default]

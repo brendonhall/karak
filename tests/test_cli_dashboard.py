@@ -189,3 +189,14 @@ def test_close_failed_marks_running_step_failed():
     assert d.status == "failed"
     assert d.steps["src"].status == "failed"
     assert "running" not in _text(d)
+
+
+def test_finished_view_shows_the_run_record():
+    from dataclasses import replace
+
+    d = _dashboard()
+    d.run_started(replace(_info(), record="out/nwa/runs/2026-09-29T14-05-12Z"))
+    d.node_started("src", "Load elements")
+    d.node_finished("src", 1.0, False)
+    d.run_finished({"src": {"cached": False, "seconds": 1.0}}, 1.1)
+    assert "record out/nwa/runs/2026-09-29T14-05-12Z" in _text(d)

@@ -318,6 +318,17 @@ cube into memory (about 2 GB for NWA 4587).
   library versions produce identical outputs.
 - **Complete flows** — a flow file lists every parameter of every node, so
   the file alone specifies a run; no value comes from code defaults.
+- **Run records** — every `karak run` writes `{out}/runs/<UTC time>/`
+  (`{out}` is the `--out` value) with `flow.json`, the complete flow exactly
+  as executed after any `--set`/`--device` changes (rerun it with
+  `karak run {out}/runs/<time>/flow.json --input ... --out ...`), and
+  `run.json`: status (ok, failed, or interrupted, with the error), start and
+  finish times, the command line, input/output/work paths, workers and
+  cache settings, the `--set` overrides, the karak version and git commit
+  (with a dirty flag), library versions, host, and per node the resolved
+  parameters, recipe hash, whether it ran or came from the cache, its time,
+  and its output files with one-line summaries. `{out}/runs/latest` points
+  at the newest record. Records are never overwritten or pruned.
 - **Embedded provenance** — the output HDF5 file records the complete
   executing flow, library versions, Python version, and
   platform string, making every result file self-documenting.

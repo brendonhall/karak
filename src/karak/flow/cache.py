@@ -35,14 +35,16 @@ def recipe_hash(
     return hashlib.sha256(canonical.encode()).hexdigest()[:32]
 
 
-def _payload_path(recipe: str, port: str, cache_dir: str | Path) -> Path:
+def payload_path(recipe: str, port: str, cache_dir: str | Path) -> Path:
+    """Where a cached payload lives (whether or not it exists yet)."""
     return Path(cache_dir) / f"{recipe}__{port}.h5"
+
 
 
 def store_payload(
     recipe: str, port: str, payload, cache_dir: str | Path
 ) -> Path:
-    path = _payload_path(recipe, port, cache_dir)
+    path = payload_path(recipe, port, cache_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".h5.tmp")
     with h5py.File(tmp, "w") as fh:
@@ -53,7 +55,7 @@ def store_payload(
 
 def load_payload(recipe: str, port: str, cache_dir: str | Path):
     """Load a cached payload, or None if it is not in the cache."""
-    path = _payload_path(recipe, port, cache_dir)
+    path = payload_path(recipe, port, cache_dir)
     if not path.exists():
         return None
     with h5py.File(path, "r") as fh:
@@ -61,7 +63,7 @@ def load_payload(recipe: str, port: str, cache_dir: str | Path):
 
 
 def has_payload(recipe: str, port: str, cache_dir: str | Path) -> bool:
-    return _payload_path(recipe, port, cache_dir).exists()
+    return payload_path(recipe, port, cache_dir).exists()
 
 
 def _summary_path(recipe: str, port: str, cache_dir: str | Path) -> Path:

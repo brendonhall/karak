@@ -80,3 +80,11 @@ def test_plain_default_console_does_not_wrap_long_lines(capsys):
     long_line = "Loaded element 'Si' (inverted via tima:jet): " + "x" * 150
     reporter.log("info", long_line)
     assert long_line in capsys.readouterr().out
+
+
+def test_plain_header_shows_the_run_record():
+    from dataclasses import replace
+
+    reporter, console = _reporter()
+    reporter.run_started(replace(INFO, record="out/nwa/runs/2026-09-29T14-05-12Z"))
+    assert "record  out/nwa/runs/2026-09-29T14-05-12Z" in console.export_text()

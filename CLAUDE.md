@@ -62,6 +62,7 @@ Three layers; each depends only on the one below it.
    eviction with spill-to-cache for >256 MB arrays), `builtins.py` (the
    loads the shipped flows + `override_params`/`apply_device`),
    `complete.py` (fill missing params from stage templates, v1 → v2),
+   `record.py` (per-run `{out}/runs/<time>/flow.json` + `run.json`),
    `flows/*.json` (the builtin flows: complete JSON, the source of truth).
 
 `cli/main.py` is the CLI; `cli/reporter.py` holds all Rich output;
