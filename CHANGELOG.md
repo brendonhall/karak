@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CSV (`--mask`) such as the valid-area mask. `PATH` is a run's `--out`
   base, its work or cache directory, or a single cached `.h5` file. With
   an `--out` base it opens the outputs of the latest run record.
+- `karak view` also opens the mask step's output: the mineral mask as a
+  labels layer, and the valid mask as a hidden labels layer when the flow
+  set one.
 - Exit codes for `karak run`: 1 when a step fails, 130 on Ctrl-C.
 - Warnings raised while loading maps (for example PIL's
   `DecompressionBombWarning` on 104 Mpx exports) are logged once through
