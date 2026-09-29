@@ -39,7 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in napari (optional `karak[view]` extra): one gray layer per element,
   placed in full-resolution coordinates, plus an optional napari shapes
   CSV (`--mask`) such as the valid-area mask. `PATH` is a run's `--out`
-  base, its work or cache directory, or a single cached `.h5` file.
+  base, its work or cache directory, or a single cached `.h5` file. With
+  an `--out` base it opens the outputs of the latest run record.
 - Exit codes for `karak run`: 1 when a step fails, 130 on Ctrl-C.
 - Warnings raised while loading maps (for example PIL's
   `DecompressionBombWarning` on 104 Mpx exports) are logged once through

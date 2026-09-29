@@ -306,9 +306,12 @@ uv run --extra view karak view BASE [--show Fe-K,Si] [--mask mask/Valid_mask.csv
 ```
 
 `BASE` is the run's `--out` value, its work or cache directory, or a single
-cached `.h5` file copied from another machine. The command opens the newest
-cached element cube and the BSE image from the same step: one gray layer per
-element (only `--show` elements visible), placed in full-resolution
+cached `.h5` file copied from another machine. Given an `--out` value, the
+command opens the outputs listed in the latest run record
+(`{out}/runs/latest/run.json`): the load step's element cube and the BSE
+image from the same step. Without a record (or if its cache files are
+gone) it opens the newest cached element cube instead. It shows one gray
+layer per element (only `--show` elements visible), placed in full-resolution
 coordinates, so the cursor position matches the original exports and a
 napari shapes CSV such as the valid-area mask lines up. It loads the whole
 cube into memory (about 2 GB for NWA 4587).

@@ -1,8 +1,10 @@
 """karak view: open a run's cached load outputs in napari.
 
-The cache names files by recipe hash, so this command reads each file's
-``payload_type`` attribute to find the newest ElementCube and the BseImage
-from the same step. Layers are placed in full-resolution coordinates
+It opens the outputs listed in the run's latest record
+(``{out}/runs/latest/run.json``): the first ElementCube in flow order (the
+load step's) and the BseImage from the same step. Without a record it scans
+the cache, which names files by recipe hash, reading each file's
+``payload_type`` to find the newest ElementCube. Layers are placed in full-resolution coordinates
 (scale = downsample factor, offset = trims) so positions match the
 original exports and the napari shapes the valid mask was drawn with.
 
@@ -13,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import sys
 import time
 from dataclasses import dataclass
@@ -81,10 +84,38 @@ def find_cache_files(target: str | Path) -> list[CacheFile]:
     return entries
 
 
-def pick_outputs(entries: list[CacheFile]):
-    """Newest ElementCube, the BseImage from the same step, other cubes."""
-    cubes = sorted((e for e in entries if e.payload_type == "element_cube"),
-                   key=lambda e: e.mtime, reverse=True)
+def find_run_outputs(target: str | Path) -> list[CacheFile] | None:
+    """Output files of the latest recorded run of an ``--out`` base, in flow
+    order; None when there is no record or its files are gone."""
+    from karak.flow.record import latest_run_dir
+
+    run_dir = latest_run_dir(str(target))
+    if run_dir is None or not (run_dir / "run.json").is_file():
+        return None
+    data = json.loads((run_dir / "run.json").read_text())
+    base = Path(data.get("cwd", "."))
+    entries = []
+    for node in data.get("nodes", {}).values():
+        for output in (node.get("outputs") or {}).values():
+            if not output.get("file"):
+                continue
+            path = Path(output["file"])
+            entry = _read_entry(path if path.is_absolute() else base / path)
+            if entry is None:
+                return None   # stale record (cache cleared): scan instead
+            entries.append(entry)
+    return entries or None
+
+
+def pick_outputs(entries: list[CacheFile], newest_first: bool = True):
+    """An ElementCube, the BseImage from the same step, and other cubes.
+
+    ``newest_first`` picks the most recent cube (cache scan); otherwise the
+    first in list order (a run record lists outputs in flow order).
+    """
+    cubes = [e for e in entries if e.payload_type == "element_cube"]
+    if newest_first:
+        cubes.sort(key=lambda e: e.mtime, reverse=True)
     if not cubes:
         raise ValueError("no ElementCube in the cache; run the load step first")
     cube = cubes[0]
@@ -161,9 +192,17 @@ def view_main(argv: list[str]) -> int:
     from karak.io.masks import read_napari_shapes
     from karak.stages.payloads import payload_from_h5
 
-    cube_file, bse_file, other_cubes = pick_outputs(find_cache_files(args.path))
+    from karak.flow.record import latest_run_dir
+
+    recorded = find_run_outputs(args.path)
+    if recorded is not None:
+        print(f"run record: {latest_run_dir(args.path)}")
+        cube_file, bse_file, other_cubes = pick_outputs(recorded, newest_first=False)
+    else:
+        cube_file, bse_file, other_cubes = pick_outputs(
+            find_cache_files(args.path))
     for other in other_cubes:
-        print(f"also cached: {other.path.name} "
+        print(f"other cube: {other.path.name} "
               f"({time.strftime('%Y-%m-%d %H:%M', time.localtime(other.mtime))})")
 
     def load(entry):

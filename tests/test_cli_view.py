@@ -127,3 +127,63 @@ def test_view_opens_layers_and_mask(tmp_path, monkeypatch, capsys):
     )
     out = capsys.readouterr().out
     assert "ElementCube 4×5×3" in out
+
+
+def _write_record(out_base, outputs):
+    """A minimal run record whose src node lists the given cache files."""
+    import json
+
+    run_dir = out_base / "runs" / "2026-09-29T14-05-12Z"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run.json").write_text(json.dumps({
+        "status": "ok",
+        "nodes": {"src": {"type": "load_elements", "status": "ran",
+                          "outputs": {port: {"file": str(path), "summary": ""}
+                                      for port, path in outputs.items()}}},
+    }))
+    (out_base / "runs" / "latest").symlink_to(run_dir.name)
+    return run_dir
+
+
+def test_view_uses_the_latest_run_record_over_newer_cache_files(tmp_path, capsys):
+    from karak.cli.view import find_run_outputs
+
+    cache = tmp_path / "output" / "work" / "cache"
+    rec_cube = _store(cache, "rec", "cube", _cube(), 1000)
+    rec_bse = _store(cache, "rec", "bse", _bse(), 1000)
+    _store(cache, "newer", "cube", _cube(), 5000)   # not from the recorded run
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": rec_cube, "bse": rec_bse})
+
+    entries = find_run_outputs(out_base)
+    cube, bse, others = pick_outputs(entries)
+    assert (cube.recipe, bse.recipe) == ("rec", "rec")
+    assert others == []
+
+
+def test_view_falls_back_to_the_cache_when_record_files_are_gone(tmp_path):
+    from karak.cli.view import find_run_outputs
+
+    cache = tmp_path / "output" / "work" / "cache"
+    gone = cache / "gone__cube.h5"
+    _store(cache, "aaa", "cube", _cube(), 1000)
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": gone})
+    assert find_run_outputs(out_base) is None
+
+
+def test_view_without_a_record_returns_none(tmp_path):
+    from karak.cli.view import find_run_outputs
+
+    assert find_run_outputs(tmp_path / "output" / "run") is None
+
+
+def test_view_main_reports_the_record_it_opened(tmp_path, monkeypatch, capsys):
+    cache = tmp_path / "output" / "work" / "cache"
+    rec_cube = _store(cache, "rec", "cube", _cube(), 1000)
+    out_base = tmp_path / "output" / "run"
+    run_dir = _write_record(out_base, {"cube": rec_cube})
+    monkeypatch.setattr(view, "_napari_available", lambda: True)
+    monkeypatch.setattr(view, "open_viewer", lambda specs, shapes: None)
+    assert view_main([str(out_base)]) == 0
+    assert f"run record: {run_dir}" in capsys.readouterr().out
