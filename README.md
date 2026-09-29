@@ -44,7 +44,7 @@ Citation metadata is provided in [`CITATION.cff`](CITATION.cff).
 - **Post-clustering refinement**: GMM-based splitting of composite phases (e.g., pyroxene into pigeonite + augite)
 - **Full provenance**: the flow definition, library versions, and timestamps travel inside every output file
 - **QC diagnostics**: figure sinks render diagnostics at each stage for visual validation
-- **Legacy YAML mode**: existing `config.yaml` files keep working; they convert to flows internally, and the results match bit-for-bit
+- **Complete flow files**: a pipeline is a JSON file that lists every parameter of every node, and each run keeps the exact flow it executed; no run parameter comes from code
 
 ## Installation
 
@@ -81,67 +81,49 @@ data/
 ├── Mg.png
 ├── Ca.png
 ├── Al.png
-├── Na.png
-└── config.yaml
+└── Na.png
 ```
 
-### 2. Create a configuration file
+### 2. Create a flow file
 
-```yaml
-# config.yaml - minimal example
-input_dir: "."
-hdf5_output: "eds_pipeline.h5"
-figure_dir: "figures"
+A flow is a JSON file that lists every stage (node), how their outputs
+connect, and every parameter of every node. Start from a builtin:
 
-exclude_elements: ["Fe-L"]
-bse_channel: "SEM"
+```bash
+karak flow init --builtin global -o my_flow.json
+```
 
-downsample:
-  header_trim_px: 0
-  downsample_factor: 2
+Edit parameter values in `my_flow.json` as needed. Each node lists all of
+its stage's parameters, for example:
 
-mask:
-  min_object_size: 100
-
-denoise:
-  method: bilateral
-  sigma_spatial: 1.0
-
-cluster:
-  strategy: global
-  pca:
-    n_components: null       # inspect scree plot, then set
-  hdbscan:
-    min_cluster_size: 1000
-    subsample_n: 500000
-    noise_reassign_k: 5
+```json
+{
+  "id": "dn", "type": "denoise",
+  "params": {"method": "bilateral", "sigma_spatial": 1.0, "sigma_color": null,
+             "niter": 10, "kappa": 50.0, "gamma": 0.1, "option": 2,
+             "device": "cpu"}
+}
 ```
 
 ### 3. Run the pipeline
 
 ```bash
-cd data
-karak                    # reads ./config.yaml
+karak run my_flow.json --input data/ --out output/sample
 ```
 
-Or skip the YAML file entirely and run a builtin flow:
-
-```bash
-karak run --builtin global --input data/ --out output/sample
-```
-
-Either way, Karak runs the full pipeline and writes results to an HDF5 file alongside QC figures.
+Karak runs the pipeline and writes results to an HDF5 file alongside QC
+figures. `--builtin global` runs a shipped flow without copying it first.
 
 > **Note:** The first run with a given colormap builds a 256³ RGB-to-scalar
-> lookup table (30–60 s). It is cached on disk and reused by all later runs.
-> For a fast installation check, run `karak --test-mode` (4 elements at 4x
-> downsample).
+> lookup table (about 10 s for the default `tima:jet` palette). It is cached
+> on disk and reused by all later runs. For a fast installation check, run
+> with `--set src.downsample_factor=4 --set src.include_elements=Fe-K,Ca,Mg,Si`.
 
 ## Usage
 
-Flow mode (recommended):
-
 ```bash
+karak flow init --builtin tiled -o my_flow.json                  # start from a builtin
+karak flow complete old_flow.json                                # fill missing params
 karak run --builtin global --input data/ --out output/sample     # standard pipeline
 karak run --builtin tiled --input data/ --out output/sample      # tiled clustering
 karak run --builtin tiled-rare --input data/ --out output/sample # tiled + rare phases
@@ -156,21 +138,10 @@ karak bench --builtin tiled --input DIR --out BASE \
 karak bench --compare a.json b.json        # cross-machine table
 ```
 
-Legacy YAML mode (converted to a flow internally, results identical):
-
-```bash
-karak -c path/to/config.yaml       # run from a YAML config
-karak --test-mode                  # fast validation (4 elements, 4x downsample)
-karak --no-qc                      # skip QC figure generation
-karak --clean                      # delete previous HDF5 and cache, start fresh
-karak --emit-flow -c config.yaml   # print the equivalent flow JSON, then migrate
-karak -v                           # enable debug logging
-```
-
 Re-running a flow is cheap: every stage output is cached under
 `<out dir>/work/cache/`, keyed by the stage's parameters, its upstream
 results, and the input files' signatures. Change one parameter and only the
-affected stages re-run. This replaces the old `--from-stage` resume flag.
+affected stages re-run.
 
 ## Architecture
 
@@ -268,67 +239,44 @@ The tiled strategy divides the image into spatial tiles, clusters each independe
 
 ## Configuration
 
-Flows are JSON: `nodes` (a stage `type` plus a `params` dict) connected by
-`edges` (output port to input port). Copy a builtin from
-[`src/karak/flow/flows/`](src/karak/flow/flows/) as a starting point, or
-print one from an existing YAML config with `karak --emit-flow -c
-config.yaml`. String parameters accept the run-scoped tokens `{input}`,
-`{out}`, and `{work}`, so one flow file works across datasets.
+Flows are JSON: `nodes` (a stage `type` plus a `params` dict listing every
+parameter of that stage) connected by `edges` (output port to input port).
+Start from a builtin with `karak flow init`, or copy one from
+[`src/karak/flow/flows/`](src/karak/flow/flows/). String parameters accept
+the run-scoped tokens `{input}`, `{out}`, and `{work}`, so one flow file
+works across datasets. `karak validate` rejects a flow with a missing
+parameter; `karak flow complete FILE` fills missing ones from the stage
+templates (listed in the [Stage Reference](docs/stage_reference.md)) and
+prints what it added. Some parameters beyond the basics:
+
+### Tiled clustering (`hdbscan_tiled` node)
 
 ```json
-{
-  "id": "dn", "type": "denoise",
-  "params": {"method": "bilateral", "sigma_spatial": 1.0}
-}
+"params": {"tile_size": 512, "merge_threshold": 0.92,
+           "min_clusters_per_tile": 3, "...": "..."}
 ```
 
-The legacy YAML config remains fully supported. Below are some key
-parameters beyond the minimal example above.
+### Two-pass rare phase detection (`rare_phase` node, `tiled-rare` flow)
 
-### Tiled clustering
-
-```yaml
-cluster:
-  strategy: tiled
-  tiled:
-    tile_size: 512
-    merge_threshold: 0.92       # cosine similarity for phase matching
-    min_clusters_per_tile: 3    # tiles with fewer clusters deferred to k-NN
+```json
+"params": {"min_cluster_size": 50, "subsample_n": 500000, "...": "..."}
 ```
 
-### Two-pass rare phase detection
+### Post-clustering refinement (`refine` node)
 
-```yaml
-cluster:
-  rare_phase:
-    enabled: true
-    min_cluster_size: 50        # much smaller than primary pass
-    subsample_n: 500000
-```
-
-### Post-clustering refinement
-
-```yaml
-cluster:
-  refinement:
-    enabled: true
-    target_phase: 2             # cluster label to refine
-    olivine:
-      enabled: true
-      fe_threshold: 0.6
-      ca_threshold: 0.10
-    gmm_split:
-      enabled: true
-      n_components: 2           # e.g., pigeonite + augite
-      features: ["Ca", "Mg", "Fe-K", "BSE"]
+```json
+"params": {"target_phase": 2,
+           "olivine_enabled": true, "olivine_fe_threshold": 0.6,
+           "olivine_ca_threshold": 0.1,
+           "gmm_enabled": true, "gmm_n_components": 2,
+           "gmm_features": "Ca,Mg,Fe-K,BSE", "...": "..."}
 ```
 
 ## Documentation
 
 The **[User Guide](docs/user_guide.md)** covers input data expectations
 (element maps, BSE image, valid-region polygon mask), the stage table with
-inputs and outputs, payload types, flows, the legacy YAML config schema,
-the HDF5 output layout, caching, and reproducibility notes.
+inputs and outputs, payload types, flows, the HDF5 output layout, caching, and reproducibility notes.
 
 The **[Stage Reference](docs/stage_reference.md)** documents every stage's
 ports and parameters (types, defaults, bounds, help). It is generated from
@@ -343,11 +291,13 @@ paper were run on an **AMD Ryzen AI 5 340 with 32 GB RAM** (Linux).
   **~10–12 GB RAM**.
 - Memory can be bounded for larger images via `cluster.hdbscan.subsample_n`
   or the `tiled` clustering strategy (constant per-tile memory).
-- `karak --test-mode` validates an installation in minutes on a laptop.
+- A 4x-downsampled run on four elements (`--set src.downsample_factor=4
+  --set src.include_elements=Fe-K,Ca,Mg,Si`) checks an installation in
+  minutes on a laptop.
 
 ## Testing
 
-A fast pytest suite (config round-trip, colormap-inversion round-trip on a
+A fast pytest suite (colormap-inversion round-trip on a
 synthetic ramp, mask utilities, per-stage parity against the numeric core,
 flow validation/caching/executor behavior, and end-to-end flow runs on a
 synthetic two-phase scene) runs in well under a minute:
@@ -362,11 +312,11 @@ The same suite runs in CI on every push and pull request
 
 ## How It Works
 
-**Jet colormap inversion.** SEM-EDS software commonly exports elemental maps as jet-colormapped PNGs. Karak inverts these back to scalar intensity values using a precomputed 256<sup>3</sup> RGB-to-scalar lookup table derived from matplotlib's jet colormap. The LUT is cached to disk and reused across runs.
+**Jet colormap inversion.** SEM-EDS software commonly exports elemental maps as jet-colormapped PNGs. Karak inverts these back to scalar intensity values using a precomputed 256<sup>3</sup> RGB-to-scalar lookup table built from the 256-entry palette TIMA renders with (`tima:jet`, recovered from real exports); any matplotlib colormap or a custom palette file also works. The LUT is cached to disk and reused across runs.
 
 **HDBSCAN clustering.** Unlike k-means, [HDBSCAN](https://hdbscan.readthedocs.io/) discovers the number of clusters automatically from data density. Pixels that don't belong to any dense region are labeled as noise and later reassigned to their nearest cluster via k-nearest-neighbor voting.
 
-**Provenance tracking.** Every HDF5 output file embeds the flow definition (or legacy YAML config), library versions (NumPy, scikit-learn, HDBSCAN, etc.), Python version, and platform info as root-level attributes. Any output file is self-documenting and reproducible.
+**Provenance tracking.** Every HDF5 output file embeds the complete flow definition, library versions (NumPy, scikit-learn, HDBSCAN, etc.), Python version, and platform info as root-level attributes. Any output file is self-documenting and reproducible.
 
 ## Authors
 

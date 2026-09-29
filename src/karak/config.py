@@ -1,23 +1,14 @@
-"""Pipeline configuration models and serialization utilities.
+"""Argument bundles for the numeric core.
 
-All pipeline parameters are captured in a Pydantic model hierarchy
-so they can be serialized to YAML for reproducibility and embedded
-in HDF5 attributes for provenance tracking.
-
-v1.1 changes:
-- DownsampleConfig replaces CropConfig (no ROI crop)
-- NormalizeConfig replaces ZeroReplacementConfig + transform field
-- Z-score normalization instead of CLR/ILR
-- scikit-bio no longer required
+Stages build these from their (complete) flow params. Run parameters live
+in flow JSON files, not here.
 """
 
 from __future__ import annotations
 
 import importlib.metadata
-from pathlib import Path
 from typing import Literal, Optional
 
-import yaml
 from pydantic import BaseModel, Field
 
 
@@ -94,32 +85,6 @@ class LoaderConfig(BaseModel):
             "if not absolute). Plain 'jet' is accepted as shorthand for "
             "'cmap:jet' for backward compatibility."
         ),
-    )
-
-
-class MaskConfig(BaseModel):
-    """Background / epoxy masking parameters."""
-
-    min_object_size: int = Field(
-        default=100,
-        description="Remove connected components smaller than this from the mask",
-    )
-    valid_mask_path: Optional[str] = Field(
-        default=None,
-        description=(
-            "Path to a napari shapes CSV defining the sample boundary polygon. "
-            "Pixels outside this polygon are excluded before any algorithmic masking. "
-            "Coordinates are in the original (pre-downsample) image space."
-        ),
-    )
-
-
-class NormalizeConfig(BaseModel):
-    """Normalization parameters."""
-
-    method: Literal["zscore"] = Field(
-        default="zscore",
-        description="Normalization method (zscore: per-channel zero-mean unit-variance)",
     )
 
 
@@ -343,86 +308,6 @@ class ClusterConfig(BaseModel):
 # ---------------------------------------------------------------------------
 # Top-level pipeline configuration
 # ---------------------------------------------------------------------------
-
-class PipelineConfig(BaseModel):
-    """Complete pipeline configuration for SEM-EDS mineral mapping."""
-
-    # Paths
-    input_dir: str = Field(
-        default="../data",
-        description="Directory containing raw PNG element maps",
-    )
-    hdf5_output: str = Field(
-        default="../data/eds_pipeline.h5",
-        description="Path for the output HDF5 file",
-    )
-    figure_dir: str = Field(
-        default="../data/figures",
-        description="Directory for QC diagnostic figures",
-    )
-
-    # Element handling
-    exclude_elements: list[str] = Field(
-        default=["Fe-L"],
-        description="Element channels to exclude from the compositional cube",
-    )
-    bse_channel: str = Field(
-        default="SEM",
-        description="Name of the BSE / SEM channel (kept separate from cube)",
-    )
-
-    # Sub-configs
-    loader: LoaderConfig = Field(default_factory=LoaderConfig)
-    downsample: DownsampleConfig = Field(default_factory=DownsampleConfig)
-    mask: MaskConfig = Field(default_factory=MaskConfig)
-    normalize: NormalizeConfig = Field(default_factory=NormalizeConfig)
-    denoise: DenoiseConfig = Field(default_factory=DenoiseConfig)
-    cluster: ClusterConfig = Field(default_factory=ClusterConfig)
-
-
-# ---------------------------------------------------------------------------
-# Serialization helpers
-# ---------------------------------------------------------------------------
-
-def save_config(config: PipelineConfig, path: str | Path) -> None:
-    """Serialize a PipelineConfig to a YAML file."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = config.model_dump()
-    with open(path, "w") as fh:
-        yaml.dump(data, fh, default_flow_style=False, sort_keys=False)
-
-
-def load_config(path: str | Path) -> PipelineConfig:
-    """Load and validate a PipelineConfig from a YAML file.
-
-    Relative paths in the config (``input_dir``, ``hdf5_output``,
-    ``figure_dir``, ``mask.valid_mask_path``) are resolved against the
-    config file's directory, so a config can travel with its data
-    directory regardless of the caller's working directory.
-    """
-    path = Path(path)
-    with open(path) as fh:
-        data = yaml.safe_load(fh)
-
-    base = path.resolve().parent
-
-    def _resolve(p: str | None) -> str | None:
-        if p is None:
-            return None
-        candidate = Path(p).expanduser()
-        if candidate.is_absolute():
-            return str(candidate)
-        return str((base / candidate).resolve())
-
-    for key in ("input_dir", "hdf5_output", "figure_dir"):
-        if key in data:
-            data[key] = _resolve(data[key])
-    if isinstance(data.get("mask"), dict) and "valid_mask_path" in data["mask"]:
-        data["mask"]["valid_mask_path"] = _resolve(data["mask"]["valid_mask_path"])
-
-    return PipelineConfig(**data)
-
 
 def get_software_versions() -> dict[str, str]:
     """Return a dict of key library versions for provenance tracking."""

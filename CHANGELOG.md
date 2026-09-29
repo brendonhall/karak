@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `karak flow init --builtin NAME -o FILE` writes a builtin flow with every
+  parameter listed; `karak flow complete FILE [-o OUT]` fills missing
+  parameters from the stage templates, prints what it added, and upgrades
+  format version 1 flows.
+- `Stage.template()` returns a stage's template parameter values.
+
 - `karak run` shows a live dashboard on a terminal: run context, the
   running step's parameters (changed ones first), per-file progress for
   the load step, output summaries, cache status with recipe hashes,
@@ -34,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Flows are complete (format version 2).** A flow JSON lists every
+  parameter of every node, and a run takes no value from code: `karak
+  validate` and `karak run` reject a flow with a missing parameter or a
+  version-1 (sparse) flow, and name the fix (`karak flow complete`). The
+  shipped flows list every parameter and are the source of truth; the code
+  that built them is gone. Recipe hashes are unchanged, so existing caches
+  stay valid.
+- JSON `null` is a value only for parameters whose template value is
+  `null`; elsewhere it is an error instead of meaning "use the default".
+- `--set` of a parameter the stage does not declare is an error.
+- Node `ui` metadata (canvas positions) no longer affects flow equality.
+
 - The default colormap is now `tima:jet` instead of `cmap:jet`.
   Matplotlib's jet cuts the cyan and yellow corners of TIMA's ramp and
   places its segment breakpoints differently, so on TIMA exports it merged
@@ -45,6 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - To reproduce results from 0.2.0 and earlier exactly, set
   `colormap: cmap:jet` and `header_trim_px: 100`
   (`--set src.colormap=cmap:jet --set src.header_trim_px=100`).
+
+### Removed
+
+- The legacy YAML mode: `karak -c config.yaml`, `--test-mode`,
+  `--emit-flow`, `--clean`, `--from-stage`, `load_config`, `save_config`,
+  `PipelineConfig`, and the YAML-to-flow shim. Write the pipeline as a flow
+  JSON instead (`karak flow init`). `karak` with no command prints usage.
 
 ## [0.2.0] - 2026-08-22
 

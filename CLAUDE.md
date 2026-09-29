@@ -16,6 +16,8 @@ Karak is an automated mineralogy pipeline for SEM-EDS (Scanning Electron Microsc
 uv sync --group dev                 # install with test dependencies
 uv run pytest                       # run the test suite
 
+karak flow init --builtin tiled -o my_flow.json      # complete flow JSON to edit
+karak flow complete FLOW.json [-o OUT]               # fill missing params from templates
 karak run --builtin global --input DIR --out BASE    # run the standard flow
 karak run --builtin tiled|tiled-rare ...             # tiled variants
 karak run FLOW.json --input DIR --out BASE           # run a custom flow
@@ -32,11 +34,6 @@ karak schema                                         # stage palette as JSON
 karak bench --builtin tiled --input DIR --out BASE \
     --config baseline --config workers=0   # per-node timing comparison
 karak bench --compare a.json b.json        # cross-machine table
-
-karak -c config.yaml                # legacy YAML mode (runs via the flow engine)
-karak --test-mode                   # fast validation: 4 elements, 4x downsample
-karak --emit-flow -c config.yaml    # print the equivalent flow JSON
-karak --clean                       # delete previous HDF5 + cache
 ```
 
 `python -m karak.flow {run|validate|schema}` mirrors the flow subcommands.
@@ -60,8 +57,9 @@ Three layers; each depends only on the one below it.
    `executor.py` (topo-sort, `{input}`/`{out}`/`{work}`/`{flow}` token
    resolution, content-addressed per-node caching, refcounted payload
    eviction with spill-to-cache for >256 MB arrays), `builtins.py` (the
-   three standard flows + `flow_from_config` YAML shim + `override_params`),
-   `flows/*.json` (the same flows as shipped JSON, round-trip tested).
+   loads the shipped flows + `override_params`/`apply_device`),
+   `complete.py` (fill missing params from stage templates, v1 → v2),
+   `flows/*.json` (the builtin flows: complete JSON, the source of truth).
 
 `cli/main.py` is the CLI; `cli/reporter.py` holds all Rich output;
 `cli/runner.py` is only the packaged entry-point re-export.
@@ -69,8 +67,13 @@ Three layers; each depends only on the one below it.
 ### Key design rules
 
 - **Params are data**: every knob is a declared `Param`; never read an
-  undeclared params key. A drift test pins stage defaults to the legacy
-  Pydantic defaults in `config.py`.
+  undeclared params key.
+- **Flows are complete**: a flow JSON lists every param of every node
+  (format version 2). `Param` defaults are templates for `karak flow
+  init/complete` and direct `Stage.run()` calls only; a flow run never
+  fills a value from code, and JSON null is a value only where the template
+  is null. Adding a param to a stage means existing flows need
+  `karak flow complete`; regenerate the shipped flows the same way.
 - **Payloads are immutable**: `apply()` returns new payloads via
   `.replace()`; never mutate inputs (the cache depends on this).
 - **Caching replaces checkpoints**: stage outputs live in

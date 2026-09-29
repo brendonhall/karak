@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from karak.flow.builtins import apply_device, builtin_flow, builtin_names, override_params
+from karak.flow.complete import canonicalize, complete_graph
 from karak.flow.graph import Graph
 from karak.flow.validate import validate
 
@@ -47,6 +48,33 @@ def _add_flow_args(parser: argparse.ArgumentParser) -> None:
         "--builtin", choices=builtin_names(),
         help="Use a builtin flow instead of a JSON file",
     )
+
+
+def _write_flow(graph: Graph, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(graph.to_json(), indent=2) + "\n")
+
+
+def _flow_command(args) -> int:
+    if args.flow_command == "init":
+        out = Path(args.output)
+        if out.exists() and not args.force:
+            raise SystemExit(f"error: {out} exists (use --force to overwrite)")
+        _write_flow(builtin_flow(args.builtin), out)
+        print(f"wrote {out} ({args.builtin}, every param listed)")
+        return 0
+
+    # complete
+    source = Path(args.flow)
+    graph, added = complete_graph(Graph.from_json(json.loads(source.read_text())))
+    out = Path(args.output) if args.output else source
+    _write_flow(graph, out)
+    if not added:
+        print(f"{out}: already complete")
+    for node_id, names in added.items():
+        print(f"{node_id}: added {len(names)} params from stage templates: "
+              + ", ".join(names))
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -89,6 +117,24 @@ def build_parser() -> argparse.ArgumentParser:
              "(automatic when stdout is not a terminal).",
     )
 
+    flow_parser = sub.add_parser(
+        "flow", help="Create or complete flow JSON files")
+    flow_sub = flow_parser.add_subparsers(dest="flow_command", required=True)
+    init_parser = flow_sub.add_parser(
+        "init", help="Write a builtin flow, with every param, to a file")
+    init_parser.add_argument("--builtin", required=True, choices=builtin_names())
+    init_parser.add_argument("-o", "--output", required=True,
+                             help="Flow JSON file to write")
+    init_parser.add_argument("--force", action="store_true",
+                             help="Overwrite an existing file")
+    complete_parser = flow_sub.add_parser(
+        "complete",
+        help="Fill missing params from stage templates (upgrades v1 flows)")
+    complete_parser.add_argument("flow", help="Flow JSON file")
+    complete_parser.add_argument(
+        "-o", "--output", default=None,
+        help="Write here instead of updating the file in place")
+
     validate_parser = sub.add_parser("validate", help="Validate a flow")
     _add_flow_args(validate_parser)
 
@@ -115,6 +161,9 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         print(json.dumps(list_stages(), indent=2))
         return 0
 
+    if args.command == "flow":
+        return _flow_command(args)
+
     graph = _load_graph(args)
 
     if args.command == "validate":
@@ -128,10 +177,14 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
     # run
     from karak.flow.executor import run as run_flow
 
-    if args.set:
-        graph = override_params(graph, _parse_set(args.set))
-    if args.device:
-        graph = apply_device(graph, args.device)
+    try:
+        if args.set:
+            graph = override_params(graph, _parse_set(args.set))
+        if args.device:
+            graph = apply_device(graph, args.device)
+    except (KeyError, ValueError) as exc:
+        raise SystemExit(f"error: --set/--device: {exc}") from None
+    graph = canonicalize(graph)
     if any(n.params.get("device") == "cuda" for n in graph.nodes):
         import karak.accel as accel
 
