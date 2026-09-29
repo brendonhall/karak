@@ -61,3 +61,24 @@ def test_schema_is_pure_json():
     assert schema["params"][0]["name"] == "factor"
     assert schema["inputs"][0]["name"] == "cube"
     json.dumps(schema)  # must not raise
+
+
+def test_template_lists_every_param_with_its_template_value():
+    assert DoublerStage.template() == {"factor": 2.0}
+
+
+def test_require_complete_lists_missing_params():
+    with pytest.raises(ValueError, match=r"doubler: missing param\(s\) \['factor'\]"):
+        DoublerStage.coerce_params({}, require_complete=True)
+    assert DoublerStage.coerce_params({"factor": 3}, require_complete=True) == {
+        "factor": 3.0
+    }
+
+
+def test_every_registered_template_coerces_to_itself():
+    from karak.stages import registry
+
+    for schema in registry.list_stages():
+        cls = registry.get(schema["id"])
+        template = cls.template()
+        assert cls.coerce_params(template, require_complete=True) == template, cls.id

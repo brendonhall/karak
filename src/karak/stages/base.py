@@ -34,9 +34,18 @@ class Param:
     unit: str | None = None
 
     def coerce(self, value: Any) -> Any:
-        """None -> default; cast to declared type; enforce bounds/choices."""
+        """Cast to the declared type and enforce bounds/choices.
+
+        ``None`` (JSON null) is a real value only for params whose template
+        value is None; it never stands in for the template value.
+        """
         if value is None:
-            return self.default
+            if self.default is None:
+                return None
+            raise ValueError(
+                f"{self.name}: null not allowed "
+                f"(template value {self.default!r})"
+            )
 
         if self.type == "float":
             coerced: Any = float(value)
@@ -151,7 +160,17 @@ class Stage:
         return None
 
     @classmethod
-    def coerce_params(cls, params: dict | None) -> dict:
+    def template(cls) -> dict:
+        """Every param with its template value: the starting point for a
+        new flow node. Flows must spell out every param; these values are
+        never filled in silently during a flow run."""
+        return {p.name: p.default for p in cls.PARAMS}
+
+    @classmethod
+    def coerce_params(cls, params: dict | None, *,
+                      require_complete: bool = False) -> dict:
+        """Coerce ``params``; missing ones take their template value unless
+        ``require_complete``, in which case they are an error."""
         params = params or {}
         declared = {p.name for p in cls.PARAMS}
         unknown = set(params) - declared
@@ -160,7 +179,13 @@ class Stage:
                 f"{cls.id}: unknown param(s) {sorted(unknown)!r}; "
                 f"declared: {sorted(declared)!r}"
             )
-        return {p.name: p.coerce(params.get(p.name)) for p in cls.PARAMS}
+        missing = [p.name for p in cls.PARAMS if p.name not in params]
+        if missing and require_complete:
+            raise ValueError(f"{cls.id}: missing param(s) {missing!r}")
+        return {
+            p.name: p.coerce(params[p.name] if p.name in params else p.default)
+            for p in cls.PARAMS
+        }
 
     def check(self, inputs: dict, params: dict) -> list:
         """Return a list of error strings; empty means valid."""

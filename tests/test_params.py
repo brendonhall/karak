@@ -7,9 +7,15 @@ import pytest
 from karak.stages.base import Param
 
 
-def test_none_returns_default():
+def test_null_is_rejected_when_the_template_value_is_not_null():
     p = Param("degree", "int", 3)
-    assert p.coerce(None) == 3
+    with pytest.raises(ValueError, match="degree: null not allowed"):
+        p.coerce(None)
+
+
+def test_null_is_allowed_when_the_template_value_is_null():
+    p = Param("pattern", "str", None)
+    assert p.coerce(None) is None
 
 
 def test_float_casts_from_int_and_str():
