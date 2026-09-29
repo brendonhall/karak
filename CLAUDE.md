@@ -4,7 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Workflow
 
-Always push commits to `main` after committing.
+Every change to the repository (code, tests, docs, shipped flows) goes
+through a pull request. Never commit or push directly to `main`.
+
+1. Branch from an up-to-date `main`:
+   `git switch main && git pull && git switch -c <type>/<short-name>`,
+   where `<type>` is `feat`, `fix`, `refactor`, `docs`, `test`, or `chore`.
+2. Commit in small, tested steps. Run `uv run pytest` before each push.
+   Update `CHANGELOG.md` (Unreleased) in the same branch as the change.
+3. Push and open the PR: `git push -u origin HEAD`, then `gh pr create`.
+   - Title: conventional-commit style (`feat: ...`, `fix: ...`); it becomes
+     the squash commit message on `main`.
+   - Body: what changed and why; how it was tested (commands and results,
+     including any real-data check); rulings or open questions; follow-ups.
+4. Wait for CI (`gh pr checks --watch`) and fix any failure on the branch.
+5. Stop there. The user reviews and merges. Merge only when the user says
+   so, and then with `gh pr merge --squash --delete-branch`.
+6. After a merge: `git switch main && git pull`.
 
 ## Project
 
