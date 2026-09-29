@@ -150,10 +150,13 @@ by `edges` (output port to input port). Four builtins ship with karak:
 | `global` | `hdbscan_global → noise_assign` |
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
-| `stepwise` | none yet: load step only |
+| `stepwise` | none yet: load and mask steps only |
 
 `stepwise` grows one step at a time as steps join the dashboard work;
-today it runs only the load step (`src`).
+today it runs the load step (`src`) and the mask step (`msk`). The
+builtin leaves `msk.valid_mask_path` at `null` (no polygon); set it in your
+own copy (`karak flow init --builtin stepwise -o FILE`), for example to
+`"{input}/mask/Valid_mask.csv"`.
 
 ```bash
 karak run --builtin global --input data/ --out output/sample

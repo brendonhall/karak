@@ -140,9 +140,15 @@ def test_apply_device_no_declaring_nodes_is_identity():
     assert result is graph
 
 
-def test_stepwise_starts_with_the_load_step():
-    graph = builtin_flow("stepwise")
-    assert [(n.id, n.type) for n in graph.nodes] == [("src", "load_elements")]
+def test_stepwise_runs_load_then_mask():
     from karak.stages.load import LoadElementsStage
+    from karak.stages.mask import MaskStage
 
+    graph = builtin_flow("stepwise")
+    assert [(n.id, n.type) for n in graph.nodes] == [
+        ("src", "load_elements"), ("msk", "mask"),
+    ]
     assert graph.node("src").params == LoadElementsStage.template()
+    assert graph.node("msk").params == MaskStage.template()
+    assert [(e.src.node, e.src.port, e.dst.node, e.dst.port)
+            for e in graph.edges] == [("src", "cube", "msk", "cube")]

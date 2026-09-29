@@ -20,7 +20,27 @@
         "right_trim_px": 0,
         "downsample_factor": 2
       }
+    },
+    {
+      "id": "msk",
+      "type": "mask",
+      "params": {
+        "min_object_size": 100,
+        "valid_mask_path": null
+      }
     }
   ],
-  "edges": []
+  "edges": [
+    {
+      "id": "e1",
+      "from": {
+        "node": "src",
+        "port": "cube"
+      },
+      "to": {
+        "node": "msk",
+        "port": "cube"
+      }
+    }
+  ]
 }

@@ -128,7 +128,8 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     for expected in [
         "flow=stepwise", "src.colormap = lut:", "src: 4/4",
         "src.cube -> ElementCube 32×32×3 float32", "src.bse -> BseImage",
-        "run finished in", "(1 ran, 0 cached)", "Found 4 matching files",
+        "msk.masks -> MaskSet mineral", "run finished in",
+        "(2 ran, 0 cached)", "Found 4 matching files",
     ]:
         assert expected in out, expected
     assert "nodes:" not in out
@@ -137,7 +138,8 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     out = capsys.readouterr().out
     assert "src: cached (" in out
     assert "src.cube -> ElementCube 32×32×3" in out
-    assert "(0 ran, 1 cached)" in out
+    assert "msk: cached (" in out
+    assert "(0 ran, 2 cached)" in out
 
 
 def test_unexpected_error_closes_reporter_as_failed(tmp_path, monkeypatch):

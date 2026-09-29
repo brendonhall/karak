@@ -49,7 +49,7 @@ GOLDEN = {
                    "knn": "e07d439d307a85a42957d680a0f12141",
                    "stats": "d3c6f7ddf04adb10b46edb9591467eb0",
                    "fp": "e5024a65188e3da14e1ba42bca816f56"},
-    "stepwise": {"src": _SHARED["src"]},
+    "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"]},
 }
 
 
