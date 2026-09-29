@@ -120,11 +120,13 @@ def _resolve_tokens(params: dict, tokens: dict) -> dict:
 
 
 def _node_params(node, tokens: dict) -> dict:
-    """A node's parameters, coerced and with run tokens resolved."""
+    """A node's parameters, coerced and with run tokens resolved.
+
+    Flows are complete (validated first), so no value comes from code.
+    """
     cls = registry.get(node.type)
-    # Coerce first so Param defaults (which may contain tokens, e.g. a
-    # sink's "{out}") are present, then resolve tokens on the result.
-    return _resolve_tokens(cls.coerce_params(node.params), tokens)
+    params = cls.coerce_params(node.params, require_complete=True)
+    return _resolve_tokens(params, tokens)
 
 
 def _node_recipe(graph: Graph, node_id: str, params: dict, hashes: dict) -> str:
@@ -228,7 +230,8 @@ def run(
     devices = set()
     for node_id in order:
         node = graph.node(node_id)
-        coerced = registry.get(node.type).coerce_params(node.params)
+        coerced = registry.get(node.type).coerce_params(
+            node.params, require_complete=True)
         if "device" in coerced:
             devices.add(str(coerced["device"]))
     _emit(reporter, "run_started", RunInfo(
@@ -254,7 +257,8 @@ def run(
         node_hash = _node_recipe(graph, node_id, params, hashes)
         for port in cls.OUTPUTS:
             hashes[(node_id, port.name)] = node_hash
-        defaults = _resolve_tokens(cls.coerce_params({}), tokens)
+        # "default" means "equals the stage template", for display only
+        defaults = _resolve_tokens(cls.coerce_params(cls.template()), tokens)
         _emit(reporter, "node_params", node_id, [
             ParamValue(p.name, params[p.name], params[p.name] == defaults[p.name])
             for p in cls.PARAMS

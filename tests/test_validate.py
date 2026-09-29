@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from conftest import complete
 from karak.flow.graph import Edge, Endpoint, Graph, Node
 from karak.flow.validate import Issue, validate
 
@@ -13,14 +14,14 @@ def _edge(eid, src_node, src_port, dst_node, dst_port):
 
 
 def _load_mask_graph(**mask_params):
-    return Graph(
+    return complete(Graph(
         nodes=(
             Node("src", "load_elements", {"input_dir": "/data"}),
             Node("msk", "mask", dict(mask_params)),
         ),
         edges=(_edge("e1", "src", "cube", "msk", "cube"),),
         name="ok",
-    )
+    ))
 
 
 def _errors(graph):
@@ -141,3 +142,22 @@ def test_cycle_detected():
 def test_issue_shape():
     issue = Issue("error", "node1", "boom")
     assert (issue.level, issue.where, issue.message) == ("error", "node1", "boom")
+
+
+def test_sparse_version_1_flow_is_an_error_with_upgrade_hint():
+    from karak.flow.graph import Graph, Node
+
+    graph = Graph(version=1, nodes=(Node("n", "normalize", {"method": "zscore"}),))
+    errors = [i for i in validate(graph) if i.level == "error"]
+    assert any("karak flow complete" in i.message and i.where == "flow"
+               for i in errors)
+
+
+def test_missing_params_are_an_error_naming_each_param():
+    from karak.flow.graph import Graph, Node
+
+    graph = Graph(nodes=(Node("msk", "mask", {"min_object_size": 5}),))
+    messages = [i.message for i in validate(graph)
+                if i.level == "error" and i.where == "msk"]
+    assert any("valid_mask_path" in m and "karak flow complete" in m
+               for m in messages)

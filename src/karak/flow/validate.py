@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from karak.flow.complete import COMPLETE_HINT, FLOW_VERSION
 from karak.flow.graph import Graph
 from karak.stages import registry
 
@@ -22,6 +23,14 @@ class Issue:
 
 def validate(graph: Graph) -> list[Issue]:
     issues: list[Issue] = []
+
+    if graph.version != FLOW_VERSION:
+        issues.append(Issue(
+            "error", "flow",
+            f"flow format version {graph.version} leaves params to code "
+            f"defaults; version {FLOW_VERSION} lists every param; "
+            + COMPLETE_HINT,
+        ))
 
     # Duplicate node ids
     seen: set[str] = set()
@@ -40,8 +49,15 @@ def validate(graph: Graph) -> list[Issue]:
                 Issue("error", node.id, f"unknown stage type {node.type!r}")
             )
             continue
+        cls = stage_types[node.id]
+        missing = [p.name for p in cls.PARAMS if p.name not in node.params]
+        if missing:
+            issues.append(Issue(
+                "error", node.id,
+                f"missing param(s) {missing!r}; " + COMPLETE_HINT,
+            ))
         try:
-            stage_types[node.id].coerce_params(node.params)
+            cls.coerce_params(node.params)   # types, bounds, unknown names
         except ValueError as exc:
             issues.append(Issue("error", node.id, str(exc)))
 

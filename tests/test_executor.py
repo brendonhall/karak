@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from conftest import complete
+
 from karak.flow.executor import FlowError, PayloadStore, run
 from karak.flow.graph import Edge, Endpoint, Graph, Node
 from karak.stages import registry
@@ -64,7 +66,7 @@ def _fake_stages():
 
 
 def _chain_graph(add=2):
-    return Graph(
+    return complete(Graph(
         name="chain",
         nodes=(
             Node("src", "fake_source", {"value": 10, "path": "{input}"}),
@@ -75,7 +77,7 @@ def _chain_graph(add=2):
             Edge("e1", Endpoint("src", "num"), Endpoint("plus", "num")),
             Edge("e2", Endpoint("plus", "num"), Endpoint("out", "num")),
         ),
-    )
+    ))
 
 
 def test_chain_executes_in_topo_order(tmp_path):
@@ -194,7 +196,7 @@ def test_payload_store_spills_large_payloads():
 
 
 def test_branching_graph_both_consumers_get_payload(tmp_path):
-    graph = Graph(
+    graph = complete(Graph(
         name="branch",
         nodes=(
             Node("src", "fake_source", {"value": 5}),
@@ -209,7 +211,7 @@ def test_branching_graph_both_consumers_get_payload(tmp_path):
             Edge("e3", Endpoint("p1", "num"), Endpoint("s1", "num")),
             Edge("e4", Endpoint("p2", "num"), Endpoint("s2", "num")),
         ),
-    )
+    ))
     run(graph, input_path="/in", out_base="o", work_dir=str(tmp_path))
     sink_values = sorted(r[1] for r in RECORD if r[0] == "fake_sink")
     assert sink_values == [6, 7]
@@ -227,11 +229,11 @@ class FakeWorkerProbe(Stage):
 
 
 def _probe_graph():
-    return Graph(
+    return complete(Graph(
         name="probe",
         nodes=(Node("p", "fake_worker_probe"),),
         edges=(),
-    )
+    ))
 
 
 def test_executor_injects_workers(tmp_path):
@@ -336,7 +338,7 @@ def test_node_params_resolve_tokens_and_flag_defaults(tmp_path):
 
 
 def test_cached_leaf_still_reports_summaries(tmp_path):
-    leaf = Graph(name="leaf", nodes=(Node("src", "fake_source", {"value": 3}),))
+    leaf = complete(Graph(name="leaf", nodes=(Node("src", "fake_source", {"value": 3}),)))
     first = FullRecorder()
     run(leaf, work_dir=str(tmp_path), reporter=first)
     second = FullRecorder()
@@ -352,7 +354,7 @@ def test_cached_leaf_still_reports_summaries(tmp_path):
 
 
 def test_cached_entry_without_sidecar_shows_placeholder(tmp_path):
-    leaf = Graph(name="leaf", nodes=(Node("src", "fake_source", {"value": 3}),))
+    leaf = complete(Graph(name="leaf", nodes=(Node("src", "fake_source", {"value": 3}),)))
     run(leaf, work_dir=str(tmp_path))
     for sidecar in (tmp_path / "cache").glob("*.summary.txt"):
         sidecar.unlink()
@@ -397,7 +399,7 @@ def test_failing_node_reports_failure(tmp_path):
     registry.register(FakeFail)
     try:
         rec = FullRecorder()
-        graph = Graph(name="fail", nodes=(Node("bad", "fake_fail"),))
+        graph = complete(Graph(name="fail", nodes=(Node("bad", "fake_fail"),)))
         with pytest.raises(FlowError, match="boom"):
             run(graph, work_dir=str(tmp_path), reporter=rec)
         assert rec.of("failed", "bad") == [("failed", "bad", "boom")]
@@ -419,8 +421,15 @@ class FakeNodeIdProbe(Stage):
 def test_executor_sets_node_id(tmp_path):
     registry.register(FakeNodeIdProbe)
     try:
-        graph = Graph(name="probe", nodes=(Node("p1", "fake_node_id_probe"),))
+        graph = complete(Graph(name="probe", nodes=(Node("p1", "fake_node_id_probe"),)))
         run(graph, work_dir=str(tmp_path))
         assert ("node_id", "p1") in RECORD
     finally:
         registry._REGISTRY.pop("fake_node_id_probe", None)
+
+
+def test_executor_rejects_a_flow_with_missing_params(tmp_path):
+    graph = Graph(name="partial", nodes=(Node("src", "fake_source", {"value": 1}),))
+    with pytest.raises(FlowError, match="missing param"):
+        run(graph, work_dir=str(tmp_path))
+    assert RECORD == []

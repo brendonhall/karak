@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from conftest import complete
 from karak.cli.bench import BenchConfig, bench_main, parse_config, run_bench
 from karak.flow.graph import Graph, Node
 from karak.stages import registry
@@ -31,7 +32,7 @@ def _probe_stage():
 
 
 def _graph():
-    return Graph(name="g", nodes=(Node("p", "bench_probe"),), edges=())
+    return complete(Graph(name="g", nodes=(Node("p", "bench_probe"),), edges=()))
 
 
 def test_parse_config_baseline():

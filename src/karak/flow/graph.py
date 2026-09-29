@@ -1,9 +1,10 @@
 """The flow graph model: nodes, edges, and JSON (de)serialization.
 
 A flow is a DAG of stage instances. ``node.type`` references a registered
-stage id; ``node.params`` supplies values for that stage's declared Params;
-``node.ui`` is GUI-only (position) and ignored by the executor. The JSON
-form is the contract every front-end (CLI, cache, GUI) works against.
+stage id; ``node.params`` gives a value for every one of that stage's
+declared Params (format version 2; see ``flow.complete``); ``node.ui`` is
+GUI-only (position), ignored by the executor and by equality. The JSON form
+is the contract every front-end (CLI, cache, GUI) works against.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ class Node:
     id: str
     type: str
     params: dict = field(default_factory=dict)
-    ui: dict = field(default_factory=dict)
+    ui: dict = field(default_factory=dict, compare=False)
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class Graph:
     nodes: tuple = ()
     edges: tuple = ()
     name: str = ""
-    version: int = 1
+    version: int = 2   # 1 = legacy sparse params; JSON without a version is 1
 
     def node(self, node_id: str) -> Node:
         for node in self.nodes:
@@ -75,8 +76,8 @@ class Graph:
             Node(
                 id=n["id"],
                 type=n["type"],
-                params=n.get("params", {}),
-                ui=n.get("ui", {}),
+                params=dict(n.get("params", {})),
+                ui=dict(n.get("ui", {})),
             )
             for n in data.get("nodes", [])
         )

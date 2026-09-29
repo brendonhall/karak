@@ -1,12 +1,24 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "stepwise",
   "nodes": [
     {
       "id": "src",
       "type": "load_elements",
       "params": {
-        "input_dir": "{input}"
+        "input_dir": "{input}",
+        "file_glob": "*.png",
+        "filename_pattern": null,
+        "bse_filename": null,
+        "colormap": "tima:jet",
+        "exclude_elements": "Fe-L",
+        "include_elements": null,
+        "bse_channel": "SEM",
+        "header_trim_px": 0,
+        "bottom_trim_px": 0,
+        "left_trim_px": 0,
+        "right_trim_px": 0,
+        "downsample_factor": 2
       }
     }
   ],

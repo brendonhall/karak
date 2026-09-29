@@ -1,14 +1,17 @@
-"""Builtin flows: the standard pipelines expressed as graphs.
+"""Builtin flows: complete flow JSON files shipped in ``karak/flow/flows/``.
 
-The same three flows also ship as JSON under ``karak/flow/flows/`` (kept in
-sync by a round-trip test) so the file format stays exercised and users can
-copy one as a starting point for custom pipelines.
+The files are the source of truth: every node lists every param, so a
+builtin run takes no value from code. ``karak flow init`` copies one as the
+starting point for a custom pipeline.
 
 ``flow_from_config`` converts a legacy YAML ``PipelineConfig`` into the
 equivalent flow graph — the shim behind ``karak -c config.yaml``.
 """
 
 from __future__ import annotations
+
+import json
+from importlib import resources
 
 from karak.flow.graph import Edge, Endpoint, Graph, Node
 
@@ -152,52 +155,42 @@ def _assemble(
     return Graph(nodes=tuple(nodes), edges=edges, name=name)
 
 
-def global_flow() -> Graph:
-    return _assemble("global", tiled=False)
-
-
-def tiled_flow() -> Graph:
-    return _assemble("tiled", tiled=True)
-
-
-def tiled_rare_flow() -> Graph:
-    return _assemble("tiled-rare", tiled=True, rare=True)
-
-
-def stepwise_flow() -> Graph:
-    """The flow the run dashboard is built against, one step at a time.
-
-    It gains a node each time a pipeline step joins the dashboard work;
-    today it holds only the load step.
-    """
-    return Graph(
-        name="stepwise",
-        nodes=(Node("src", "load_elements", {"input_dir": "{input}"}),),
-    )
-
-
-_BUILTINS = {
-    "global": global_flow,
-    "tiled": tiled_flow,
-    "tiled-rare": tiled_rare_flow,
-    "stepwise": stepwise_flow,
-}
-
-
-def builtin_flow(name: str) -> Graph:
-    return _BUILTINS[name]()
+def _flows_dir():
+    return resources.files("karak.flow").joinpath("flows")
 
 
 def builtin_names() -> list[str]:
-    return sorted(_BUILTINS)
+    return sorted(
+        f.name[: -len(".json")] for f in _flows_dir().iterdir()
+        if f.name.endswith(".json")
+    )
+
+
+def builtin_flow(name: str) -> Graph:
+    """Load a shipped flow by name; ``KeyError`` for an unknown name."""
+    if name not in builtin_names():
+        raise KeyError(name)
+    return Graph.from_json(json.loads(_flows_dir().joinpath(f"{name}.json").read_text()))
 
 
 def override_params(graph: Graph, overrides: dict) -> Graph:
-    """Return a new Graph with ``{"node.param": value}`` overrides applied."""
+    """Return a new Graph with ``{"node.param": value}`` overrides applied.
+
+    ``KeyError`` for an unknown node, ``ValueError`` for a param the node's
+    stage does not declare.
+    """
+    from karak.stages import registry
+
     updates: dict[str, dict] = {}
     for spec, value in overrides.items():
         node_id, param = spec.split(".", 1)
-        graph.node(node_id)  # raises KeyError for unknown nodes
+        node = graph.node(node_id)  # raises KeyError for unknown nodes
+        declared = [p.name for p in registry.get(node.type).PARAMS]
+        if param not in declared:
+            raise ValueError(
+                f"{spec}: stage {node.type!r} has no param {param!r}; "
+                f"declared: {declared}"
+            )
         updates.setdefault(node_id, {})[param] = value
     nodes = tuple(
         node if node.id not in updates
@@ -335,10 +328,12 @@ def flow_from_config(cfg) -> Graph:
             "random_state": ref_cfg.gmm_split.random_state,
         }
 
-    return _assemble(
+    from karak.flow.complete import complete_graph
+
+    return complete_graph(_assemble(
         "from-config",
         tiled=tiled,
         rare=rare,
         refine=refine,
         node_params=node_params,
-    )
+    ))[0]

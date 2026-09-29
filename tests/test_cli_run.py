@@ -52,7 +52,7 @@ def _karak_logger_state():
 def test_run_failure_exits_1_and_restores_logging(tmp_path, capsys, failing_stage):
     flow = tmp_path / "flow.json"
     flow.write_text(json.dumps({
-        "version": 1, "name": "fail",
+        "version": 2, "name": "fail",
         "nodes": [{"id": "bad", "type": "cli_test_fail", "params": {}}],
         "edges": [],
     }))

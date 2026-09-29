@@ -30,3 +30,14 @@ def make_synthetic_scene() -> np.ndarray:
 @pytest.fixture()
 def synthetic_scene():
     return make_synthetic_scene()
+
+
+def complete(graph):
+    """Fill every missing param from stage templates (flows must be complete).
+
+    Same library call as `karak flow complete`, so tests never carry their
+    own copy of defaults.
+    """
+    from karak.flow.complete import complete_graph
+
+    return complete_graph(graph)[0]

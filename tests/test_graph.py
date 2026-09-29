@@ -49,3 +49,18 @@ def test_node_lookup_and_in_edges():
     assert len(incoming) == 1
     assert incoming[0].src == Endpoint("src", "cube")
     assert graph.in_edges("src") == ()
+
+
+def test_ui_does_not_affect_equality():
+    from karak.flow.graph import Graph, Node
+
+    a = Graph(nodes=(Node("n", "normalize", {"method": "zscore"}, ui={"x": 1}),))
+    b = Graph(nodes=(Node("n", "normalize", {"method": "zscore"}, ui={"x": 99}),))
+    assert a == b
+
+
+def test_new_graphs_are_version_2_and_json_without_version_is_1():
+    from karak.flow.graph import Graph
+
+    assert Graph().version == 2
+    assert Graph.from_json({"nodes": [], "edges": []}).version == 1

@@ -25,12 +25,31 @@ def test_unknown_builtin_raises():
 
 
 @pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise"])
-def test_shipped_json_matches_builtin(name):
-    graph = builtin_flow(name)
+def test_shipped_flows_are_complete_version_2(name):
+    from karak.flow.complete import FLOW_VERSION, complete_graph
+
     shipped = json.loads(
         resources.files("karak.flow").joinpath(f"flows/{name}.json").read_text()
     )
-    assert Graph.from_json(shipped) == graph
+    graph = Graph.from_json(shipped)
+    assert graph.version == FLOW_VERSION
+    assert complete_graph(graph)[1] == {}
+    assert builtin_flow(name) == graph
+
+
+def test_builtin_names_are_the_shipped_files():
+    from karak.flow.builtins import builtin_names
+
+    shipped = sorted(
+        f.name[:-5] for f in resources.files("karak.flow").joinpath("flows").iterdir()
+        if f.name.endswith(".json")
+    )
+    assert builtin_names() == shipped
+
+
+def test_override_rejects_an_undeclared_param():
+    with pytest.raises(ValueError, match="has no param 'bogus'"):
+        override_params(builtin_flow("stepwise"), {"src.bogus": 1})
 
 
 def test_tiled_rare_contains_rare_phase_node():
@@ -124,4 +143,6 @@ def test_apply_device_no_declaring_nodes_is_identity():
 def test_stepwise_starts_with_the_load_step():
     graph = builtin_flow("stepwise")
     assert [(n.id, n.type) for n in graph.nodes] == [("src", "load_elements")]
-    assert graph.node("src").params == {"input_dir": "{input}"}
+    from karak.stages.load import LoadElementsStage
+
+    assert graph.node("src").params == LoadElementsStage.template()

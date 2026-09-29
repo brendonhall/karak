@@ -1,43 +1,87 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "tiled",
   "nodes": [
     {
       "id": "src",
       "type": "load_elements",
       "params": {
-        "input_dir": "{input}"
+        "input_dir": "{input}",
+        "file_glob": "*.png",
+        "filename_pattern": null,
+        "bse_filename": null,
+        "colormap": "tima:jet",
+        "exclude_elements": "Fe-L",
+        "include_elements": null,
+        "bse_channel": "SEM",
+        "header_trim_px": 0,
+        "bottom_trim_px": 0,
+        "left_trim_px": 0,
+        "right_trim_px": 0,
+        "downsample_factor": 2
       }
     },
     {
       "id": "msk",
       "type": "mask",
-      "params": {}
+      "params": {
+        "min_object_size": 100,
+        "valid_mask_path": null
+      }
     },
     {
       "id": "dn",
       "type": "denoise",
-      "params": {}
+      "params": {
+        "method": "bilateral",
+        "sigma_color": null,
+        "sigma_spatial": 1.0,
+        "niter": 10,
+        "kappa": 50.0,
+        "gamma": 0.1,
+        "option": 2,
+        "device": "cpu"
+      }
     },
     {
       "id": "nrm",
       "type": "normalize",
-      "params": {}
+      "params": {
+        "method": "zscore"
+      }
     },
     {
       "id": "pca",
       "type": "pca",
-      "params": {}
+      "params": {
+        "n_components": 0,
+        "variance_threshold": 0.95,
+        "min_components": 5,
+        "subsample_fraction": 0.0,
+        "random_state": 42
+      }
     },
     {
       "id": "hdb",
       "type": "hdbscan_tiled",
-      "params": {}
+      "params": {
+        "min_cluster_size": 1000,
+        "min_samples": 0,
+        "subsample_n": 0,
+        "random_state": 42,
+        "device": "cpu",
+        "tile_size": 512,
+        "merge_threshold": 0.92,
+        "min_tile_pixels": 0,
+        "min_clusters_per_tile": 3
+      }
     },
     {
       "id": "knn",
       "type": "noise_assign",
-      "params": {}
+      "params": {
+        "k": 5
+      }
     },
     {
       "id": "stats",
@@ -47,52 +91,77 @@
     {
       "id": "fp",
       "type": "fingerprints",
-      "params": {}
+      "params": {
+        "similarity_threshold": 0.95
+      }
     },
     {
       "id": "exp",
       "type": "export_h5",
-      "params": {}
+      "params": {
+        "path": "{out}.h5",
+        "flow_json": "{flow}"
+      }
     },
     {
       "id": "qc_mask",
       "type": "qc_mask",
-      "params": {}
+      "params": {
+        "figure_dir": "{out}/figures",
+        "tima_path": null
+      }
     },
     {
       "id": "qc_denoise",
       "type": "qc_denoise",
-      "params": {}
+      "params": {
+        "figure_dir": "{out}/figures",
+        "method": "bilateral"
+      }
     },
     {
       "id": "qc_normalize",
       "type": "qc_normalize",
-      "params": {}
+      "params": {
+        "figure_dir": "{out}/figures"
+      }
     },
     {
       "id": "qc_scree",
       "type": "qc_scree",
-      "params": {}
+      "params": {
+        "figure_dir": "{out}/figures"
+      }
     },
     {
       "id": "qc_phase_map",
       "type": "qc_phase_map",
-      "params": {}
+      "params": {
+        "figure_dir": "{out}/figures"
+      }
     },
     {
       "id": "qc_cluster_summary",
       "type": "qc_cluster_summary",
-      "params": {}
+      "params": {
+        "figure_dir": "{out}/figures"
+      }
     },
     {
       "id": "qc_fingerprints",
       "type": "qc_fingerprints",
-      "params": {}
+      "params": {
+        "figure_dir": "{out}/figures",
+        "mineral_names": null
+      }
     },
     {
       "id": "qc_tiled",
       "type": "qc_tiled",
-      "params": {}
+      "params": {
+        "figure_dir": "{out}/figures",
+        "min_tile_pixels": 2000
+      }
     }
   ],
   "edges": [
