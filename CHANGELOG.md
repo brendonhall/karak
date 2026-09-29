@@ -95,6 +95,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `colormap: cmap:jet` and `header_trim_px: 100`
   (`--set src.colormap=cmap:jet --set src.header_trim_px=100`).
 
+### Fixed
+
+- `load_valid_mask` failed with a string path (every flow run with
+  `mask.valid_mask_path` set) after the shapes-CSV refactor.
+- The mask step no longer triggers scikit-image's `min_size` deprecation
+  warning; `max_size = min_object_size - 1` keeps the same objects.
+
 ### Removed
 
 - The legacy YAML mode: `karak -c config.yaml`, `--test-mode`,
