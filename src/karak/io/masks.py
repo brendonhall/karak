@@ -44,9 +44,10 @@ def read_napari_shapes(csv_path: str | Path) -> list[tuple[str, np.ndarray]]:
 def load_valid_mask(
     csv_path: str | Path,
     image_shape: tuple[int, int],
-    downsample_factor: int = 1,
-    header_trim_px: int = 0,
-    left_trim_px: int = 0,
+    *,
+    downsample_factor: int,
+    header_trim_px: int,
+    left_trim_px: int,
 ) -> np.ndarray:
     """Load a valid-region mask from a napari shapes CSV export.
 
@@ -126,8 +127,9 @@ def load_valid_mask(
 
 def create_mineral_mask(
     element_cube: np.ndarray,
-    valid_mask: np.ndarray | None = None,
-    min_object_size: int = 100,
+    *,
+    valid_mask: np.ndarray | None,
+    min_object_size: int,
 ) -> np.ndarray:
     """Create a boolean mineral-pixel mask from element maps.
 

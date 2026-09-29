@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from karak.config import (
+from karak.core_params import (
     GMMSplitConfig,
     OlivineExtractionConfig,
     RefinementConfig,
@@ -10,6 +10,29 @@ from karak.config import (
 from karak.stages.base import Param, Port, Stage
 from karak.stages.payloads import LabelState, Space
 from karak.stages.registry import register
+
+
+def refinement_config(params: dict) -> RefinementConfig:
+    return RefinementConfig(
+        enabled=True,
+        target_phase=params["target_phase"],
+        olivine=OlivineExtractionConfig(
+            enabled=params["olivine_enabled"],
+            fe_threshold=params["olivine_fe_threshold"],
+            ca_threshold=params["olivine_ca_threshold"],
+        ),
+        gmm_split=GMMSplitConfig(
+            enabled=params["gmm_enabled"],
+            n_components=params["gmm_n_components"],
+            features=tuple(
+                f.strip() for f in params["gmm_features"].split(",")
+                if f.strip()
+            ),
+            bse_weight=params["gmm_bse_weight"],
+            subsample_n=params["gmm_subsample_n"] or None,
+            random_state=params["random_state"],
+        ),
+    )
 
 
 @register
@@ -53,26 +76,7 @@ class RefineStage(Stage):
         from karak.clustering.refinement import refine_phases
 
         labels, cube = inputs["labels"], inputs["cube"]
-        config = RefinementConfig(
-            enabled=True,
-            target_phase=params["target_phase"],
-            olivine=OlivineExtractionConfig(
-                enabled=params["olivine_enabled"],
-                fe_threshold=params["olivine_fe_threshold"],
-                ca_threshold=params["olivine_ca_threshold"],
-            ),
-            gmm_split=GMMSplitConfig(
-                enabled=params["gmm_enabled"],
-                n_components=params["gmm_n_components"],
-                features=[
-                    f.strip() for f in params["gmm_features"].split(",")
-                    if f.strip()
-                ],
-                bse_weight=params["gmm_bse_weight"],
-                subsample_n=params["gmm_subsample_n"] or None,
-                random_state=params["random_state"],
-            ),
-        )
+        config = refinement_config(params)
         refined = refine_phases(
             labels.labels.copy(),
             cube.pixels,

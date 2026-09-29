@@ -12,7 +12,6 @@ dependencies = [
     "matplotlib>=3.10.8",
     "medpy>=0.5.2",
     "numpy>=2.4.0",
-    "pydantic>=2.0",
     "pyyaml>=6.0",
     "scipy>=1.14.0",
     "scikit-image>=0.26.0",

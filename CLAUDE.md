@@ -44,7 +44,10 @@ Three layers; each depends only on the one below it.
 
 1. **Numeric core** — `io/`, `preprocessing/`, `clustering/`,
    `identification/`, `qc/`. Pure functions on numpy arrays. No knowledge of
-   stages or flows.
+   stages or flows. Settings arrive as explicit arguments or as the
+   default-free dataclass bundles in `core_params.py` (no default values:
+   every run value comes from the flow via the stage). `provenance.py`
+   holds version info for run records and HDF5.
 2. **Stages** — `stages/`. One small class per operation declaring typed
    `PARAMS` (name, type, default, bounds, help) and named input/output
    `Port`s; `apply(inputs, params)` calls the core. `@register` +

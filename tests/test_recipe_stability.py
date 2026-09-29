@@ -5,6 +5,12 @@ The values below were captured from the code before flows became complete
 must keep hashing identically, or every existing cache is invalidated.
 Sinks are left out: they are never cached, and the export sink embeds the
 flow JSON itself.
+
+One deliberate change: in tiled-rare, the rare_phase node's merge_threshold
+went from 0.0 ("reuse the tiled threshold", which actually took 0.92 from
+code) to an explicit 0.92, and its unused noise_reassign_k param was
+removed. Same results, new recipe, so rare and its downstream nodes (knn,
+stats, fp) carry new hashes; everything upstream is unchanged.
 """
 
 from __future__ import annotations
@@ -39,10 +45,10 @@ GOLDEN = {
               "fp": "326ef3acf9c39f1b83d4945a42401e6e"},
     "tiled-rare": {**_SHARED,
                    "hdb": "8eefd0cddf5bcecb394283a4ba1dac82",
-                   "rare": "77d511db6158b586b7d7d0ca58feebf1",
-                   "knn": "5759f252b3f40a2809dc05101e7a912a",
-                   "stats": "eb6a4b4ad04f350d56e4693eeb922155",
-                   "fp": "33623f5eb79976b9bf46002f2b08497f"},
+                   "rare": "737b1b26501f7153af9a6c22395ea328",
+                   "knn": "e07d439d307a85a42957d680a0f12141",
+                   "stats": "d3c6f7ddf04adb10b46edb9591467eb0",
+                   "fp": "e5024a65188e3da14e1ba42bca816f56"},
     "stepwise": {"src": _SHARED["src"]},
 }
 

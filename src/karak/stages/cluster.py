@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from karak.config import ClusterConfig, HDBSCANConfig, TiledConfig
+from karak.core_params import HDBSCANConfig, TiledConfig
 from karak.clustering.hdbscan_cluster import run_hdbscan
 from karak.stages.base import Param, Port, Stage
 from karak.stages.payloads import (
@@ -31,12 +31,21 @@ _HDBSCAN_PARAMS = [
 ]
 
 
-def _hdbscan_config(params: dict) -> HDBSCANConfig:
+def hdbscan_config(params: dict) -> HDBSCANConfig:
     return HDBSCANConfig(
         min_cluster_size=params["min_cluster_size"],
         min_samples=params["min_samples"] or None,
         subsample_n=params["subsample_n"] or None,
         random_state=params["random_state"],
+    )
+
+
+def tiled_config(params: dict) -> TiledConfig:
+    return TiledConfig(
+        tile_size=params["tile_size"],
+        merge_threshold=params["merge_threshold"],
+        min_tile_pixels=params["min_tile_pixels"] or None,
+        min_clusters_per_tile=params["min_clusters_per_tile"],
     )
 
 
@@ -55,7 +64,7 @@ class HdbscanGlobalStage(Stage):
     def apply(self, inputs: dict, params: dict) -> dict:
         features = inputs["features"]
         labels, probabilities, _ = run_hdbscan(
-            features.features, _hdbscan_config(params),
+            features.features, hdbscan_config(params),
             device=params["device"]
         )
         return {
@@ -105,23 +114,15 @@ class HdbscanTiledStage(Stage):
         from karak.clustering.tiling import run_tiled_hdbscan
 
         features, cube = inputs["features"], inputs["cube"]
-        config = ClusterConfig(
-            strategy="tiled",
-            hdbscan=_hdbscan_config(params),
-            tiled=TiledConfig(
-                tile_size=params["tile_size"],
-                merge_threshold=params["merge_threshold"],
-                min_tile_pixels=params["min_tile_pixels"] or None,
-                min_clusters_per_tile=params["min_clusters_per_tile"],
-            ),
-        )
         raw_labels, _, probabilities, tile_results, phase_registry = (
             run_tiled_hdbscan(
                 features.features,
                 features.mineral_indices,
                 features.image_shape,
                 cube.pixels,
-                config,
+                hdbscan_config(params),
+                tiled_config(params),
+                noise_reassign_k=None,
                 skip_knn=True,
                 workers=resolve_workers(self.workers),
                 device=params["device"],

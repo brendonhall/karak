@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from karak.config import ClusterConfig, HDBSCANConfig, TiledConfig
+from conftest import hdbscan_cfg, tiled_cfg
 from karak.clustering.tiling import run_tiled_hdbscan
 
 
@@ -25,11 +25,10 @@ def tiled_inputs():
     ]).astype(np.float32)
 
     cube = np.stack([blob, 1 - blob, np.ones((H, W), np.float32)], axis=-1)
-    config = ClusterConfig(
-        strategy="tiled",
-        hdbscan=HDBSCANConfig(min_cluster_size=50, random_state=0),
-        tiled=TiledConfig(tile_size=32, merge_threshold=0.9,
-                          min_tile_pixels=100, min_clusters_per_tile=1),
+    config = (
+        hdbscan_cfg(min_cluster_size=50, random_state=0),
+        tiled_cfg(tile_size=32, merge_threshold=0.9,
+                  min_tile_pixels=100, min_clusters_per_tile=1),
     )
     return features, mineral_indices, (H, W), cube, config
 
@@ -37,8 +36,8 @@ def tiled_inputs():
 def _run(tiled_inputs, workers):
     features, indices, shape, cube, config = tiled_inputs
     return run_tiled_hdbscan(
-        features, indices, shape, cube, config,
-        skip_knn=True, workers=workers,
+        features, indices, shape, cube, *config,
+        noise_reassign_k=None, skip_knn=True, workers=workers,
     )
 
 

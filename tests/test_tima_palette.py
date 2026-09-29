@@ -14,8 +14,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from conftest import downsample_cfg, loader_cfg
+
 import karak.io.loaders as loaders
-from karak.config import DownsampleConfig, LoaderConfig
 
 
 @pytest.fixture(scope="module")
@@ -62,5 +63,5 @@ def test_tima_inversion_recovers_every_level_exactly(isolated_lut_cache):
 
 
 def test_loader_defaults_match_tima_exports():
-    assert LoaderConfig().colormap == "tima:jet"
-    assert DownsampleConfig().header_trim_px == 0
+    assert loader_cfg().colormap == "tima:jet"
+    assert downsample_cfg().header_trim_px == 0

@@ -11,17 +11,37 @@ from __future__ import annotations
 
 import json
 
-from karak.stages.base import Param, Port, Stage
+from karak.stages.base import Param, Port, Stage, StageError
 from karak.stages.payloads import LabelState, Space
 from karak.stages.registry import register
 
 
-def _params_for(flow: dict, stage_type: str) -> dict:
-    """Params of the first node of the given type in the flow definition."""
+def _node_params(flow: dict, stage_type: str) -> dict | None:
+    """Params of the first node of the given type, or None if absent."""
     for node in flow.get("nodes", []):
         if node.get("type") == stage_type:
             return dict(node.get("params", {}))
-    return {}
+    return None
+
+
+def _params_for(flow: dict, stage_type: str) -> dict:
+    """Complete params of the node that produced a group being written.
+
+    The embedded flow is the complete flow that ran, so the values recorded
+    in the HDF5 are the values used; nothing is filled in here.
+    """
+    from karak.stages import registry
+
+    params = _node_params(flow, stage_type)
+    missing = (None if params is None else
+               [p.name for p in registry.get(stage_type).PARAMS
+                if p.name not in params])
+    if params is None or missing:
+        raise StageError(
+            f"export_h5: flow_json needs a complete {stage_type!r} node "
+            f"(missing: {missing if params is not None else 'the node'})"
+        )
+    return params
 
 
 @register
@@ -108,7 +128,7 @@ class ExportH5Stage(Stage):
             storage.save_normalized_data(
                 path, normalized.pixels, normalized.means, normalized.stds,
                 list(normalized.element_names),
-                method=_params_for(flow, "normalize").get("method", "zscore"),
+                method=_params_for(flow, "normalize")["method"],
             )
 
         labels = inputs.get("labels")
@@ -122,9 +142,8 @@ class ExportH5Stage(Stage):
             }
             for stage_type in ("pca", "hdbscan_global", "hdbscan_tiled",
                                "rare_phase", "noise_assign", "refine"):
-                node_params = _params_for(flow, stage_type)
-                if node_params:
-                    cluster_params[stage_type] = node_params
+                if _node_params(flow, stage_type) is not None:
+                    cluster_params[stage_type] = _params_for(flow, stage_type)
             storage.save_cluster_data(
                 path,
                 labels_raw.labels if labels_raw is not None else labels.labels,

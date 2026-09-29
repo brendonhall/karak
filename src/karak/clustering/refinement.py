@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from karak.config import RefinementConfig
+    from karak.core_params import RefinementConfig
 
 logger = logging.getLogger(__name__)
 

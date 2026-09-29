@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from karak.config import PCAConfig
+from karak.core_params import PCAConfig
 from karak.clustering.pca import auto_n_components, fit_pca, select_components
 from karak.stages.base import Param, Port, Stage
 from karak.stages.payloads import PCAFeatures, Space
 from karak.stages.registry import register
+
+
+def pca_config(params: dict) -> PCAConfig:
+    return PCAConfig(
+        n_components=params["n_components"] or None,
+        subsample_fraction=params["subsample_fraction"] or None,
+        random_state=params["random_state"],
+    )
 
 
 @register
@@ -43,12 +51,8 @@ class PCAStage(Stage):
 
     def apply(self, inputs: dict, params: dict) -> dict:
         cube, masks = inputs["cube"], inputs["masks"]
-        n_components = params["n_components"] or None
-        config = PCAConfig(
-            n_components=n_components,
-            subsample_fraction=params["subsample_fraction"] or None,
-            random_state=params["random_state"],
-        )
+        config = pca_config(params)
+        n_components = config.n_components
         model, features, mineral_indices = fit_pca(
             cube.pixels, masks.mineral_mask, config
         )

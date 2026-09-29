@@ -108,7 +108,7 @@ def compute_fingerprints(
 
 def flag_similar_clusters(
     fingerprints_dict: dict,
-    threshold: float = 0.95,
+    threshold: float,
 ) -> list[tuple[int, int, float]]:
     """Flag pairs of clusters with highly similar chemical fingerprints.
 

@@ -16,9 +16,9 @@ def test_picks_first_component_reaching_threshold():
 
 def test_enforces_minimum():
     evr = np.array([0.96, 0.02, 0.01, 0.005, 0.003, 0.002])
-    assert auto_n_components(evr) == 5  # threshold hit at 1, floor is 5
+    assert auto_n_components(evr, variance_threshold=0.95, min_components=5) == 5
 
 
 def test_threshold_never_reached_keeps_all():
     evr = np.array([0.3, 0.3, 0.3])  # cum 0.9 < 0.95
-    assert auto_n_components(evr, min_components=1) == 3
+    assert auto_n_components(evr, variance_threshold=0.95, min_components=1) == 3

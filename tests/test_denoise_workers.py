@@ -19,13 +19,15 @@ def _cube_and_mask():
 
 def test_bilateral_parallel_parity():
     cube, mask = _cube_and_mask()
-    serial = bilateral_denoise_cube(cube, mask, workers=1)
-    parallel = bilateral_denoise_cube(cube, mask, workers=3)
+    serial = bilateral_denoise_cube(cube, mask, sigma_color=None, sigma_spatial=1.0, workers=1)
+    parallel = bilateral_denoise_cube(cube, mask, sigma_color=None, sigma_spatial=1.0, workers=3)
     assert np.array_equal(serial, parallel)
 
 
 def test_anisotropic_parallel_parity():
     cube, mask = _cube_and_mask()
-    serial = anisotropic_denoise_cube(cube, mask, workers=1)
-    parallel = anisotropic_denoise_cube(cube, mask, workers=3)
+    serial = anisotropic_denoise_cube(
+        cube, mask, niter=10, kappa=50.0, gamma=0.1, option=2, workers=1)
+    parallel = anisotropic_denoise_cube(
+        cube, mask, niter=10, kappa=50.0, gamma=0.1, option=2, workers=3)
     assert np.array_equal(serial, parallel)

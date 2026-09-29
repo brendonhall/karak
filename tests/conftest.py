@@ -41,3 +41,70 @@ def complete(graph):
     from karak.flow.complete import complete_graph
 
     return complete_graph(graph)[0]
+
+
+# Core argument bundles have no defaults. Tests build them from the stage
+# templates, through the same builders the stages use, then change fields.
+
+def downsample_cfg(**fields):
+    from dataclasses import replace
+
+    from karak.stages.load import LoadElementsStage, downsample_config
+
+    return replace(downsample_config(LoadElementsStage.template()), **fields)
+
+
+def loader_cfg(**fields):
+    from dataclasses import replace
+
+    from karak.stages.load import LoadElementsStage, loader_config
+
+    return replace(loader_config(LoadElementsStage.template()), **fields)
+
+
+def denoise_cfg(**fields):
+    from dataclasses import replace
+
+    from karak.stages.denoise import DenoiseStage, denoise_config
+
+    return replace(denoise_config(DenoiseStage.template()), **fields)
+
+
+def pca_cfg(**fields):
+    from dataclasses import replace
+
+    from karak.stages.pca import PCAStage, pca_config
+
+    return replace(pca_config(PCAStage.template()), **fields)
+
+
+def hdbscan_cfg(**fields):
+    from dataclasses import replace
+
+    from karak.stages.cluster import HdbscanGlobalStage, hdbscan_config
+
+    return replace(hdbscan_config(HdbscanGlobalStage.template()), **fields)
+
+
+def tiled_cfg(**fields):
+    from dataclasses import replace
+
+    from karak.stages.cluster import HdbscanTiledStage, tiled_config
+
+    return replace(tiled_config(HdbscanTiledStage.template()), **fields)
+
+
+def rare_cfg(**fields):
+    from dataclasses import replace
+
+    from karak.stages.rare_phase import RarePhaseStage, rare_phase_config
+
+    return replace(rare_phase_config(RarePhaseStage.template()), **fields)
+
+
+def refinement_cfg(**fields):
+    from dataclasses import replace
+
+    from karak.stages.refine import RefineStage, refinement_config
+
+    return replace(refinement_config(RefineStage.template()), **fields)

@@ -5,8 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from conftest import make_synthetic_scene
-from karak.config import DownsampleConfig
+from conftest import downsample_cfg, loader_cfg, make_synthetic_scene
 from karak.io.loaders import load_element_maps
 
 
@@ -45,14 +44,15 @@ def scene_dir(tmp_path_factory):
 
 
 def _load(scene_dir, workers):
-    from karak.config import LoaderConfig
 
     data_dir, colormap = scene_dir
     return load_element_maps(
         str(data_dir),
-        DownsampleConfig(header_trim_px=0, downsample_factor=1),
+        downsample_cfg(header_trim_px=0, downsample_factor=1),
         exclude_elements=[],
-        loader_config=LoaderConfig(colormap=colormap),
+        bse_channel="SEM",
+        include_elements=None,
+        loader_config=loader_cfg(colormap=colormap),
         workers=workers,
     )
 
@@ -68,15 +68,16 @@ def test_parallel_load_is_byte_identical(scene_dir):
 
 @pytest.mark.parametrize("workers", [1, 2])
 def test_on_file_fires_once_per_file(scene_dir, workers):
-    from karak.config import LoaderConfig
 
     data_dir, colormap = scene_dir
     calls = []
     load_element_maps(
         str(data_dir),
-        DownsampleConfig(header_trim_px=0, downsample_factor=1),
+        downsample_cfg(header_trim_px=0, downsample_factor=1),
         exclude_elements=[],
-        loader_config=LoaderConfig(colormap=colormap),
+        bse_channel="SEM",
+        include_elements=None,
+        loader_config=loader_cfg(colormap=colormap),
         workers=workers,
         on_file=lambda done, total, element: calls.append((done, total, element)),
     )
@@ -88,15 +89,15 @@ def test_on_file_fires_once_per_file(scene_dir, workers):
 def test_loader_logs_discovery_line(scene_dir, caplog):
     import logging
 
-    from karak.config import LoaderConfig
-
     data_dir, colormap = scene_dir
     with caplog.at_level(logging.INFO, logger="karak.io.loaders"):
         load_element_maps(
             str(data_dir),
-            DownsampleConfig(header_trim_px=0, downsample_factor=1),
+            downsample_cfg(header_trim_px=0, downsample_factor=1),
             exclude_elements=["C"],
-            loader_config=LoaderConfig(colormap=colormap),
+            bse_channel="SEM",
+            include_elements=None,
+            loader_config=loader_cfg(colormap=colormap),
         )
     assert (
         "Found 4 matching files: 3 to load (BSE channel 'SEM'), excluded: C"
@@ -149,8 +150,6 @@ def test_image_warnings_are_logged_once_and_not_printed(scene_dir, caplog, monke
 
     from PIL import Image
 
-    from karak.config import LoaderConfig
-
     # 64x64 = 4096 px: over this limit PIL warns; the error limit is 2x.
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 3000)
     data_dir, colormap = scene_dir
@@ -159,9 +158,11 @@ def test_image_warnings_are_logged_once_and_not_printed(scene_dir, caplog, monke
         warnings.simplefilter("always")
         load_element_maps(
             str(data_dir),
-            DownsampleConfig(header_trim_px=0, downsample_factor=1),
+            downsample_cfg(header_trim_px=0, downsample_factor=1),
             exclude_elements=[],
-            loader_config=LoaderConfig(colormap=colormap),
+            bse_channel="SEM",
+            include_elements=None,
+            loader_config=loader_cfg(colormap=colormap),
         )
     assert leaked == []
     bombs = [r for r in caplog.records

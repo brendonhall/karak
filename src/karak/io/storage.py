@@ -38,7 +38,7 @@ import yaml
 if TYPE_CHECKING:
     from karak.clustering.tiling import PhaseEntry, TileResult
 
-from karak.config import get_software_versions
+from karak.provenance import get_software_versions
 
 logger = logging.getLogger(__name__)
 
@@ -234,21 +234,21 @@ def save_denoised_data(
         )
 
         # Record method and all parameters
-        method = params.get("method", "bilateral")
+        method = params["method"]
         grp.attrs["method"] = method
         grp.attrs["element_order"] = json.dumps(element_names)
 
         if method == "bilateral":
-            sigma_color = params.get("sigma_color")
+            sigma_color = params["sigma_color"]
             grp.attrs["sigma_color"] = (
                 sigma_color if sigma_color is not None else "auto"
             )
-            grp.attrs["sigma_spatial"] = params.get("sigma_spatial", 1.0)
+            grp.attrs["sigma_spatial"] = params["sigma_spatial"]
         elif method == "anisotropic_diffusion":
-            grp.attrs["niter"] = params.get("niter", 10)
-            grp.attrs["kappa"] = params.get("kappa", 50)
-            grp.attrs["gamma"] = params.get("gamma", 0.1)
-            grp.attrs["option"] = params.get("option", 2)
+            grp.attrs["niter"] = params["niter"]
+            grp.attrs["kappa"] = params["kappa"]
+            grp.attrs["gamma"] = params["gamma"]
+            grp.attrs["option"] = params["option"]
 
     logger.info(
         "Saved denoised cube %s to denoised/ group (method=%s)",
@@ -263,7 +263,7 @@ def save_normalized_data(
     means: np.ndarray,
     stds: np.ndarray,
     element_names: list[str],
-    method: str = "zscore",
+    method: str,
 ) -> None:
     """Write z-score normalized cube to the ``normalized/`` group in HDF5.
 
@@ -381,7 +381,7 @@ def save_cluster_data(
         grp.attrs["cluster_config"] = yaml.dump(
             params, default_flow_style=False, sort_keys=False
         )
-        grp.attrs["clustering_strategy"] = params.get("strategy", "global")
+        grp.attrs["clustering_strategy"] = params["strategy"]
 
     logger.info(
         "Saved cluster data to clusters/ group: %d clusters, %.1f%% noise",

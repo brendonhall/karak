@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
-from karak.config import DownsampleConfig, LoaderConfig
+from karak.core_params import DownsampleConfig, LoaderConfig
 from karak.io.loaders import build_compositional_cube, load_element_maps
 from karak.stages.base import Param, Port, Stage
 from karak.stages.payloads import BseImage, ElementCube, Space
 from karak.stages.registry import register
+
+
+def downsample_config(params: dict) -> DownsampleConfig:
+    return DownsampleConfig(
+        header_trim_px=params["header_trim_px"],
+        bottom_trim_px=params["bottom_trim_px"],
+        left_trim_px=params["left_trim_px"],
+        right_trim_px=params["right_trim_px"],
+        downsample_factor=params["downsample_factor"],
+    )
+
+
+def loader_config(params: dict) -> LoaderConfig:
+    return LoaderConfig(
+        file_glob=params["file_glob"],
+        filename_pattern=params["filename_pattern"],
+        bse_filename=params["bse_filename"],
+        colormap=params["colormap"],
+    )
 
 
 def _split_csv(value: str | None) -> list[str]:
@@ -78,19 +97,8 @@ class LoadElementsStage(Stage):
         return ";".join(entries)
 
     def apply(self, inputs: dict, params: dict) -> dict:
-        downsample = DownsampleConfig(
-            header_trim_px=params["header_trim_px"],
-            bottom_trim_px=params["bottom_trim_px"],
-            left_trim_px=params["left_trim_px"],
-            right_trim_px=params["right_trim_px"],
-            downsample_factor=params["downsample_factor"],
-        )
-        loader = LoaderConfig(
-            file_glob=params["file_glob"],
-            filename_pattern=params["filename_pattern"],
-            bse_filename=params["bse_filename"],
-            colormap=params["colormap"],
-        )
+        downsample = downsample_config(params)
+        loader = loader_config(params)
         include = _split_csv(params["include_elements"]) or None
         from karak.accel import resolve_workers
 

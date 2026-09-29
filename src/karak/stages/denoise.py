@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
-from karak.config import DenoiseConfig
+from karak.core_params import DenoiseConfig
 from karak.preprocessing.denoise import denoise_cube
 from karak.stages.base import Param, Port, Stage
 from karak.stages.payloads import Space
 from karak.stages.registry import register
+
+
+def denoise_config(params: dict) -> DenoiseConfig:
+    return DenoiseConfig(
+        method=params["method"],
+        sigma_color=params["sigma_color"],
+        sigma_spatial=params["sigma_spatial"],
+        niter=params["niter"],
+        kappa=params["kappa"],
+        gamma=params["gamma"],
+        option=params["option"],
+    )
 
 
 @register
@@ -47,15 +59,7 @@ class DenoiseStage(Stage):
         from karak.accel import resolve_workers
 
         cube = inputs["cube"]
-        config = DenoiseConfig(
-            method=params["method"],
-            sigma_color=params["sigma_color"],
-            sigma_spatial=params["sigma_spatial"],
-            niter=params["niter"],
-            kappa=params["kappa"],
-            gamma=params["gamma"],
-            option=params["option"],
-        )
+        config = denoise_config(params)
         denoised = denoise_cube(
             cube.pixels, inputs["masks"].mineral_mask, config,
             workers=resolve_workers(self.workers),

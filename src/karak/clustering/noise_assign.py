@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def assign_noise_pixels(
     pca_features: np.ndarray,
     labels: np.ndarray,
-    k: int = 5,
+    k: int,
 ) -> np.ndarray:
     """Reassign noise pixels to nearest cluster via kNN.
 

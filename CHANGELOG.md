@@ -51,6 +51,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `null`; elsewhere it is an error instead of meaning "use the default".
 - `--set` of a parameter the stage does not declare is an error.
 - Node `ui` metadata (canvas positions) no longer affects flow equality.
+- `rare_phase.merge_threshold` is an explicit value (template 0.92, range
+  0.5 to 1). Its old `0` meant "reuse the tiled threshold" but actually took
+  0.92 from code, whatever the tiled node said; a flow that still says 0
+  now fails validation. In `tiled-rare` the recipe hashes of `rare` and its
+  downstream nodes change once; results are the same.
+- The core argument bundles moved from `karak.config` (Pydantic, with
+  default values) to `karak.core_params` (frozen dataclasses with no
+  defaults), built by the stages from their params (`downsample_config`,
+  `loader_config`, `denoise_config`, `pca_config`, `hdbscan_config`,
+  `tiled_config`, `rare_phase_config`, `refinement_config`). Core functions
+  no longer default their data arguments either (for example
+  `create_mineral_mask(min_object_size=...)`, `assign_noise_pixels(k=...)`,
+  `load_element_maps(bse_channel=..., include_elements=...,
+  loader_config=...)`). `run_tiled_hdbscan` and `recluster_unassigned` take
+  explicit bundles in place of `ClusterConfig`.
+- The export sink records each group's parameters from the complete
+  executing flow, and fails when the producing node is missing, instead of
+  filling values from code.
 
 - The default colormap is now `tima:jet` instead of `cmap:jet`.
   Matplotlib's jet cuts the cyan and yellow corners of TIMA's ramp and
@@ -68,7 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The legacy YAML mode: `karak -c config.yaml`, `--test-mode`,
   `--emit-flow`, `--clean`, `--from-stage`, `load_config`, `save_config`,
-  `PipelineConfig`, and the YAML-to-flow shim. Write the pipeline as a flow
+  `PipelineConfig`, and the YAML-to-flow shim.
+- `rare_phase.noise_reassign_k`, which had no effect.
+- The `pydantic` dependency. Write the pipeline as a flow
   JSON instead (`karak flow init`). `karak` with no command prints usage.
 
 ## [0.2.0] - 2026-08-22

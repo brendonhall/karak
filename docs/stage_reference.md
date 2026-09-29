@@ -507,8 +507,7 @@ Recluster still-unassigned pixels with more sensitive HDBSCAN parameters; novel 
 | `min_cluster_size` | int | `50` | 1.., px | Min cluster size |
 | `min_samples` | int | `0` | 0.. | 0 = defaults to min_cluster_size |
 | `subsample_n` | int | `500000` | 0.. | Max unassigned pixels to fit on; 0 = all |
-| `merge_threshold` | float | `0.0` | 0.0..1.0 | Cosine similarity vs existing registry; 0 = reuse the tiled merge threshold |
-| `noise_reassign_k` | int | `5` | 1.. | kNN k |
+| `merge_threshold` | float | `0.92` | 0.5..1.0 | Cosine similarity a rare cluster needs to join an existing registry phase; usually the tiled node's merge_threshold |
 | `random_state` | int | `42` | - | Random seed |
 
 ## `refine` — Phase refinement

@@ -21,7 +21,7 @@ from medpy.filter.smoothing import anisotropic_diffusion
 from skimage.restoration import denoise_bilateral
 
 if TYPE_CHECKING:
-    from karak.config import DenoiseConfig
+    from karak.core_params import DenoiseConfig
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +59,9 @@ def _anisotropic_channel(channel, mask, niter, kappa, gamma, option):
 def bilateral_denoise_cube(
     cube: np.ndarray,
     mask: np.ndarray,
-    sigma_color: float | None = None,
-    sigma_spatial: float = 1.0,
+    *,
+    sigma_color: float | None,
+    sigma_spatial: float,
     workers: int = 1,
     device: str = "cpu",
 ) -> np.ndarray:
@@ -151,10 +152,11 @@ def bilateral_denoise_cube(
 def anisotropic_denoise_cube(
     cube: np.ndarray,
     mask: np.ndarray,
-    niter: int = 10,
-    kappa: float = 50,
-    gamma: float = 0.1,
-    option: int = 2,
+    *,
+    niter: int,
+    kappa: float,
+    gamma: float,
+    option: int,
     workers: int = 1,
 ) -> np.ndarray:
     """Apply Perona-Malik anisotropic diffusion independently per channel.

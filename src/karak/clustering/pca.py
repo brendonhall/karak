@@ -13,7 +13,7 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 if TYPE_CHECKING:
-    from karak.config import PCAConfig
+    from karak.core_params import PCAConfig
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +112,8 @@ def select_components(
 
 def auto_n_components(
     explained_variance_ratio: np.ndarray,
-    variance_threshold: float = 0.95,
-    min_components: int = 5,
+    variance_threshold: float,
+    min_components: int,
 ) -> int:
     """Pick the component count reaching the cumulative-variance threshold.
 

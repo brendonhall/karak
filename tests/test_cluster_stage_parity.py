@@ -8,20 +8,19 @@ identical, seeded parameters.
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 
 import numpy as np
 import pytest
 
-from conftest import make_synthetic_scene
-from karak.config import (
-    ClusterConfig,
-    DenoiseConfig,
-    GMMSplitConfig,
-    HDBSCANConfig,
-    OlivineExtractionConfig,
-    PCAConfig,
-    RefinementConfig,
-    TiledConfig,
+from conftest import (
+    denoise_cfg,
+    hdbscan_cfg,
+    make_synthetic_scene,
+    pca_cfg,
+    rare_cfg,
+    refinement_cfg,
+    tiled_cfg,
 )
 from karak.clustering.hdbscan_cluster import compute_cluster_stats, run_hdbscan
 from karak.clustering.noise_assign import assign_noise_pixels
@@ -53,15 +52,15 @@ def chain():
     """Preprocessed synthetic scene + core clustering results."""
     cube = make_synthetic_scene()
     H, W, _ = cube.shape
-    mask = create_mineral_mask(cube, None, min_object_size=10)
-    denoised = denoise_cube(cube, mask, DenoiseConfig(method="bilateral"))
+    mask = create_mineral_mask(cube, valid_mask=None, min_object_size=10)
+    denoised = denoise_cube(cube, mask, denoise_cfg(method="bilateral"))
     normalized, means, stds = zscore_normalize(denoised, mask)
     _, features_full, mineral_indices = fit_pca(
-        normalized, mask, PCAConfig(n_components=3, random_state=0)
+        normalized, mask, pca_cfg(n_components=3, random_state=0)
     )
     features = select_components(features_full, 3)
     labels, probabilities, _ = run_hdbscan(
-        features, HDBSCANConfig(min_cluster_size=100, random_state=0)
+        features, hdbscan_cfg(min_cluster_size=100, random_state=0)
     )
     return {
         "cube": cube,
@@ -173,11 +172,10 @@ def test_hdbscan_global_parity(features_payload, chain):
 # hdbscan_tiled
 # ---------------------------------------------------------------------------
 
-def _tiled_config() -> ClusterConfig:
-    return ClusterConfig(
-        strategy="tiled",
-        hdbscan=HDBSCANConfig(min_cluster_size=100, random_state=0),
-        tiled=TiledConfig(tile_size=32, min_clusters_per_tile=1),
+def _tiled_config() -> tuple:
+    return (
+        hdbscan_cfg(min_cluster_size=100, random_state=0),
+        tiled_cfg(tile_size=32, min_clusters_per_tile=1),
     )
 
 
@@ -185,7 +183,8 @@ def test_hdbscan_tiled_parity(features_payload, denoised_cube, chain):
     expected_raw, _, expected_probs, expected_tiles, expected_registry = (
         run_tiled_hdbscan(
             chain["features"], chain["mineral_indices"], chain["shape"],
-            chain["denoised"], _tiled_config(), skip_knn=True,
+            chain["denoised"], *_tiled_config(), noise_reassign_k=None,
+            skip_knn=True,
         )
     )
 
@@ -216,7 +215,8 @@ def test_rare_phase_parity(features_payload, denoised_cube, chain):
 
     raw, _, probs, tile_results, registry = run_tiled_hdbscan(
         chain["features"], chain["mineral_indices"], chain["shape"],
-        chain["denoised"], _tiled_config(), skip_knn=True,
+        chain["denoised"], *_tiled_config(), noise_reassign_k=None,
+        skip_knn=True,
     )
     tiles_payload = TiledArtifacts(
         tile_results=tuple(tile_results),
@@ -229,12 +229,10 @@ def test_rare_phase_parity(features_payload, denoised_cube, chain):
         image_shape=chain["shape"], state=LabelState.RAW,
     )
 
-    config = _tiled_config().model_copy(deep=True)
-    config.rare_phase.enabled = True
-    config.rare_phase.min_cluster_size = 20
     expected_labels, expected_registry, _, _ = recluster_unassigned(
         chain["features"], raw.copy(), chain["denoised"],
-        chain["mineral_indices"], copy.deepcopy(registry), config,
+        chain["mineral_indices"], copy.deepcopy(registry),
+        rare_cfg(min_cluster_size=20), random_state=0,
     )
 
     registry_before = copy.deepcopy(tiles_payload.phase_registry)
@@ -285,13 +283,13 @@ def test_knn_implementations_agree(chain):
 def test_refine_parity(denoised_cube, chain):
     cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5)
     target = int(np.bincount(cleaned).argmax())
-    config = RefinementConfig(
-        enabled=True,
-        target_phase=target,
-        olivine=OlivineExtractionConfig(enabled=False),
-        gmm_split=GMMSplitConfig(
-            enabled=True, n_components=2, features=["A", "B"],
-            subsample_n=None, random_state=0,
+    base = refinement_cfg(target_phase=target)
+    config = replace(
+        base,
+        olivine=replace(base.olivine, enabled=False),
+        gmm_split=replace(
+            base.gmm_split, enabled=True, n_components=2,
+            features=("A", "B"), subsample_n=None, random_state=0,
         ),
     )
     bse = np.zeros(chain["shape"], dtype=np.float32)

@@ -7,12 +7,13 @@ containing two chemically distinct phases, without going through the CLI.
 
 from __future__ import annotations
 
+from conftest import denoise_cfg, hdbscan_cfg, pca_cfg
+
 import numpy as np
 
 from karak.clustering.hdbscan_cluster import run_hdbscan
 from karak.clustering.noise_assign import assign_noise_pixels, labels_to_image
 from karak.clustering.pca import fit_pca
-from karak.config import DenoiseConfig, HDBSCANConfig, PCAConfig
 from karak.io.masks import create_mineral_mask
 from karak.preprocessing.compositional import zscore_normalize
 from karak.preprocessing.denoise import denoise_cube
@@ -27,19 +28,19 @@ def test_smoke_two_phase_recovery(synthetic_scene):
     assert mask.sum() == H * (W - 8)
 
     # Denoise raw [0,1] cube, then z-score normalize on mineral pixels
-    denoised = denoise_cube(cube, mask, DenoiseConfig(method="bilateral"))
+    denoised = denoise_cube(cube, mask, denoise_cfg(method="bilateral"))
     normalized, means, stds = zscore_normalize(denoised, mask)
     assert normalized.shape == (H, W, C)
     assert means.shape == (C,)
 
     # PCA -> HDBSCAN -> kNN noise reassignment
     pca_model, features, mineral_indices = fit_pca(
-        normalized, mask, PCAConfig(n_components=3, random_state=0)
+        normalized, mask, pca_cfg(n_components=3, random_state=0)
     )
     assert features.shape == (mask.sum(), 3)
 
     labels, probabilities, clusterer = run_hdbscan(
-        features, HDBSCANConfig(min_cluster_size=100, random_state=0)
+        features, hdbscan_cfg(min_cluster_size=100, random_state=0)
     )
     n_clusters = len(set(labels[labels >= 0]))
     assert n_clusters == 2, f"expected 2 phases, found {n_clusters}"

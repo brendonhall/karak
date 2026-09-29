@@ -8,7 +8,10 @@ import h5py
 import numpy as np
 import pytest
 
+from conftest import complete
+from karak.flow.graph import Graph, Node
 from karak.stages import get
+from karak.stages.base import StageError
 from karak.stages.payloads import (
     BseImage,
     ClusterStats,
@@ -77,14 +80,13 @@ def payloads():
 
 
 def _flow_json():
-    return json.dumps({
-        "version": 1, "name": "test",
-        "nodes": [
-            {"id": "msk", "type": "mask", "params": {"min_object_size": 33}},
-            {"id": "dn", "type": "denoise", "params": {"method": "bilateral"}},
-        ],
-        "edges": [],
-    })
+    """The complete flow the executor embeds via the {flow} token."""
+    graph = complete(Graph(name="test", nodes=(
+        Node("msk", "mask", {"min_object_size": 33}),
+        Node("dn", "denoise", {"method": "bilateral"}),
+        Node("nrm", "normalize"),
+    )))
+    return json.dumps(graph.to_json())
 
 
 def test_export_writes_legacy_layout(tmp_path, payloads):
@@ -108,14 +110,24 @@ def test_export_writes_legacy_layout(tmp_path, payloads):
         assert fh["clusters"].attrs["n_clusters"] == 1
         # per-group config provenance comes from the flow nodes
         assert "33" in fh["masks"].attrs["mask_config"]
+        assert fh["denoised"].attrs["sigma_spatial"] == 1.0   # from the flow
 
 
 def test_export_partial_inputs(tmp_path, payloads):
     path = str(tmp_path / "partial.h5")
     subset = {k: payloads[k] for k in ("cube_raw", "bse", "masks")}
-    get("export_h5")().run(subset, {"path": path, "flow_json": "{}"})
+    get("export_h5")().run(subset, {"path": path, "flow_json": _flow_json()})
 
     with h5py.File(path, "r") as fh:
         assert set(fh["raw"]) == {"Fe", "Mg"}
         assert "cube" not in fh["denoised"]
         assert "cleaned_labels" not in fh["clusters"]
+
+
+def test_export_refuses_a_flow_without_the_producing_node(tmp_path, payloads):
+    """Recorded params come from the flow that ran, never from code."""
+    subset = {k: payloads[k] for k in ("cube_raw", "masks")}
+    with pytest.raises(StageError, match="complete 'mask' node"):
+        get("export_h5")().run(
+            subset, {"path": str(tmp_path / "x.h5"), "flow_json": "{}"}
+        )

@@ -13,7 +13,7 @@ import hdbscan
 import numpy as np
 
 if TYPE_CHECKING:
-    from karak.config import HDBSCANConfig
+    from karak.core_params import HDBSCANConfig
 
 logger = logging.getLogger(__name__)
 

@@ -45,7 +45,8 @@ class MaskStage(Stage):
                 left_trim_px=cube.left_trim_px,
             )
         mineral = create_mineral_mask(
-            cube.pixels, valid, min_object_size=params["min_object_size"]
+            cube.pixels, valid_mask=valid,
+            min_object_size=params["min_object_size"],
         )
         return {
             "masks": MaskSet(

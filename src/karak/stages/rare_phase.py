@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import copy
 
-from karak.config import ClusterConfig, HDBSCANConfig, RarePhaseConfig
+from karak.core_params import RarePhaseConfig
 from karak.stages.base import Param, Port, Stage
 from karak.stages.payloads import LabelState, Space, TiledArtifacts
 from karak.stages.registry import register
+
+
+def rare_phase_config(params: dict) -> RarePhaseConfig:
+    return RarePhaseConfig(
+        min_cluster_size=params["min_cluster_size"],
+        min_samples=params["min_samples"] or None,
+        subsample_n=params["subsample_n"] or None,
+        merge_threshold=params["merge_threshold"],
+    )
 
 
 @register
@@ -39,10 +48,10 @@ class RarePhaseStage(Stage):
               "0 = defaults to min_cluster_size", min=0),
         Param("subsample_n", "int", 500_000, "Subsample N",
               "Max unassigned pixels to fit on; 0 = all", min=0),
-        Param("merge_threshold", "float", 0.0, "Merge threshold",
-              "Cosine similarity vs existing registry; 0 = reuse the tiled "
-              "merge threshold", min=0.0, max=1.0),
-        Param("noise_reassign_k", "int", 5, "kNN k", min=1),
+        Param("merge_threshold", "float", 0.92, "Merge threshold",
+              "Cosine similarity a rare cluster needs to join an existing "
+              "registry phase; usually the tiled node's merge_threshold",
+              min=0.5, max=1.0),
         Param("random_state", "int", 42, "Random seed"),
     ]
 
@@ -51,20 +60,6 @@ class RarePhaseStage(Stage):
 
         labels, features = inputs["labels"], inputs["features"]
         tiles = inputs["tiles"]
-        config = ClusterConfig(
-            strategy="tiled",
-            hdbscan=HDBSCANConfig(
-                noise_reassign_k=params["noise_reassign_k"],
-                random_state=params["random_state"],
-            ),
-            rare_phase=RarePhaseConfig(
-                enabled=True,
-                min_cluster_size=params["min_cluster_size"],
-                min_samples=params["min_samples"] or None,
-                subsample_n=params["subsample_n"] or None,
-                merge_threshold=params["merge_threshold"] or None,
-            ),
-        )
         # recluster_unassigned extends the registry in place — work on a copy
         # so the input payload stays immutable.
         registry = copy.deepcopy(list(tiles.phase_registry))
@@ -74,7 +69,8 @@ class RarePhaseStage(Stage):
             inputs["cube"].pixels,
             features.mineral_indices,
             registry,
-            config,
+            rare_phase_config(params),
+            random_state=params["random_state"],
         )
         return {
             "labels": labels.replace(labels=updated_labels),

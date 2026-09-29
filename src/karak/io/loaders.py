@@ -33,7 +33,7 @@ from skimage.color import rgb2gray
 from skimage.transform import downscale_local_mean
 
 if TYPE_CHECKING:
-    from karak.config import DownsampleConfig, LoaderConfig
+    from karak.core_params import DownsampleConfig, LoaderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +182,7 @@ def get_full_lut(
 
 def invert_colormap(
     rgb_image: np.ndarray,
-    colormap_spec: str = "tima:jet",
+    colormap_spec: str,
     *,
     base_dir: str | Path | None = None,
 ) -> np.ndarray:
@@ -299,17 +299,18 @@ def load_element_maps(
     input_dir: str,
     downsample_config: DownsampleConfig,
     exclude_elements: list[str],
-    bse_channel: str = "SEM",
-    include_elements: list[str] | None = None,
-    loader_config: LoaderConfig | None = None,
+    *,
+    bse_channel: str,
+    include_elements: list[str] | None,
+    loader_config: LoaderConfig,
     workers: int = 1,
     on_file: Callable[[int, int, str], None] | None = None,
 ) -> tuple[dict[str, np.ndarray], np.ndarray, list[str]]:
     """Load, invert, downsample, and trim element maps and the BSE channel.
 
     Element maps are false-color RGB images. Each is inverted to a scalar
-    [0, 1] intensity using the colormap specified by ``loader_config``
-    (default ``'tima:jet'``). The BSE channel is true grayscale.
+    [0, 1] intensity using the colormap specified by ``loader_config``.
+    The BSE channel is true grayscale.
 
     Parameters
     ----------
@@ -325,10 +326,8 @@ def load_element_maps(
         BSE and ``bse_channel`` is used only as the storage key.
     include_elements : list[str] or None
         If given, *only* load these elements (plus BSE).
-    loader_config : LoaderConfig, optional
+    loader_config : LoaderConfig
         File discovery, filename parsing, and colormap parameters.
-        If None, defaults are used (PNG glob, legacy filename heuristic,
-        jet colormap) for backward compatibility with TIMA exports.
     workers : int
         Number of worker processes for per-file loading. 1 (default)
         loads serially in this process; >1 uses a ``ProcessPoolExecutor``.
@@ -347,10 +346,9 @@ def load_element_maps(
     element_names : list[str]
         Sorted list of element names present in ``elements_dict``.
     """
-    from karak.config import LoaderConfig  # local import to avoid cycle
 
     cfg = downsample_config
-    loader = loader_config or LoaderConfig()
+    loader = loader_config
     factor = cfg.downsample_factor
     skip = set(exclude_elements) | _NON_ELEMENT_FILES | {bse_channel}
     include = set(include_elements) if include_elements else None

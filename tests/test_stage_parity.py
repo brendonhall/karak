@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from karak.config import DenoiseConfig, DownsampleConfig, LoaderConfig
+from conftest import denoise_cfg, downsample_cfg, loader_cfg
 from karak.io.loaders import build_compositional_cube, load_element_maps
 from karak.io.masks import compute_mask_statistics, create_mineral_mask
 from karak.preprocessing.compositional import zscore_normalize
@@ -29,7 +29,7 @@ def raw_cube(synthetic_scene):
 
 @pytest.fixture()
 def mask_set(synthetic_scene):
-    mineral = create_mineral_mask(synthetic_scene, None, min_object_size=10)
+    mineral = create_mineral_mask(synthetic_scene, valid_mask=None, min_object_size=10)
     return MaskSet(
         mineral_mask=mineral,
         valid_mask=None,
@@ -85,13 +85,14 @@ def png_dir(tmp_path, isolated_lut_cache):
 
 def test_load_elements_parity(png_dir):
     input_dir, colormap = png_dir
-    downsample = DownsampleConfig(
+    downsample = downsample_cfg(
         header_trim_px=0, bottom_trim_px=0, left_trim_px=0, right_trim_px=0,
         downsample_factor=1,
     )
     elements, bse, names = load_element_maps(
         str(input_dir), downsample, exclude_elements=[], bse_channel="SEM",
-        loader_config=LoaderConfig(colormap=colormap),
+        include_elements=None,
+        loader_config=loader_cfg(colormap=colormap),
     )
     expected_cube = build_compositional_cube(elements, names)
 
@@ -133,7 +134,7 @@ def test_load_elements_records_geometry(png_dir):
 # ---------------------------------------------------------------------------
 
 def test_mask_parity(raw_cube, synthetic_scene):
-    expected = create_mineral_mask(synthetic_scene, None, min_object_size=10)
+    expected = create_mineral_mask(synthetic_scene, valid_mask=None, min_object_size=10)
     expected_stats = compute_mask_statistics(expected, None)
 
     out = get("mask")().run({"cube": raw_cube}, {"min_object_size": 10})
@@ -158,7 +159,7 @@ def test_mask_rejects_denoised_cube(raw_cube):
 
 def test_denoise_parity(raw_cube, mask_set, synthetic_scene):
     expected = denoise_cube(
-        synthetic_scene, mask_set.mineral_mask, DenoiseConfig(method="bilateral")
+        synthetic_scene, mask_set.mineral_mask, denoise_cfg(method="bilateral")
     )
 
     out = get("denoise")().run(

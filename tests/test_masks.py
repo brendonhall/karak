@@ -24,7 +24,10 @@ def test_load_valid_mask_square_polygon(tmp_path):
     square = [(5.0, 5.0), (5.0, 15.0), (15.0, 15.0), (15.0, 5.0)]
     _write_napari_csv(csv_path, [("polygon", square)])
 
-    mask = load_valid_mask(csv_path, image_shape=(20, 20))
+    mask = load_valid_mask(
+        csv_path, image_shape=(20, 20),
+        downsample_factor=1, header_trim_px=0, left_trim_px=0,
+    )
 
     assert mask.shape == (20, 20)
     assert mask.dtype == bool
@@ -44,7 +47,10 @@ def test_load_valid_mask_skips_path_shapes(tmp_path):
     open_path = [(12.0, 2.0), (12.0, 18.0), (18.0, 18.0)]
     _write_napari_csv(csv_path, [("polygon", square), ("path", open_path)])
 
-    mask = load_valid_mask(csv_path, image_shape=(20, 20))
+    mask = load_valid_mask(
+        csv_path, image_shape=(20, 20),
+        downsample_factor=1, header_trim_px=0, left_trim_px=0,
+    )
 
     assert mask[5, 5]  # inside polygon
     assert not mask[15, 10]  # region touched only by the path shape
@@ -57,7 +63,10 @@ def test_load_valid_mask_downsample_scaling(tmp_path):
     square = [(10.0, 10.0), (10.0, 30.0), (30.0, 30.0), (30.0, 10.0)]
     _write_napari_csv(csv_path, [("polygon", square)])
 
-    mask = load_valid_mask(csv_path, image_shape=(20, 20), downsample_factor=2)
+    mask = load_valid_mask(
+        csv_path, image_shape=(20, 20),
+        downsample_factor=2, header_trim_px=0, left_trim_px=0,
+    )
 
     assert mask[10, 10]
     assert not mask[2, 2]

@@ -24,7 +24,7 @@ from scipy.spatial.distance import cosine
 from sklearn.neighbors import KNeighborsClassifier
 
 if TYPE_CHECKING:
-    from karak.config import ClusterConfig, HDBSCANConfig
+    from karak.core_params import HDBSCANConfig, RarePhaseConfig, TiledConfig
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +318,9 @@ def recluster_unassigned(
     denoised_cube: np.ndarray | str,
     mineral_indices: np.ndarray,
     phase_registry: list[PhaseEntry],
-    config: ClusterConfig,
+    rare: RarePhaseConfig,
+    *,
+    random_state: int,
 ) -> tuple[np.ndarray, list[PhaseEntry], int, int]:
     """Recluster unassigned pixels to discover rare phases (Pass 2).
 
@@ -343,8 +345,10 @@ def recluster_unassigned(
         (N_mineral, 2) int32 (row, col) coordinates.
     phase_registry : list[PhaseEntry]
         Phase registry from Pass 1 (will be extended in-place).
-    config : ClusterConfig
-        Full clustering config (uses rare_phase sub-config).
+    rare : RarePhaseConfig
+        Pass-2 HDBSCAN settings and the registry merge threshold.
+    random_state : int
+        Seed for the Pass-2 subsample draw.
 
     Returns
     -------
@@ -361,9 +365,9 @@ def recluster_unassigned(
     import gc
 
     from karak.clustering.hdbscan_cluster import run_hdbscan
-    from karak.config import HDBSCANConfig
+    from karak.core_params import HDBSCANConfig
 
-    rare_cfg = config.rare_phase
+    rare_cfg = rare
     unassigned_mask = raw_labels == -1
     n_unassigned = int(np.sum(unassigned_mask))
 
@@ -381,8 +385,7 @@ def recluster_unassigned(
         min_cluster_size=rare_cfg.min_cluster_size,
         min_samples=rare_cfg.min_samples,
         subsample_n=rare_cfg.subsample_n,
-        noise_reassign_k=config.hdbscan.noise_reassign_k,
-        random_state=config.hdbscan.random_state,
+        random_state=random_state,
     )
 
     # Extract unassigned pixel features
@@ -429,8 +432,6 @@ def recluster_unassigned(
 
     # Match against existing registry
     merge_threshold = rare_cfg.merge_threshold
-    if merge_threshold is None:
-        merge_threshold = config.tiled.merge_threshold
 
     match_map = match_clusters_to_registry(
         pass2_fingerprints, phase_registry, merge_threshold,
@@ -500,7 +501,10 @@ def run_tiled_hdbscan(
     mineral_indices: np.ndarray,
     image_shape: tuple[int, int],
     denoised_cube: np.ndarray,
-    config: ClusterConfig,
+    hdbscan: HDBSCANConfig,
+    tiled: TiledConfig,
+    *,
+    noise_reassign_k: int | None,
     progress_callback: Callable[[int, int, TileResult], None] | None = None,
     skip_knn: bool = False,
     workers: int = 1,
@@ -518,8 +522,12 @@ def run_tiled_hdbscan(
         (H, W) of the full image.
     denoised_cube : np.ndarray
         (H, W, C) float32 denoised element cube [0, 1].
-    config : ClusterConfig
-        Full clustering config (pca, hdbscan, tiled sub-configs).
+    hdbscan : HDBSCANConfig
+        Per-tile HDBSCAN settings.
+    tiled : TiledConfig
+        Tile grid and phase-registry merge settings.
+    noise_reassign_k : int or None
+        k for the final k-NN unification; required unless ``skip_knn``.
     workers : int
         Number of processes for the per-tile HDBSCAN calls. 1 = serial
         (default). >1 parallelizes only the per-tile clustering; the
@@ -543,8 +551,10 @@ def run_tiled_hdbscan(
     """
     from karak.clustering.hdbscan_cluster import run_hdbscan
 
-    tiled_cfg = config.tiled
-    hdb_cfg = config.hdbscan
+    if not skip_knn and noise_reassign_k is None:
+        raise ValueError("noise_reassign_k is required unless skip_knn=True")
+    tiled_cfg = tiled
+    hdb_cfg = hdbscan
     n_mineral = len(mineral_indices)
 
     # Resolve min_tile_pixels
@@ -723,7 +733,7 @@ def run_tiled_hdbscan(
         cleaned_labels = raw_labels.copy()
     else:
         cleaned_labels = final_knn_assign(
-            pca_features, raw_labels, hdb_cfg.noise_reassign_k,
+            pca_features, raw_labels, noise_reassign_k,
         )
 
     logger.info(

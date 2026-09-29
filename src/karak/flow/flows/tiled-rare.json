@@ -83,8 +83,7 @@
         "min_cluster_size": 50,
         "min_samples": 0,
         "subsample_n": 500000,
-        "merge_threshold": 0.0,
-        "noise_reassign_k": 5,
+        "merge_threshold": 0.92,
         "random_state": 42
       }
     },
