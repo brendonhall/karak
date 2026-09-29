@@ -1091,6 +1091,7 @@ view = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "jsonschema" },
     { name = "pytest" },
 ]
 
@@ -1115,7 +1116,10 @@ requires-dist = [
 provides-extras = ["cuda", "view"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.0" }]
+dev = [
+    { name = "jsonschema", specifier = ">=4.0" },
+    { name = "pytest", specifier = ">=8.0" },
+]
 
 [[package]]
 name = "kiwisolver"

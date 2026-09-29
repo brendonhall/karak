@@ -163,7 +163,10 @@ karak validate my_flow.json
 ```
 
 To author a custom flow, start from a builtin with `karak flow init
---builtin NAME -o my_flow.json` and edit it. String params accept run-scoped tokens: `{input}` (the
+--builtin NAME -o my_flow.json` and edit it. Editors can check a flow file
+against [`flow.schema.json`](flow.schema.json), a JSON Schema generated from
+the stage registry (one node variant per stage, every parameter required,
+with types, choices, bounds, and template values). String params accept run-scoped tokens: `{input}` (the
 `--input` directory), `{out}` (the `--out` basename), `{work}` (the work
 directory). `karak validate` reports structural errors — unknown stages,
 bad parameter values, unconnected required inputs, port type mismatches

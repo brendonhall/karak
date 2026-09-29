@@ -63,6 +63,9 @@ Three layers; each depends only on the one below it.
    loads the shipped flows + `override_params`/`apply_device`),
    `complete.py` (fill missing params from stage templates, v1 → v2),
    `record.py` (per-run `{out}/runs/<time>/flow.json` + `run.json`),
+   `schema.py` (JSON Schema for flow files → `docs/flow.schema.json`,
+   drift-tested; regenerate with `uv run python -m karak.flow.schema`
+   after changing any stage's params),
    `flows/*.json` (the builtin flows: complete JSON, the source of truth).
 
 `cli/main.py` is the CLI; `cli/reporter.py` holds all Rich output;

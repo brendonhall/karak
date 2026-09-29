@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameters from the stage templates, prints what it added, and upgrades
   format version 1 flows.
 - `Stage.template()` returns a stage's template parameter values.
+- `docs/flow.schema.json`: a JSON Schema for flow files, generated from the
+  stage registry (`uv run python -m karak.flow.schema`; a test pins it).
+  One node variant per stage, every parameter required, with types,
+  choices, bounds, nullability, and template values as `default`
+  annotations. Groundwork for a visual pipeline composer.
 - Run records: every `karak run` writes `{out}/runs/<UTC time>/flow.json`
   (the complete flow as executed, after overrides) and `run.json` (status,
   times, argv, paths, settings, overrides, karak version and git commit,

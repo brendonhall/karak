@@ -170,11 +170,13 @@ pipeline logic left to write in a front-end:
 
 | Editor need | Already provided by |
 |-------------|---------------------|
-| Node palette with parameter widgets | `karak schema`: every stage's ports, types, defaults, bounds, and help as JSON |
+| Node palette with parameter widgets | `karak schema`: every stage's ports, types, template values, bounds, and help as JSON |
+| File format checked while editing | [`docs/flow.schema.json`](docs/flow.schema.json): a JSON Schema with one node variant per stage and every parameter required |
+| New node with sensible values | stage templates (`Stage.template()`, the schema's `default` annotations) |
 | Legal-wiring rules | named ports with space/state type tags |
 | Error badges on the canvas | `validate(graph)`, the same function the CLI uses |
-| Save / load | the flow JSON format, including a GUI-only `ui` field for node positions |
-| Run button | the headless executor with per-node progress events |
+| Save / load | the complete flow JSON, including a GUI-only `ui` field for node positions |
+| Run button | the headless executor with per-node progress events and a run record |
 
 ### Ready for AI-driven workflows
 
@@ -185,9 +187,10 @@ parameters are typed and bounded, the validator checks every generated
 flow before it runs: a hallucinated stage name, an out-of-range sigma, or
 a mis-wired port is rejected at validation, not discovered two hours into
 a cluster run. The cache makes agent-driven parameter exploration cheap,
-since each variant re-runs only the stages it changed. Every output HDF5
-embeds the exact flow that produced it, so any result an agent produces
-can be audited and reproduced.
+since each variant re-runs only the stages it changed. Every run keeps
+the complete flow it executed in `{out}/runs/<time>/`, and every output
+HDF5 embeds it, so any result an agent produces can be audited and
+reproduced.
 
 ## Pipeline
 

@@ -1,0 +1,1473 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "karak flow",
+  "description": "A karak pipeline (flow format version 2): stage nodes with every parameter listed, connected by edges from output ports to input ports. Generated from the stage registry.",
+  "type": "object",
+  "required": [
+    "version",
+    "name",
+    "nodes",
+    "edges"
+  ],
+  "properties": {
+    "version": {
+      "const": 2
+    },
+    "name": {
+      "type": "string"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "endpoint": {
+      "type": "object",
+      "required": [
+        "node",
+        "port"
+      ],
+      "properties": {
+        "node": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": [
+        "id",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/$defs/endpoint",
+          "description": "an output port"
+        },
+        "to": {
+          "$ref": "#/$defs/endpoint",
+          "description": "an input port"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ui": {
+      "type": "object",
+      "description": "Editor-only metadata (e.g. canvas position); ignored when the flow runs."
+    },
+    "node": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/node_cluster_stats"
+        },
+        {
+          "$ref": "#/$defs/node_denoise"
+        },
+        {
+          "$ref": "#/$defs/node_export_h5"
+        },
+        {
+          "$ref": "#/$defs/node_fingerprints"
+        },
+        {
+          "$ref": "#/$defs/node_hdbscan_global"
+        },
+        {
+          "$ref": "#/$defs/node_hdbscan_tiled"
+        },
+        {
+          "$ref": "#/$defs/node_load_elements"
+        },
+        {
+          "$ref": "#/$defs/node_mask"
+        },
+        {
+          "$ref": "#/$defs/node_noise_assign"
+        },
+        {
+          "$ref": "#/$defs/node_normalize"
+        },
+        {
+          "$ref": "#/$defs/node_pca"
+        },
+        {
+          "$ref": "#/$defs/node_qc_cluster_summary"
+        },
+        {
+          "$ref": "#/$defs/node_qc_denoise"
+        },
+        {
+          "$ref": "#/$defs/node_qc_fingerprints"
+        },
+        {
+          "$ref": "#/$defs/node_qc_mask"
+        },
+        {
+          "$ref": "#/$defs/node_qc_named_phase_map"
+        },
+        {
+          "$ref": "#/$defs/node_qc_normalize"
+        },
+        {
+          "$ref": "#/$defs/node_qc_phase_map"
+        },
+        {
+          "$ref": "#/$defs/node_qc_scree"
+        },
+        {
+          "$ref": "#/$defs/node_qc_tiled"
+        },
+        {
+          "$ref": "#/$defs/node_rare_phase"
+        },
+        {
+          "$ref": "#/$defs/node_refine"
+        }
+      ]
+    },
+    "node_cluster_stats": {
+      "title": "Cluster statistics",
+      "description": "Cluster counts, sizes, and noise fraction for the labels.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "cluster_stats"
+        },
+        "params": {
+          "$ref": "#/$defs/params_cluster_stats"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_cluster_stats": {
+      "type": "object",
+      "required": [],
+      "properties": {},
+      "additionalProperties": false
+    },
+    "node_denoise": {
+      "title": "Denoise",
+      "description": "Edge-aware denoising (bilateral or Perona-Malik anisotropic diffusion) applied per channel on raw intensities.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "denoise"
+        },
+        "params": {
+          "$ref": "#/$defs/params_denoise"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_denoise": {
+      "type": "object",
+      "required": [
+        "method",
+        "sigma_color",
+        "sigma_spatial",
+        "niter",
+        "kappa",
+        "gamma",
+        "option",
+        "device"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "title": "Method",
+          "enum": [
+            "bilateral",
+            "anisotropic_diffusion"
+          ],
+          "default": "bilateral"
+        },
+        "sigma_color": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "title": "Color sigma",
+          "description": "Bilateral color sigma (None = auto from data range)",
+          "minimum": 0.0,
+          "default": null
+        },
+        "sigma_spatial": {
+          "type": "number",
+          "title": "Spatial sigma",
+          "minimum": 0.0,
+          "default": 1.0
+        },
+        "niter": {
+          "type": "integer",
+          "title": "Iterations",
+          "minimum": 1,
+          "default": 10
+        },
+        "kappa": {
+          "type": "number",
+          "title": "Kappa",
+          "description": "Conductance coefficient for diffusion",
+          "minimum": 0.0,
+          "default": 50.0
+        },
+        "gamma": {
+          "type": "number",
+          "title": "Gamma",
+          "description": "Diffusion speed (0-0.25 stable)",
+          "minimum": 0.0,
+          "maximum": 0.25,
+          "default": 0.1
+        },
+        "option": {
+          "type": "integer",
+          "title": "Perona-Malik option",
+          "enum": [
+            1,
+            2
+          ],
+          "default": 2
+        },
+        "device": {
+          "type": "string",
+          "title": "Device",
+          "description": "cpu or cuda (GPU bilateral via cuCIM; needs karak[cuda]). Results match cpu within float tolerance.",
+          "enum": [
+            "cpu",
+            "cuda"
+          ],
+          "default": "cpu"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_export_h5": {
+      "title": "Export HDF5",
+      "description": "Write connected results to the provenance HDF5 file using the legacy group layout. Every input is optional; only connected groups are written.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "export_h5"
+        },
+        "params": {
+          "$ref": "#/$defs/params_export_h5"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_export_h5": {
+      "type": "object",
+      "required": [
+        "path",
+        "flow_json"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "title": "Output path",
+          "default": "{out}.h5"
+        },
+        "flow_json": {
+          "type": "string",
+          "title": "Flow definition",
+          "description": "JSON of the executing flow, embedded for provenance",
+          "default": "{flow}"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_fingerprints": {
+      "title": "Chemical fingerprints",
+      "description": "Per-cluster mean/std element intensities from the denoised cube, with cosine-similar cluster pairs flagged for review.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "fingerprints"
+        },
+        "params": {
+          "$ref": "#/$defs/params_fingerprints"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_fingerprints": {
+      "type": "object",
+      "required": [
+        "similarity_threshold"
+      ],
+      "properties": {
+        "similarity_threshold": {
+          "type": "number",
+          "title": "Similarity threshold",
+          "description": "Cosine similarity above which cluster pairs are flagged",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.95
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_hdbscan_global": {
+      "title": "HDBSCAN (global)",
+      "description": "Single HDBSCAN run over all mineral-pixel features.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "hdbscan_global"
+        },
+        "params": {
+          "$ref": "#/$defs/params_hdbscan_global"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_hdbscan_global": {
+      "type": "object",
+      "required": [
+        "min_cluster_size",
+        "min_samples",
+        "subsample_n",
+        "random_state",
+        "device"
+      ],
+      "properties": {
+        "min_cluster_size": {
+          "type": "integer",
+          "title": "Min cluster size",
+          "description": "[px]",
+          "minimum": 1,
+          "default": 1000
+        },
+        "min_samples": {
+          "type": "integer",
+          "title": "Min samples",
+          "description": "HDBSCAN min_samples; 0 = defaults to min_cluster_size",
+          "minimum": 0,
+          "default": 0
+        },
+        "subsample_n": {
+          "type": "integer",
+          "title": "Subsample N",
+          "description": "Max pixels for fitting (rest via approximate_predict); 0 = all",
+          "minimum": 0,
+          "default": 0
+        },
+        "random_state": {
+          "type": "integer",
+          "title": "Random seed",
+          "default": 42
+        },
+        "device": {
+          "type": "string",
+          "title": "Device",
+          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu and ignore subsample_n.",
+          "enum": [
+            "cpu",
+            "cuda"
+          ],
+          "default": "cpu"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_hdbscan_tiled": {
+      "title": "HDBSCAN (tiled)",
+      "description": "Per-tile HDBSCAN with cosine-similarity phase-registry merging. Unassigned pixels are left at -1 for the noise_assign stage.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "hdbscan_tiled"
+        },
+        "params": {
+          "$ref": "#/$defs/params_hdbscan_tiled"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_hdbscan_tiled": {
+      "type": "object",
+      "required": [
+        "min_cluster_size",
+        "min_samples",
+        "subsample_n",
+        "random_state",
+        "device",
+        "tile_size",
+        "merge_threshold",
+        "min_tile_pixels",
+        "min_clusters_per_tile"
+      ],
+      "properties": {
+        "min_cluster_size": {
+          "type": "integer",
+          "title": "Min cluster size",
+          "description": "[px]",
+          "minimum": 1,
+          "default": 1000
+        },
+        "min_samples": {
+          "type": "integer",
+          "title": "Min samples",
+          "description": "HDBSCAN min_samples; 0 = defaults to min_cluster_size",
+          "minimum": 0,
+          "default": 0
+        },
+        "subsample_n": {
+          "type": "integer",
+          "title": "Subsample N",
+          "description": "Max pixels for fitting (rest via approximate_predict); 0 = all",
+          "minimum": 0,
+          "default": 0
+        },
+        "random_state": {
+          "type": "integer",
+          "title": "Random seed",
+          "default": 42
+        },
+        "device": {
+          "type": "string",
+          "title": "Device",
+          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu and ignore subsample_n.",
+          "enum": [
+            "cpu",
+            "cuda"
+          ],
+          "default": "cpu"
+        },
+        "tile_size": {
+          "type": "integer",
+          "title": "Tile size",
+          "description": "[px]",
+          "minimum": 1,
+          "default": 512
+        },
+        "merge_threshold": {
+          "type": "number",
+          "title": "Merge threshold",
+          "description": "Cosine similarity for matching tile clusters to the registry",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.92
+        },
+        "min_tile_pixels": {
+          "type": "integer",
+          "title": "Min tile pixels",
+          "description": "Minimum mineral pixels per tile; 0 = 2 * min_cluster_size",
+          "minimum": 0,
+          "default": 0
+        },
+        "min_clusters_per_tile": {
+          "type": "integer",
+          "title": "Min clusters per tile",
+          "description": "Tiles with fewer clusters defer to the k-NN pass",
+          "minimum": 0,
+          "default": 3
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_load_elements": {
+      "title": "Load element maps",
+      "description": "Load false-color element map images, invert the colormap to scalar [0, 1] intensities, downsample/trim, and stack into a cube.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "load_elements"
+        },
+        "params": {
+          "$ref": "#/$defs/params_load_elements"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_load_elements": {
+      "type": "object",
+      "required": [
+        "input_dir",
+        "file_glob",
+        "filename_pattern",
+        "bse_filename",
+        "colormap",
+        "exclude_elements",
+        "include_elements",
+        "bse_channel",
+        "header_trim_px",
+        "bottom_trim_px",
+        "left_trim_px",
+        "right_trim_px",
+        "downsample_factor"
+      ],
+      "properties": {
+        "input_dir": {
+          "type": "string",
+          "title": "Input directory",
+          "description": "Directory containing element map files",
+          "default": "{input}"
+        },
+        "file_glob": {
+          "type": "string",
+          "title": "File glob",
+          "description": "Glob pattern (relative to input_dir) for element map files",
+          "default": "*.png"
+        },
+        "filename_pattern": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "title": "Filename pattern",
+          "description": "Pattern with {element} placeholder; None = legacy TIMA heuristic",
+          "default": null
+        },
+        "bse_filename": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "title": "BSE filename",
+          "description": "Exact BSE file name when it does not match the glob",
+          "default": null
+        },
+        "colormap": {
+          "type": "string",
+          "title": "Colormap",
+          "description": "'tima:jet', 'cmap:NAME' or 'lut:PATH' inversion spec",
+          "default": "tima:jet"
+        },
+        "exclude_elements": {
+          "type": "string",
+          "title": "Exclude elements",
+          "description": "Comma-separated element names to skip",
+          "default": "Fe-L"
+        },
+        "include_elements": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "title": "Include elements",
+          "description": "Comma-separated allowlist; None = load all",
+          "default": null
+        },
+        "bse_channel": {
+          "type": "string",
+          "title": "BSE channel",
+          "description": "Element name of the BSE/SEM channel",
+          "default": "SEM"
+        },
+        "header_trim_px": {
+          "type": "integer",
+          "title": "Header trim",
+          "description": "[px]",
+          "minimum": 0,
+          "default": 0
+        },
+        "bottom_trim_px": {
+          "type": "integer",
+          "title": "Bottom trim",
+          "description": "[px]",
+          "minimum": 0,
+          "default": 0
+        },
+        "left_trim_px": {
+          "type": "integer",
+          "title": "Left trim",
+          "description": "[px]",
+          "minimum": 0,
+          "default": 0
+        },
+        "right_trim_px": {
+          "type": "integer",
+          "title": "Right trim",
+          "description": "[px]",
+          "minimum": 0,
+          "default": 0
+        },
+        "downsample_factor": {
+          "type": "integer",
+          "title": "Downsample factor",
+          "minimum": 1,
+          "default": 2
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_mask": {
+      "title": "Mineral mask",
+      "description": "Boolean mineral-pixel mask: all-zero pixels are background; an optional napari polygon CSV restricts the valid sample region.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "mask"
+        },
+        "params": {
+          "$ref": "#/$defs/params_mask"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_mask": {
+      "type": "object",
+      "required": [
+        "min_object_size",
+        "valid_mask_path"
+      ],
+      "properties": {
+        "min_object_size": {
+          "type": "integer",
+          "title": "Min object size",
+          "description": "Remove connected components smaller than this [px]",
+          "minimum": 0,
+          "default": 100
+        },
+        "valid_mask_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "title": "Valid-region CSV",
+          "description": "napari shapes CSV of the sample boundary polygon (coordinates in original, pre-downsample image space)",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_noise_assign": {
+      "title": "Noise reassignment",
+      "description": "Assign every remaining -1 pixel to its nearest phase by distance-weighted k-NN voting in feature space.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "noise_assign"
+        },
+        "params": {
+          "$ref": "#/$defs/params_noise_assign"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_noise_assign": {
+      "type": "object",
+      "required": [
+        "k"
+      ],
+      "properties": {
+        "k": {
+          "type": "integer",
+          "title": "Neighbors",
+          "minimum": 1,
+          "default": 5
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_normalize": {
+      "title": "Normalize",
+      "description": "Per-channel z-score normalization over mineral pixels; non-mineral pixels are set to 0.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "normalize"
+        },
+        "params": {
+          "$ref": "#/$defs/params_normalize"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_normalize": {
+      "type": "object",
+      "required": [
+        "method"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "title": "Method",
+          "enum": [
+            "zscore"
+          ],
+          "default": "zscore"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_pca": {
+      "title": "PCA",
+      "description": "Fit PCA on mineral pixels of the normalized cube and project them into reduced feature space. n_components=0 auto-selects the first component count reaching the cumulative-variance threshold.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "pca"
+        },
+        "params": {
+          "$ref": "#/$defs/params_pca"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_pca": {
+      "type": "object",
+      "required": [
+        "n_components",
+        "variance_threshold",
+        "min_components",
+        "subsample_fraction",
+        "random_state"
+      ],
+      "properties": {
+        "n_components": {
+          "type": "integer",
+          "title": "Components",
+          "description": "Number of components to keep; 0 = auto from variance",
+          "minimum": 0,
+          "default": 0
+        },
+        "variance_threshold": {
+          "type": "number",
+          "title": "Variance threshold",
+          "description": "Cumulative explained variance target for auto selection",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.95
+        },
+        "min_components": {
+          "type": "integer",
+          "title": "Min components",
+          "description": "Floor for auto selection",
+          "minimum": 1,
+          "default": 5
+        },
+        "subsample_fraction": {
+          "type": "number",
+          "title": "Subsample fraction",
+          "description": "Fraction of mineral pixels used for fitting; 0 = all",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.0
+        },
+        "random_state": {
+          "type": "integer",
+          "title": "Random seed",
+          "default": 42
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_qc_cluster_summary": {
+      "title": "QC: cluster summary",
+      "description": "Cluster size and probability summary chart.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qc_cluster_summary"
+        },
+        "params": {
+          "$ref": "#/$defs/params_qc_cluster_summary"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_qc_cluster_summary": {
+      "type": "object",
+      "required": [
+        "figure_dir"
+      ],
+      "properties": {
+        "figure_dir": {
+          "type": "string",
+          "title": "Figure directory",
+          "description": "Directory the diagnostic figures are written to",
+          "default": "{out}/figures"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_qc_denoise": {
+      "title": "QC: denoise",
+      "description": "Before/after denoising comparison panels.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qc_denoise"
+        },
+        "params": {
+          "$ref": "#/$defs/params_qc_denoise"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_qc_denoise": {
+      "type": "object",
+      "required": [
+        "figure_dir",
+        "method"
+      ],
+      "properties": {
+        "figure_dir": {
+          "type": "string",
+          "title": "Figure directory",
+          "description": "Directory the diagnostic figures are written to",
+          "default": "{out}/figures"
+        },
+        "method": {
+          "type": "string",
+          "title": "Method label",
+          "description": "Denoise method name shown on the figure",
+          "default": "bilateral"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_qc_fingerprints": {
+      "title": "QC: fingerprints",
+      "description": "Per-cluster chemical fingerprint chart.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qc_fingerprints"
+        },
+        "params": {
+          "$ref": "#/$defs/params_qc_fingerprints"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_qc_fingerprints": {
+      "type": "object",
+      "required": [
+        "figure_dir",
+        "mineral_names"
+      ],
+      "properties": {
+        "figure_dir": {
+          "type": "string",
+          "title": "Figure directory",
+          "description": "Directory the diagnostic figures are written to",
+          "default": "{out}/figures"
+        },
+        "mineral_names": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "title": "Mineral names",
+          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_qc_mask": {
+      "title": "QC: mask",
+      "description": "Mask coverage overlay with optional TIMA reference panel.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qc_mask"
+        },
+        "params": {
+          "$ref": "#/$defs/params_qc_mask"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_qc_mask": {
+      "type": "object",
+      "required": [
+        "figure_dir",
+        "tima_path"
+      ],
+      "properties": {
+        "figure_dir": {
+          "type": "string",
+          "title": "Figure directory",
+          "description": "Directory the diagnostic figures are written to",
+          "default": "{out}/figures"
+        },
+        "tima_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "title": "TIMA phase map",
+          "description": "Optional reference TIMA phase map image for comparison",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_qc_named_phase_map": {
+      "title": "QC: named phase map",
+      "description": "Final phase map with researcher-assigned mineral names.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qc_named_phase_map"
+        },
+        "params": {
+          "$ref": "#/$defs/params_qc_named_phase_map"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_qc_named_phase_map": {
+      "type": "object",
+      "required": [
+        "figure_dir",
+        "mineral_names"
+      ],
+      "properties": {
+        "figure_dir": {
+          "type": "string",
+          "title": "Figure directory",
+          "description": "Directory the diagnostic figures are written to",
+          "default": "{out}/figures"
+        },
+        "mineral_names": {
+          "type": "string",
+          "title": "Mineral names",
+          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}",
+          "default": "{}"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_qc_normalize": {
+      "title": "QC: normalize",
+      "description": "Z-score histograms and channel correlation matrix.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qc_normalize"
+        },
+        "params": {
+          "$ref": "#/$defs/params_qc_normalize"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_qc_normalize": {
+      "type": "object",
+      "required": [
+        "figure_dir"
+      ],
+      "properties": {
+        "figure_dir": {
+          "type": "string",
+          "title": "Figure directory",
+          "description": "Directory the diagnostic figures are written to",
+          "default": "{out}/figures"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_qc_phase_map": {
+      "title": "QC: phase map",
+      "description": "Raw vs cleaned phase map over the BSE image.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qc_phase_map"
+        },
+        "params": {
+          "$ref": "#/$defs/params_qc_phase_map"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_qc_phase_map": {
+      "type": "object",
+      "required": [
+        "figure_dir"
+      ],
+      "properties": {
+        "figure_dir": {
+          "type": "string",
+          "title": "Figure directory",
+          "description": "Directory the diagnostic figures are written to",
+          "default": "{out}/figures"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_qc_scree": {
+      "title": "QC: scree plot",
+      "description": "PCA explained-variance scree plot with selection cutoff.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qc_scree"
+        },
+        "params": {
+          "$ref": "#/$defs/params_qc_scree"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_qc_scree": {
+      "type": "object",
+      "required": [
+        "figure_dir"
+      ],
+      "properties": {
+        "figure_dir": {
+          "type": "string",
+          "title": "Figure directory",
+          "description": "Directory the diagnostic figures are written to",
+          "default": "{out}/figures"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_qc_tiled": {
+      "title": "QC: tiled clustering",
+      "description": "Tile grid overlay and phase discovery chart. Recomputes the tile grid from the features payload.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "qc_tiled"
+        },
+        "params": {
+          "$ref": "#/$defs/params_qc_tiled"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_qc_tiled": {
+      "type": "object",
+      "required": [
+        "figure_dir",
+        "min_tile_pixels"
+      ],
+      "properties": {
+        "figure_dir": {
+          "type": "string",
+          "title": "Figure directory",
+          "description": "Directory the diagnostic figures are written to",
+          "default": "{out}/figures"
+        },
+        "min_tile_pixels": {
+          "type": "integer",
+          "title": "Min tile pixels",
+          "description": "Must match the hdbscan_tiled setting for an accurate overlay",
+          "minimum": 1,
+          "default": 2000
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_rare_phase": {
+      "title": "Rare phases",
+      "description": "Recluster still-unassigned pixels with more sensitive HDBSCAN parameters; novel clusters join the phase registry. Presence of this stage in a flow is what enables the two-pass workflow.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "rare_phase"
+        },
+        "params": {
+          "$ref": "#/$defs/params_rare_phase"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_rare_phase": {
+      "type": "object",
+      "required": [
+        "min_cluster_size",
+        "min_samples",
+        "subsample_n",
+        "merge_threshold",
+        "random_state"
+      ],
+      "properties": {
+        "min_cluster_size": {
+          "type": "integer",
+          "title": "Min cluster size",
+          "description": "[px]",
+          "minimum": 1,
+          "default": 50
+        },
+        "min_samples": {
+          "type": "integer",
+          "title": "Min samples",
+          "description": "0 = defaults to min_cluster_size",
+          "minimum": 0,
+          "default": 0
+        },
+        "subsample_n": {
+          "type": "integer",
+          "title": "Subsample N",
+          "description": "Max unassigned pixels to fit on; 0 = all",
+          "minimum": 0,
+          "default": 500000
+        },
+        "merge_threshold": {
+          "type": "number",
+          "title": "Merge threshold",
+          "description": "Cosine similarity a rare cluster needs to join an existing registry phase; usually the tiled node's merge_threshold",
+          "minimum": 0.5,
+          "maximum": 1.0,
+          "default": 0.92
+        },
+        "random_state": {
+          "type": "integer",
+          "title": "Random seed",
+          "default": 42
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_refine": {
+      "title": "Phase refinement",
+      "description": "Split a composite phase: threshold-based olivine extraction, then a GMM split of the remaining target-phase pixels.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "refine"
+        },
+        "params": {
+          "$ref": "#/$defs/params_refine"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_refine": {
+      "type": "object",
+      "required": [
+        "target_phase",
+        "olivine_enabled",
+        "olivine_fe_threshold",
+        "olivine_ca_threshold",
+        "gmm_enabled",
+        "gmm_n_components",
+        "gmm_features",
+        "gmm_bse_weight",
+        "gmm_subsample_n",
+        "random_state"
+      ],
+      "properties": {
+        "target_phase": {
+          "type": "integer",
+          "title": "Target phase",
+          "description": "Cluster label of the phase to refine",
+          "default": 2
+        },
+        "olivine_enabled": {
+          "type": "boolean",
+          "title": "Olivine extraction",
+          "default": false
+        },
+        "olivine_fe_threshold": {
+          "type": "number",
+          "title": "Olivine Fe threshold",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.6
+        },
+        "olivine_ca_threshold": {
+          "type": "number",
+          "title": "Olivine Ca threshold",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.1
+        },
+        "gmm_enabled": {
+          "type": "boolean",
+          "title": "GMM split",
+          "default": false
+        },
+        "gmm_n_components": {
+          "type": "integer",
+          "title": "GMM components",
+          "minimum": 2,
+          "default": 2
+        },
+        "gmm_features": {
+          "type": "string",
+          "title": "GMM features",
+          "description": "Comma-separated channel names; 'BSE' adds backscatter",
+          "default": "Ca,Mg,Fe-K,BSE"
+        },
+        "gmm_bse_weight": {
+          "type": "number",
+          "title": "BSE weight",
+          "minimum": 0.0,
+          "default": 1.0
+        },
+        "gmm_subsample_n": {
+          "type": "integer",
+          "title": "GMM subsample N",
+          "description": "Max pixels to fit GMM on; 0 = all",
+          "minimum": 0,
+          "default": 500000
+        },
+        "random_state": {
+          "type": "integer",
+          "title": "Random seed",
+          "default": 42
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
