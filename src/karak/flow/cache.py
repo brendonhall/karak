@@ -42,15 +42,30 @@ def payload_path(recipe: str, port: str, cache_dir: str | Path) -> Path:
 
 
 def store_payload(
-    recipe: str, port: str, payload, cache_dir: str | Path
+    recipe: str, port: str, payload, cache_dir: str | Path,
+    upstream: dict | None = None,
 ) -> Path:
+    """Write a payload to the cache. ``upstream`` maps the producing
+    node's input ports to the recipe hashes they consumed; it is stored
+    as an attribute so a cache scan can tell which outputs belong together."""
     path = payload_path(recipe, port, cache_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".h5.tmp")
     with h5py.File(tmp, "w") as fh:
-        payload.to_h5(fh.create_group("payload"))
+        group = fh.create_group("payload")
+        payload.to_h5(group)
+        if upstream:
+            group.attrs["upstream"] = json.dumps(dict(sorted(upstream.items())))
     os.replace(tmp, path)
     return path
+
+
+def load_upstream(path: str | Path) -> dict:
+    """The upstream recipes stored with a cached payload; {} when the file
+    predates the attribute or has none (a source node's output)."""
+    with h5py.File(path, "r") as fh:
+        raw = fh["payload"].attrs.get("upstream")
+    return json.loads(str(raw)) if raw is not None else {}
 
 
 def load_payload(recipe: str, port: str, cache_dir: str | Path):

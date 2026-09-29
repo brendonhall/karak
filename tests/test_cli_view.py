@@ -40,8 +40,8 @@ def _masks(valid=True):
                    valid_mask=np.ones((4, 5), bool) if valid else None)
 
 
-def _store(cache, recipe, port, payload, mtime):
-    path = store_payload(recipe, port, payload, cache)
+def _store(cache, recipe, port, payload, mtime, upstream=None):
+    path = store_payload(recipe, port, payload, cache, upstream=upstream)
     os.utime(path, (mtime, mtime))
     return path
 
@@ -82,13 +82,36 @@ def test_pick_newest_cube_and_the_bse_from_the_same_step(tmp_path):
     assert [f.recipe for f in picked.other_cubes] == ["old"]
 
 
-def test_pick_newest_masks_from_a_cache_scan(tmp_path):
+def test_pick_newest_masks_of_the_selected_cube_from_a_cache_scan(tmp_path):
     cache = tmp_path / "work" / "cache"
     _store(cache, "c", "cube", _cube(), 1000)
-    _store(cache, "m-old", "masks", _masks(), 1500)
-    _store(cache, "m-new", "masks", _masks(), 2500)
+    _store(cache, "m-old", "masks", _masks(), 1500, upstream={"cube": "c"})
+    _store(cache, "m-new", "masks", _masks(), 2500, upstream={"cube": "c"})
     picked = pick_outputs(find_cache_files(cache))
     assert picked.masks.recipe == "m-new"
+
+
+def test_pick_ignores_masks_of_another_cube_in_a_cache_scan(tmp_path):
+    # Sample A ran at factor 1, then B at factor 2, then A again with new
+    # mask parameters: A's load is a cache hit (old mtime) while A's new
+    # masks are the newest file in the cache.
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "a", "cube", _cube(factor=1), 1000)
+    _store(cache, "a-m1", "masks", _masks(), 1000, upstream={"cube": "a"})
+    _store(cache, "b", "cube", _cube(factor=2), 2000)
+    _store(cache, "b-m", "masks", _masks(), 2000, upstream={"cube": "b"})
+    _store(cache, "a-m2", "masks", _masks(), 3000, upstream={"cube": "a"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.cube.recipe == "b"
+    assert picked.masks.recipe == "b-m"
+
+
+def test_pick_no_masks_when_none_link_to_the_selected_cube(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "b", "cube", _cube(), 2000)
+    _store(cache, "a-m", "masks", _masks(), 3000, upstream={"cube": "a"})
+    _store(cache, "old", "masks", _masks(), 4000)   # written before upstream links
+    assert pick_outputs(find_cache_files(cache)).masks is None
 
 
 def test_pick_without_a_cube_raises(tmp_path):
@@ -257,7 +280,7 @@ def test_layer_specs_without_masks_add_no_labels_layers():
 def test_view_main_opens_the_masks_of_a_run(tmp_path, monkeypatch, capsys):
     cache = tmp_path / "work" / "cache"
     _store(cache, "a", "cube", _cube(), 1000)
-    _store(cache, "m", "masks", _masks(), 1000)
+    _store(cache, "m", "masks", _masks(), 1000, upstream={"cube": "a"})
     opened = {}
     monkeypatch.setattr(view, "_napari_available", lambda: True)
     monkeypatch.setattr(view, "open_viewer",

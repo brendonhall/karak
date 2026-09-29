@@ -7,6 +7,7 @@ import logging
 
 import numpy as np
 import pytest
+from pathlib import Path
 
 from conftest import make_synthetic_scene
 from karak.cli.dashboard import DashboardReporter
@@ -140,6 +141,24 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     assert "src.cube -> ElementCube 32×32×3" in out
     assert "msk: cached (" in out
     assert "(0 ran, 2 cached)" in out
+
+
+def test_run_links_cached_outputs_to_their_upstream_recipes(tmp_path, scene):
+    import json
+
+    from karak.flow.cache import load_upstream
+
+    data_dir, colormap = scene
+    out = tmp_path / "out" / "run"
+    assert main(["run", "--builtin", "stepwise", "--input", str(data_dir),
+                 "--out", str(out), "--plain",
+                 "--set", f"src.colormap={colormap}"]) == 0
+    nodes = json.loads((out / "runs" / "latest" / "run.json").read_text())["nodes"]
+    src_cube = nodes["src"]["outputs"]["cube"]["file"]
+    masks = nodes["msk"]["outputs"]["masks"]["file"]
+    src_recipe = Path(src_cube).name.split("__")[0]
+    assert load_upstream(Path(masks)) == {"cube": src_recipe}
+    assert load_upstream(Path(src_cube)) == {}
 
 
 def test_unexpected_error_closes_reporter_as_failed(tmp_path, monkeypatch):

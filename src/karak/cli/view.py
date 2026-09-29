@@ -20,7 +20,7 @@ import importlib.util
 import json
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import h5py
@@ -39,6 +39,7 @@ class CacheFile:
     port: str
     payload_type: str
     mtime: float
+    upstream: dict = field(default_factory=dict)  # input port -> recipe
 
 
 @dataclass(frozen=True)
@@ -78,9 +79,12 @@ def _read_entry(path: Path) -> CacheFile | None:
     try:
         with h5py.File(path, "r") as fh:
             payload_type = str(fh["payload"].attrs["payload_type"])
+            raw = fh["payload"].attrs.get("upstream")
     except (OSError, KeyError):
         return None
-    return CacheFile(path, recipe, port, payload_type, path.stat().st_mtime)
+    upstream = json.loads(str(raw)) if raw is not None else {}
+    return CacheFile(path, recipe, port, payload_type, path.stat().st_mtime,
+                     upstream)
 
 
 def find_cache_files(target: str | Path) -> list[CacheFile]:
@@ -121,27 +125,31 @@ def find_run_outputs(target: str | Path) -> list[CacheFile] | None:
 
 
 def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedOutputs:
-    """An ElementCube, the BseImage from the same step, a MaskSet, and the
-    other cubes.
+    """An ElementCube, the BseImage from the same step, the MaskSet computed
+    from that cube, and the other cubes.
 
-    ``newest_first`` picks the most recent cube and masks (cache scan);
-    otherwise the first in list order (a run record lists outputs in flow
-    order).
+    ``newest_first`` picks the most recent cube (cache scan); otherwise the
+    first in list order (a run record lists outputs in flow order). In a
+    cache scan the masks must name the cube as their upstream ``cube``
+    (see ``store_payload``), so another run's masks are never overlaid;
+    with a record, the run itself links them.
     """
-    def of_type(kind):
-        found = [e for e in entries if e.payload_type == kind]
-        if newest_first:
-            found.sort(key=lambda e: e.mtime, reverse=True)
-        return found
-
-    cubes = of_type("element_cube")
+    cubes = [e for e in entries if e.payload_type == "element_cube"]
+    if newest_first:
+        cubes.sort(key=lambda e: e.mtime, reverse=True)
     if not cubes:
         raise ValueError("no ElementCube in the cache; run the load step first")
     cube = cubes[0]
     bses = [e for e in entries if e.payload_type == "bse_image"]
     same_step = [e for e in bses if e.recipe == cube.recipe]
     bse = (same_step or sorted(bses, key=lambda e: e.mtime, reverse=True) or [None])[0]
-    masks = (of_type("mask_set") or [None])[0]
+    mask_sets = [e for e in entries if e.payload_type == "mask_set"]
+    if newest_first:
+        mask_sets = sorted(
+            (e for e in mask_sets if e.upstream.get("cube") == cube.recipe),
+            key=lambda e: e.mtime, reverse=True,
+        )
+    masks = (mask_sets or [None])[0]
     return PickedOutputs(cube, bse, masks, cubes[1:])
 
 

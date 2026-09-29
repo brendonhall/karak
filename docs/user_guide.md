@@ -314,7 +314,9 @@ command opens the outputs listed in the latest run record
 (`{out}/runs/latest/run.json`): the load step's element cube, the BSE
 image from the same step, and the mask step's masks. Without a record (or
 if its cache files are gone) it opens the newest cached element cube and
-the newest cached masks instead. It shows one gray layer per element (only
+the newest cached masks computed from that cube instead (each cached
+output records the recipes it consumed; masks from another run or cube are
+never overlaid). It shows one gray layer per element (only
 `--show` elements visible), then the mineral mask as a labels layer
 (visible) and, when the flow set `msk.valid_mask_path`, the valid mask as a
 second labels layer (hidden). Every layer is placed in full-resolution
