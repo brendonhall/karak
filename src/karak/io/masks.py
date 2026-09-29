@@ -81,6 +81,7 @@ def load_valid_mask(
     mask : np.ndarray
         (H, W) boolean array.  ``True`` = inside valid sample region.
     """
+    csv_path = Path(csv_path)
     shapes = read_napari_shapes(csv_path)
 
     H, W = image_shape
@@ -166,7 +167,9 @@ def create_mineral_mask(
 
     # Remove small isolated objects
     if min_object_size > 0:
-        combined = remove_small_objects(combined, min_size=min_object_size)
+        # max_size removes objects of size <= N (the old min_size removed
+        # size < N), so N - 1 keeps objects of exactly min_object_size
+        combined = remove_small_objects(combined, max_size=min_object_size - 1)
 
     n_mineral = int(combined.sum())
     n_total = combined.size

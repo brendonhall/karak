@@ -96,3 +96,28 @@ def test_create_mineral_mask_respects_valid_mask():
     assert mask[10, 7]  # mineral AND valid
     assert not mask[10, 12]  # mineral but outside valid region
     assert mask.sum() == 50
+
+
+def test_load_valid_mask_accepts_a_string_path(tmp_path):
+    # flow params are strings, not Path objects
+    csv_path = tmp_path / "valid.csv"
+    square = [(2, 2), (2, 12), (12, 12), (12, 2)]
+    _write_napari_csv(csv_path, [("polygon", square)])
+    mask = load_valid_mask(
+        str(csv_path), image_shape=(20, 20),
+        downsample_factor=1, header_trim_px=0, left_trim_px=0,
+    )
+    assert mask[5, 5]
+
+
+def test_min_object_size_keeps_objects_of_exactly_that_size():
+    import warnings
+
+    cube = np.zeros((20, 20, 1), dtype=np.float32)
+    cube[2:4, 2:4, 0] = 1.0      # 4 px: kept at min_object_size=4
+    cube[10, 10:13, 0] = 1.0     # 3 px: removed
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")   # no scikit-image deprecation warning
+        mask = create_mineral_mask(cube, valid_mask=None, min_object_size=4)
+    assert mask[2:4, 2:4].all()
+    assert not mask[10, 10:13].any()
