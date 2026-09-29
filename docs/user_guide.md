@@ -393,6 +393,21 @@ log), the same information prints as plain lines.
 `karak run` exits with 1 when a step fails and with 130 on Ctrl-C;
 completed steps stay cached.
 
+To inspect the load step's output, open it in napari (install the extra
+once with `uv sync --extra view`):
+
+```
+uv run --extra view karak view BASE [--show Fe-K,Si] [--mask mask/Valid_mask.csv]
+```
+
+`BASE` is the run's `--out` value, its work or cache directory, or a single
+cached `.h5` file copied from another machine. The command opens the newest
+cached element cube and the BSE image from the same step: one gray layer per
+element (only `--show` elements visible), placed in full-resolution
+coordinates, so the cursor position matches the original exports and a
+napari shapes CSV such as the valid-area mask lines up. It loads the whole
+cube into memory (about 2 GB for NWA 4587).
+
 Legacy YAML mode:
 
 ```

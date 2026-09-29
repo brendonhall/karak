@@ -22,6 +22,25 @@ from skimage.morphology import remove_small_objects
 logger = logging.getLogger(__name__)
 
 
+def read_napari_shapes(csv_path: str | Path) -> list[tuple[str, np.ndarray]]:
+    """Read a napari shapes CSV export as ``[(shape_type, vertices), ...]``.
+
+    Shapes come back in ``index`` order; ``vertices`` is an (N, 2) float
+    array of (row, col) in the coordinates the shapes were drawn in.
+    """
+    vertices: dict[int, list[tuple[float, float]]] = {}
+    shape_types: dict[int, str] = {}
+    with open(csv_path) as f:
+        for row in csv.DictReader(f):
+            idx = int(row["index"])
+            shape_types[idx] = row["shape-type"]
+            vertices.setdefault(idx, []).append(
+                (float(row["axis-0"]), float(row["axis-1"]))
+            )
+    return [(shape_types[idx], np.array(vertices[idx], dtype=float))
+            for idx in sorted(vertices)]
+
+
 def load_valid_mask(
     csv_path: str | Path,
     image_shape: tuple[int, int],
@@ -61,20 +80,7 @@ def load_valid_mask(
     mask : np.ndarray
         (H, W) boolean array.  ``True`` = inside valid sample region.
     """
-    csv_path = Path(csv_path)
-
-    # Parse CSV into per-shape vertex lists
-    shapes: dict[int, list[tuple[float, float]]] = {}
-    shape_types: dict[int, str] = {}
-
-    with open(csv_path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            idx = int(row["index"])
-            shape_types[idx] = row["shape-type"]
-            if idx not in shapes:
-                shapes[idx] = []
-            shapes[idx].append((float(row["axis-0"]), float(row["axis-1"])))
+    shapes = read_napari_shapes(csv_path)
 
     H, W = image_shape
     mask = np.zeros((H, W), dtype=bool)
@@ -82,19 +88,18 @@ def load_valid_mask(
     left_offset = left_trim_px / downsample_factor
 
     n_rasterized = 0
-    for idx in sorted(shapes):
-        vertices = shapes[idx]
-        if shape_types[idx] != "polygon":
+    for idx, (shape_type, vertices) in enumerate(shapes):
+        if shape_type != "polygon":
             logger.info(
                 "Skipping shape %d (type '%s') -- only polygons are rasterized",
                 idx,
-                shape_types[idx],
+                shape_type,
             )
             continue
 
         # Scale coordinates: full-res -> downsampled/trimmed space
-        rows = np.array([v[0] / downsample_factor - top_offset for v in vertices])
-        cols = np.array([v[1] / downsample_factor - left_offset for v in vertices])
+        rows = vertices[:, 0] / downsample_factor - top_offset
+        cols = vertices[:, 1] / downsample_factor - left_offset
 
         rr, cc = draw_polygon(rows, cols, shape=(H, W))
         mask[rr, cc] = True

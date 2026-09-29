@@ -1,0 +1,129 @@
+"""`karak view`: find cached outputs and turn them into napari layers."""
+
+from __future__ import annotations
+
+import os
+
+import numpy as np
+import pytest
+
+import karak.cli.view as view
+from karak.cli.view import find_cache_files, layer_specs, pick_outputs, view_main
+from karak.flow.cache import store_payload
+from karak.stages.payloads import BseImage, ClusterStats, ElementCube, Space
+
+
+def _cube(names=("Al", "Fe-K", "Si"), factor=2, trim=0):
+    return ElementCube(
+        pixels=np.zeros((4, 5, len(names)), np.float32),
+        element_names=tuple(names),
+        space=Space.RAW,
+        downsample_factor=factor,
+        header_trim_px=trim,
+    )
+
+
+def _bse():
+    return BseImage(pixels=np.zeros((4, 5), np.float32))
+
+
+def _store(cache, recipe, port, payload, mtime):
+    path = store_payload(recipe, port, payload, cache)
+    os.utime(path, (mtime, mtime))
+    return path
+
+
+def test_find_from_out_base(tmp_path):
+    cache = tmp_path / "output" / "work" / "cache"
+    _store(cache, "aaa", "cube", _cube(), 1000)
+    files = find_cache_files(tmp_path / "output" / "run")
+    assert [(f.recipe, f.port, f.payload_type) for f in files] == [
+        ("aaa", "cube", "element_cube")
+    ]
+
+
+def test_find_from_work_dir_cache_dir_and_single_file(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    path = _store(cache, "aaa", "cube", _cube(), 1000)
+    for target in (tmp_path / "work", cache, path):
+        assert len(find_cache_files(target)) == 1
+
+
+def test_find_raises_when_nothing_is_there(tmp_path):
+    with pytest.raises(FileNotFoundError, match="no cached outputs"):
+        find_cache_files(tmp_path / "nowhere" / "run")
+
+
+def test_pick_newest_cube_and_the_bse_from_the_same_step(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "old", "cube", _cube(), 1000)
+    _store(cache, "old", "bse", _bse(), 1000)
+    _store(cache, "new", "cube", _cube(), 2000)
+    _store(cache, "new", "bse", _bse(), 1500)
+    _store(cache, "zzz", "bse", _bse(), 3000)
+    _store(cache, "st", "stats", ClusterStats(stats={}), 4000)
+    cube, bse, other_cubes = pick_outputs(find_cache_files(cache))
+    assert cube.recipe == "new"
+    assert bse.recipe == "new"
+    assert [f.recipe for f in other_cubes] == ["old"]
+
+
+def test_pick_without_a_cube_raises(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "b", "bse", _bse(), 1000)
+    with pytest.raises(ValueError, match="no ElementCube"):
+        pick_outputs(find_cache_files(cache))
+
+
+def test_layer_specs_names_visibility_and_placement():
+    specs = layer_specs(_cube(factor=2, trim=100), _bse(), show=("Fe-K",))
+    assert [s.name for s in specs] == ["BSE", "Al", "Fe-K", "Si"]
+    assert [s.visible for s in specs] == [True, False, True, False]
+    for spec in specs:
+        # a downsampled pixel covers a 2x2 block; its center sits at +0.5
+        assert spec.scale == (2, 2)
+        assert spec.translate == (100.5, 0.5)
+        assert spec.contrast_limits == (0.0, 1.0)
+    assert specs[2].data.shape == (4, 5)
+
+
+def test_layer_specs_show_first_element_when_requested_one_is_missing():
+    specs = layer_specs(_cube(), None, show=("Zr",))
+    assert [s.name for s in specs] == ["Al", "Fe-K", "Si"]
+    assert [s.visible for s in specs] == [True, False, False]
+
+
+def test_view_without_napari_prints_install_hint(tmp_path, monkeypatch, capsys):
+    _store(tmp_path / "work" / "cache", "a", "cube", _cube(), 1000)
+    monkeypatch.setattr(view, "_napari_available", lambda: False)
+    assert view_main([str(tmp_path / "work")]) == 1
+    assert "uv sync --extra view" in capsys.readouterr().err
+
+
+def test_view_opens_layers_and_mask(tmp_path, monkeypatch, capsys):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "a", "cube", _cube(), 1000)
+    _store(cache, "a", "bse", _bse(), 1000)
+    mask = tmp_path / "Valid_mask.csv"
+    mask.write_text(
+        "index,shape-type,vertex-index,axis-0,axis-1\n"
+        "0,polygon,0,0.0,0.0\n"
+        "0,polygon,1,0.0,8.0\n"
+        "0,polygon,2,6.0,8.0\n"
+        "1,path,0,1.0,1.0\n"
+        "1,path,1,2.0,2.0\n"
+    )
+    opened = {}
+    monkeypatch.setattr(view, "_napari_available", lambda: True)
+    monkeypatch.setattr(view, "open_viewer",
+                        lambda specs, shapes: opened.update(specs=specs, shapes=shapes))
+    rc = view_main([str(tmp_path / "work"), "--show", "Al,Si", "--mask", str(mask)])
+    assert rc == 0
+    visible = [s.name for s in opened["specs"] if s.visible]
+    assert visible == ["BSE", "Al", "Si"]
+    assert [kind for kind, _ in opened["shapes"]] == ["polygon", "path"]
+    np.testing.assert_array_equal(
+        opened["shapes"][0][1], [[0.0, 0.0], [0.0, 8.0], [6.0, 8.0]]
+    )
+    out = capsys.readouterr().out
+    assert "ElementCube 4×5×3" in out

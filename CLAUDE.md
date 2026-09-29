@@ -23,6 +23,7 @@ karak run ... --set NODE.PARAM=VALUE                 # override any node param
 karak run ... --no-qc                                # skip QC figure sinks
 karak run --builtin stepwise --input DIR --out BASE  # the growing step-by-step flow (load only, for now)
 karak run ... --plain                      # line output instead of the live dashboard
+uv run --extra view karak view BASE [--mask CSV]    # open a run's cached load outputs in napari
 karak run ... --no-cache                             # ignore the node cache
 karak run ... --workers 0                  # parallel stages on all cores (same results)
 karak run ... --device cuda                # GPU paths where stages support it

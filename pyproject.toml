@@ -26,6 +26,9 @@ cuda = [
     "cuml-cu12>=25.2",
     "cucim-cu12>=25.2",
 ]
+view = [
+    "napari[pyqt6]>=0.5",
+]
 
 [project.scripts]
 karak = "karak.cli.runner:main"
@@ -37,7 +40,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# The `view` extra installs napari, whose pytest plugins change log
+# capture and break caplog tests; karak tests use none of them.
+addopts = "-q -p no:napari -p no:npe2 -p no:napari-plugin-engine"
 
 [build-system]
 requires = ["hatchling"]

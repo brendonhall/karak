@@ -30,7 +30,8 @@ def _legacy_parser() -> argparse.ArgumentParser:
         prog="karak",
         description=(
             "SEM-EDS mineral phase mapping pipeline. "
-            "Subcommands: run, validate, schema (see `karak run --help`), "
+            "Subcommands: run, validate, schema, bench, view (see `karak run --help`, "
+            "`karak view --help`), "
             "or the legacy -c config.yaml mode."
         ),
     )
@@ -147,6 +148,10 @@ def _run_command(argv: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "view":
+        from karak.cli.view import view_main
+
+        return view_main(argv[1:])
     if argv and argv[0] == "bench":
         from karak.cli.bench import bench_main
 

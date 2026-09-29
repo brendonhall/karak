@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `stepwise` builtin flow, which grows one step at a time; it currently
   runs the load step only.
 - Payloads have `summary()`; the cache stores it next to each payload.
+- `karak view PATH` opens the newest cached element cube and its BSE image
+  in napari (optional `karak[view]` extra): one gray layer per element,
+  placed in full-resolution coordinates, plus an optional napari shapes
+  CSV (`--mask`) such as the valid-area mask. `PATH` is a run's `--out`
+  base, its work or cache directory, or a single cached `.h5` file.
 - Exit codes for `karak run`: 1 when a step fails, 130 on Ctrl-C.
 - Warnings raised while loading maps (for example PIL's
   `DecompressionBombWarning` on 104 Mpx exports) are logged once through
