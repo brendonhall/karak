@@ -22,6 +22,7 @@ from conftest import (
     refinement_cfg,
     tiled_cfg,
 )
+from karak.accel import cuda_available
 from karak.clustering.hdbscan_cluster import compute_cluster_stats, run_hdbscan
 from karak.clustering.noise_assign import assign_noise_pixels
 from karak.clustering.pca import fit_pca, select_components
@@ -204,6 +205,42 @@ def test_hdbscan_tiled_parity(features_payload, denoised_cube, chain):
     for got, exp in zip(tiles.phase_registry, expected_registry):
         assert got.global_id == exp.global_id
         np.testing.assert_allclose(got.mean_fingerprint, exp.mean_fingerprint)
+
+
+@pytest.mark.skipif(not cuda_available(), reason="no CUDA")
+def test_hdbscan_global_cuda_device_in_device_out(features_payload):
+    import cupy as cp
+
+    out = get("hdbscan_global")().run(
+        {"features": features_payload.to("cuda")},
+        {"min_cluster_size": 100, "random_state": 0, "device": "cuda"},
+    )
+    labels = out["labels"]
+    assert isinstance(labels.labels, cp.ndarray)
+    assert isinstance(labels.probabilities, cp.ndarray)
+    assert labels.device == "cuda"
+
+
+@pytest.mark.skipif(not cuda_available(), reason="no CUDA")
+def test_hdbscan_tiled_cuda_device_inputs_host_outputs(
+    features_payload, denoised_cube,
+):
+    out = get("hdbscan_tiled")().run(
+        {"features": features_payload.to("cuda"),
+         "cube": denoised_cube.to("cuda")},
+        {"min_cluster_size": 100, "random_state": 0, "device": "cuda",
+         "tile_size": 32, "min_clusters_per_tile": 1},
+    )
+    labels, tiles = out["labels"], out["tiles"]
+    assert labels.device == "cpu"
+    assert isinstance(labels.labels, np.ndarray)
+    assert isinstance(labels.probabilities, np.ndarray)
+    assert isinstance(labels.mineral_indices, np.ndarray)
+    assert labels.labels.shape == (features_payload.mineral_indices.shape[0],)
+    for tr in tiles.tile_results:
+        assert isinstance(tr.local_labels, np.ndarray)
+    for entry in tiles.phase_registry:
+        assert isinstance(entry.mean_fingerprint, np.ndarray)
 
 
 # ---------------------------------------------------------------------------

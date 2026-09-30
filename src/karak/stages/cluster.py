@@ -113,7 +113,10 @@ class HdbscanTiledStage(Stage):
         from karak.accel import resolve_workers
         from karak.clustering.tiling import run_tiled_hdbscan
 
-        features, cube = inputs["features"], inputs["cube"]
+        # The tiled path is host code (tile bookkeeping, registry merge,
+        # process pool); per-tile cuML calls move each tile to the device.
+        features = inputs["features"].to("cpu")
+        cube = inputs["cube"].to("cpu")
         raw_labels, _, probabilities, tile_results, phase_registry = (
             run_tiled_hdbscan(
                 features.features,
