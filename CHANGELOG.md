@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the run summary. `--plain` (automatic when stdout is not a terminal)
   prints the same information as lines.
 - `stepwise` builtin flow, which grows one step at a time; it currently
-  runs the load and mask steps.
+  runs the load, mask, and denoise steps.
 - Payloads have `summary()`; the cache stores it next to each payload.
 - `karak view PATH` opens the newest cached element cube and its BSE image
   in napari (optional `karak[view]` extra): one gray layer per element,

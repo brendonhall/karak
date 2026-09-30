@@ -150,10 +150,11 @@ by `edges` (output port to input port). Four builtins ship with karak:
 | `global` | `hdbscan_global → noise_assign` |
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
-| `stepwise` | none yet: load and mask steps only |
+| `stepwise` | none yet: load, mask, and denoise steps only |
 
 `stepwise` grows one step at a time as steps join the dashboard work;
-today it runs the load step (`src`) and the mask step (`msk`). The
+today it runs the load step (`src`), the mask step (`msk`), and the
+denoise step (`dn`, bilateral with the `global` values). The
 builtin leaves `msk.valid_mask_path` at `null` (no polygon); set it in your
 own copy (`karak flow init --builtin stepwise -o FILE`), for example to
 `"{input}/mask/Valid_mask.csv"`.
