@@ -1,7 +1,8 @@
 """Headless flow executor: validate -> topo-sort -> run with caching.
 
-Memory model: every producing node's outputs are written through to the
-cache, then held in RAM only while downstream consumers remain (refcount).
+Memory model: every producing node's outputs are handed to a background
+``CacheWriter`` (the next node starts while the file is written), then held
+in RAM only while downstream consumers remain (refcount).
 Payloads whose arrays exceed ``spill_threshold`` bytes are dropped from RAM
 immediately after caching and reloaded per consumer — the generic form of
 the old runner's pop-then-reread-HDF5 trick.
@@ -17,13 +18,12 @@ from pathlib import Path
 import numpy as np
 
 from karak.flow.cache import (
+    CacheWriter,
     has_payload,
     load_payload,
     load_summary,
     payload_path,
     recipe_hash,
-    store_payload,
-    store_summary,
 )
 from karak.flow.events import NullReporter, ParamValue, RunInfo
 from karak.flow.graph import Graph
@@ -184,8 +184,13 @@ def run(
     skip_types: frozenset | set = frozenset(),
     spill_threshold: int = 256 * 1024 * 1024,
     record=None,
+    cache_compression: str = "lzf",
 ) -> dict:
-    """Execute a flow. Returns {node_id: {"cached": bool, "seconds": float}}.
+    """Execute a flow.
+
+    Returns {node_id: {"cached": bool, "seconds": float,
+    "write_seconds": float}}; ``write_seconds`` is the background cache
+    writer's time for that node's outputs (0.0 for sinks, hits, no cache).
 
     ``record`` (a ``flow.record.RunRecord``) is started before validation
     and finished as ok, failed or interrupted, so every run leaves one.
@@ -198,6 +203,7 @@ def run(
             work_dir=work_dir, cache=cache, reporter=reporter,
             workers=workers, skip_types=skip_types,
             spill_threshold=spill_threshold, record=record,
+            cache_compression=cache_compression,
         )
     except KeyboardInterrupt:
         if record is not None:
@@ -213,7 +219,8 @@ def run(
 
 
 def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
-             reporter, workers, skip_types, spill_threshold, record) -> dict:
+             reporter, workers, skip_types, spill_threshold, record,
+             cache_compression="lzf") -> dict:
     errors = [i for i in validate(graph) if i.level == "error"]
     if errors:
         detail = "; ".join(f"[{i.where}] {i.message}" for i in errors)
@@ -244,7 +251,10 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
     hashes: dict = {}          # (node, port) -> recipe hash
 
     def _reload(node: str, port: str):
-        return load_payload(hashes[(node, port)], port, cache_dir)
+        recipe = hashes[(node, port)]
+        if writer is not None:
+            writer.wait_for(recipe, port)   # the file may still be queued
+        return load_payload(recipe, port, cache_dir)
 
     store = PayloadStore(
         consumers,
@@ -274,105 +284,138 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
         record="" if record is None else str(record.path),
     ))
 
-    for node_id in _topo_order(graph):
-        node = graph.node(node_id)
-        if node_id in skipped:
-            summary[node_id] = {"cached": False, "seconds": 0.0,
-                                "skipped": True}
-            if record is not None:
-                record.node(node_id, status="skipped")
-            continue
-        cls = registry.get(node.type)
-        params = _node_params(node, tokens)
-        node_hash = _node_recipe(graph, node_id, params, hashes)
-        for port in cls.OUTPUTS:
-            hashes[(node_id, port.name)] = node_hash
-        # "default" means "equals the stage template", for display only
-        defaults = _resolve_tokens(cls.coerce_params(cls.template()), tokens)
-        _emit(reporter, "node_params", node_id, [
-            ParamValue(p.name, params[p.name], params[p.name] == defaults[p.name])
-            for p in cls.PARAMS
-        ])
+    # Outputs go to disk on a background thread; the next node starts at
+    # once. Created last so nothing above can leave the thread running.
+    writer = CacheWriter(cache_dir, compression=cache_compression) if cache else None
 
-        is_sink = not cls.OUTPUTS
-        started = time.monotonic()
-        cached_hit = (
-            cache
-            and not is_sink
-            and all(
-                has_payload(node_hash, port.name, cache_dir)
-                for port in cls.OUTPUTS
-            )
-        )
-        _emit(reporter, "node_cache", node_id, node_hash, cached_hit,
-              str(cache_dir))
-        if record is not None:
-            record.node(node_id, params=params, recipe=node_hash,
-                        status="cached" if cached_hit else "running")
+    def _drain_writer_log() -> None:
+        if writer is not None:
+            for line in writer.drain_log():
+                _emit(reporter, "log", "info", line)
 
-        if cached_hit:
-            # Outputs come from the cache; inputs are not consumed, but the
-            # upstream refcounts still must fall so payloads are evicted.
-            for edge in graph.in_edges(node_id):
-                store.release(edge.src.node, edge.src.port)
-            outputs = {
-                port.name: load_payload(node_hash, port.name, cache_dir)
-                for port in cls.OUTPUTS
-                if consumers.get((node_id, port.name), 0) > 0
-            }
-            summaries = {
-                port.name: load_summary(node_hash, port.name, cache_dir)
-                or (_summarize(outputs[port.name]) if port.name in outputs
-                    else "(no summary recorded)")
-                for port in cls.OUTPUTS
-            }
-        else:
-            inputs = {
-                e.dst.port: store.get(e.src.node, e.src.port)
-                for e in graph.in_edges(node_id)
-            }
-            stage = cls()
-            stage.reporter = reporter
-            stage.workers = workers
-            stage.node_id = node_id
-            reporter.node_started(node_id, cls.label or cls.id)
-            try:
-                outputs = stage.run(inputs, params)
-            except Exception as exc:
-                _emit(reporter, "node_failed", node_id, str(exc))
+    try:
+        for node_id in _topo_order(graph):
+            node = graph.node(node_id)
+            if node_id in skipped:
+                summary[node_id] = {"cached": False, "seconds": 0.0,
+                                    "skipped": True, "write_seconds": 0.0}
                 if record is not None:
-                    record.node(node_id, status="failed", error=str(exc))
-                raise FlowError(f"node {node_id!r} ({node.type}): {exc}") from exc
-            summaries = {name: _summarize(p) for name, p in outputs.items()}
-            if cache and not is_sink:
-                upstream = _upstream_recipes(graph, node_id, hashes)
-                for port_name, payload in outputs.items():
-                    store_payload(node_hash, port_name, payload, cache_dir,
-                                  upstream=upstream)
-                    store_summary(node_hash, port_name, summaries[port_name],
-                                  cache_dir)
+                    record.node(node_id, status="skipped")
+                continue
+            cls = registry.get(node.type)
+            params = _node_params(node, tokens)
+            node_hash = _node_recipe(graph, node_id, params, hashes)
+            for port in cls.OUTPUTS:
+                hashes[(node_id, port.name)] = node_hash
+            # "default" means "equals the stage template", for display only
+            defaults = _resolve_tokens(cls.coerce_params(cls.template()), tokens)
+            _emit(reporter, "node_params", node_id, [
+                ParamValue(p.name, params[p.name], params[p.name] == defaults[p.name])
+                for p in cls.PARAMS
+            ])
 
-        for port_name, payload in outputs.items():
-            store.put(node_id, port_name, payload)
+            is_sink = not cls.OUTPUTS
+            started = time.monotonic()
+            cached_hit = (
+                cache
+                and not is_sink
+                and all(
+                    has_payload(node_hash, port.name, cache_dir)
+                    for port in cls.OUTPUTS
+                )
+            )
+            _emit(reporter, "node_cache", node_id, node_hash, cached_hit,
+                  str(cache_dir))
+            if record is not None:
+                record.node(node_id, params=params, recipe=node_hash,
+                            status="cached" if cached_hit else "running")
 
-        elapsed = time.monotonic() - started
-        if summaries:
-            _emit(reporter, "node_outputs", node_id, summaries)
-        reporter.node_finished(node_id, elapsed, cached_hit)
-        summary[node_id] = {"cached": cached_hit, "seconds": elapsed}
-        if record is not None:
-            record.node(
-                node_id,
-                status="cached" if cached_hit else "ran",
-                seconds=round(elapsed, 3),
-                outputs={
-                    port: {
-                        "file": (str(payload_path(node_hash, port, cache_dir))
-                                 if cache and not is_sink else None),
-                        "summary": text,
-                    }
-                    for port, text in summaries.items()
-                },
+            if cached_hit:
+                # Outputs come from the cache; inputs are not consumed, but the
+                # upstream refcounts still must fall so payloads are evicted.
+                for edge in graph.in_edges(node_id):
+                    store.release(edge.src.node, edge.src.port)
+                outputs = {
+                    port.name: load_payload(node_hash, port.name, cache_dir)
+                    for port in cls.OUTPUTS
+                    if consumers.get((node_id, port.name), 0) > 0
+                }
+                summaries = {
+                    port.name: load_summary(node_hash, port.name, cache_dir)
+                    or (_summarize(outputs[port.name]) if port.name in outputs
+                        else "(no summary recorded)")
+                    for port in cls.OUTPUTS
+                }
+            else:
+                inputs = {
+                    e.dst.port: store.get(e.src.node, e.src.port)
+                    for e in graph.in_edges(node_id)
+                }
+                stage = cls()
+                stage.reporter = reporter
+                stage.workers = workers
+                stage.node_id = node_id
+                reporter.node_started(node_id, cls.label or cls.id)
+                try:
+                    outputs = stage.run(inputs, params)
+                except Exception as exc:
+                    _emit(reporter, "node_failed", node_id, str(exc))
+                    if record is not None:
+                        record.node(node_id, status="failed", error=str(exc))
+                    raise FlowError(f"node {node_id!r} ({node.type}): {exc}") from exc
+                summaries = {name: _summarize(p) for name, p in outputs.items()}
+                if cache and not is_sink:
+                    upstream = _upstream_recipes(graph, node_id, hashes)
+                    for port_name, payload in outputs.items():
+                        writer.submit(node_hash, port_name, payload,
+                                      summaries[port_name], upstream,
+                                      label=f"{node_id}.{port_name}")
+
+            for port_name, payload in outputs.items():
+                store.put(node_id, port_name, payload)
+
+            elapsed = time.monotonic() - started
+            if summaries:
+                _emit(reporter, "node_outputs", node_id, summaries)
+            reporter.node_finished(node_id, elapsed, cached_hit)
+            summary[node_id] = {"cached": cached_hit, "seconds": elapsed,
+                                "write_seconds": 0.0}
+            if record is not None:
+                record.node(
+                    node_id,
+                    status="cached" if cached_hit else "ran",
+                    seconds=round(elapsed, 3),
+                    outputs={
+                        port: {
+                            "file": (str(payload_path(node_hash, port, cache_dir))
+                                     if cache and not is_sink else None),
+                            "summary": text,
+                        }
+                        for port, text in summaries.items()
+                    },
+                )
+            _drain_writer_log()
+    except BaseException:
+        # A stage failure or Ctrl-C is propagating: finish the queued writes
+        # so earlier outputs land, but never mask the original exception.
+        if writer is not None:
+            writer.close()
+            _drain_writer_log()
+            try:
+                writer.wait()       # after close: only reports, never blocks
+            except BaseException as exc:
+                _emit(reporter, "log", "error", f"cache writer: {exc}")
+        raise
+    if writer is not None:
+        try:
+            writer.wait()           # re-raises a writer error: the run fails
+        finally:
+            writer.close()
+            _drain_writer_log()
+        for node_id, entry in summary.items():
+            entry["write_seconds"] = sum(
+                seconds for label, seconds in writer.per_label.items()
+                if label.startswith(node_id + ".")
             )
 
     _emit(reporter, "run_finished", summary, time.monotonic() - run_started_at)
