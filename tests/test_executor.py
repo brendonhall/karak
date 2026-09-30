@@ -1017,6 +1017,52 @@ def test_device_budget_fallback_moves_the_output_to_host(
     assert sum(line.startswith("store: d1.bse") for line in fallbacks) == 1
 
 
+def test_fallback_device_output_is_freed_before_the_next_node(
+        tmp_path, fake_cuda, _device_stages, monkeypatch):
+    """After a fallback the store holds a host copy; nothing else may keep
+    the device array alive while the next node runs."""
+    import weakref
+
+    refs, alive = {}, {}
+    real_apply = FakeDeviceDouble.apply
+
+    def probe(self, inputs, params):
+        if self.node_id == "d2":
+            alive["d1"] = refs["d1"]() is not None
+        outputs = real_apply(self, inputs, params)
+        refs[self.node_id] = weakref.ref(outputs["bse"].pixels)
+        return outputs
+
+    monkeypatch.setattr(FakeDeviceDouble, "apply", probe)
+    run(_device_chain(n=64), out_base=str(tmp_path / "o"),
+        work_dir=str(tmp_path / "w"), gpu_budget=1024)
+    assert alive == {"d1": False}
+
+
+def test_record_device_is_where_the_store_held_the_output(
+        tmp_path, fake_cuda, _device_stages):
+    import json
+
+    from karak.flow.record import RunRecord
+
+    graph = _device_chain(n=64)
+    record = RunRecord(str(tmp_path / "o"), graph, argv=[], source="t",
+                       tokens={}, settings={}, overrides={})
+    run(graph, out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"),
+        record=record, gpu_budget=1024)
+    nodes = json.loads((record.path / "run.json").read_text())["nodes"]
+    assert nodes["d1"]["outputs"]["bse"]["device"] == "cpu"   # fell back
+    assert nodes["d2"]["outputs"]["bse"]["device"] == "cpu"   # fell back
+
+
+def test_payload_store_put_returns_the_held_device():
+    store = PayloadStore({("a", "x"): 1, ("b", "x"): 1}, gpu_budget=100)
+    on_device = BseImage(pixels=_FakeDeviceArray(np.zeros(20, np.float32)))  # 80 B
+    assert store.put("a", "x", on_device) == "cuda"
+    assert store.put("b", "x", on_device) == "cpu"         # over budget: host
+    assert store.put("c", "x", on_device) is None          # no consumer
+
+
 def test_payload_store_device_budget_and_release():
     calls = []
     store = PayloadStore({("a", "x"): 1, ("b", "x"): 1}, gpu_budget=100,

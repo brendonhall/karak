@@ -79,6 +79,9 @@ class PayloadStore:
     first (then held or spilled like any host payload), and
     ``on_device_fallback(node, port, nbytes, budget)`` is called once.
     ``gpu_budget=None`` never moves a payload.
+
+    ``put`` returns the device the store keeps the payload on (``"cpu"``
+    after a fallback), or ``None`` for an output nobody consumes.
     """
 
     def __init__(self, consumers: dict, reload=None,
@@ -97,10 +100,10 @@ class PayloadStore:
         self.held_bytes = 0
         self.held_device_bytes = 0
 
-    def put(self, node: str, port: str, payload) -> None:
+    def put(self, node: str, port: str, payload) -> str | None:
         key = (node, port)
         if self._remaining.get(key, 0) <= 0:
-            return  # unconsumed output: drop immediately
+            return None  # unconsumed output: drop immediately
         nbytes, device_bytes = _payload_nbytes(payload)
         if (
             device_bytes
@@ -120,12 +123,13 @@ class PayloadStore:
             self._spilled.add(key)
             if self._on_spill is not None:
                 self._on_spill(node, port, nbytes, self._budget)
-            return
+            return payload.device
         self._in_ram[key] = payload
         self._sizes[key] = nbytes
         self._device_sizes[key] = device_bytes
         self.held_bytes += nbytes
         self.held_device_bytes += device_bytes
+        return payload.device
 
     def get(self, node: str, port: str):
         key = (node, port)
@@ -471,9 +475,12 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
                                       summaries[port_name], upstream,
                                       label=f"{node_id}.{port_name}")
 
-            placements = {name: p.device for name, p in outputs.items()}
+            # Record where the store keeps each output (host after a
+            # fallback); an unconsumed output keeps the stage's placement.
+            placements = {}
             for port_name, payload in outputs.items():
-                store.put(node_id, port_name, payload)
+                held = store.put(node_id, port_name, payload)
+                placements[port_name] = payload.device if held is None else held
 
             elapsed = time.monotonic() - started
             if summaries:
@@ -496,6 +503,10 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
                         for port, text in summaries.items()
                     },
                 )
+            # Drop this node's references now: after a fallback the store
+            # holds a host copy, and the device array must be freed before
+            # the next node runs; the writer keeps its own host copies.
+            outputs = host_outputs = inputs = payload = None
             _drain_writer_log()
     except BaseException as failure:
         # A stage failure or Ctrl-C is propagating: finish the queued writes

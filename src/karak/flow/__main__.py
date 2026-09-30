@@ -209,10 +209,11 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
 
     overrides = _parse_set(args.set) if args.set else {}
     try:
-        if overrides:
-            graph = override_params(graph, overrides)
+        # --device first, so an explicit --set NODE.device=... wins
         if args.device:
             graph = apply_device(graph, args.device)
+        if overrides:
+            graph = override_params(graph, overrides)
     except (KeyError, ValueError) as exc:
         raise SystemExit(f"error: --set/--device: {exc}") from None
     graph = canonicalize(graph)

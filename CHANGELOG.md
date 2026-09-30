@@ -19,7 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   within 1e-3, explained variance ratios within 1e-5). cuML HDBSCAN now
   takes and returns device arrays. cuML HDBSCAN on the global flow at
   NWA 4587 scale runs out of memory on a 24 GB GPU; `subsample_n` is
-  ignored on cuda. The recipe hashes of `nrm`, `pca` and
+  ignored on cuda. On large images the cpu and cuda normalize steps
+  differ, because the cpu path sums the mineral-pixel means and standard
+  deviations in float32 (on NWA 4587 the standard deviations differ by up
+  to 3.6 %); the difference carries into PCA and the labels. The recipe
+  hashes of `nrm`, `pca` and
   downstream nodes changed; the shipped flows were regenerated.
 - API change for notebook callers: `denoise_cube(..., device="cuda")`,
   `run_hdbscan(..., device="cuda")` and `fit_pca` with CuPy input now return
@@ -118,6 +122,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Level k inverts to exactly k/255.
 
 ### Changed
+
+- An explicit `--set NODE.device=...` now overrides `--device`: `--device
+  cuda --set hdb.device=cpu` runs HDBSCAN on the CPU and the other device
+  steps on the GPU.
 
 - **Flows are complete (format version 2).** A flow JSON lists every
   parameter of every node, and a run takes no value from code: `karak
