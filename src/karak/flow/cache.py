@@ -12,6 +12,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import queue
+import threading
+import time
 from pathlib import Path
 
 import h5py
@@ -111,3 +114,100 @@ def load_summary(recipe: str, port: str, cache_dir: str | Path) -> str | None:
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")
+
+
+class CacheWriter:
+    """Writes payloads to the cache on one background thread, FIFO.
+
+    ``submit`` enqueues a host payload; the thread calls ``store_payload``
+    and ``store_summary``. ``wait_for`` and ``wait`` block on the disk state
+    and re-raise the first error the thread hit. ``close`` never raises. The
+    thread never talks to a reporter: it appends log lines that ``drain_log``
+    hands back to the caller's thread.
+    """
+
+    def __init__(self, cache_dir: str | Path, compression: str = "lzf"):
+        self.cache_dir = Path(cache_dir)
+        self.compression = compression
+        self.written: set[tuple[str, str]] = set()
+        self.seconds = 0.0
+        self.per_label: dict[str, float] = {}   # "dn.cube" -> seconds
+        self._queue: queue.Queue = queue.Queue()
+        self._done = threading.Condition()
+        self._error: BaseException | None = None
+        self._log: list[str] = []
+        self._closed = False
+        self._thread = threading.Thread(
+            target=self._loop, name="karak-cache-writer", daemon=True)
+        self._thread.start()
+
+    def submit(self, recipe: str, port: str, payload, summary: str,
+               upstream: dict | None, label: str | None = None) -> None:
+        if self._closed:
+            raise RuntimeError("CacheWriter is closed")
+        self._queue.put((recipe, port, payload, summary, upstream,
+                         label or f"{recipe[:8]}.{port}"))
+
+    def _loop(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            recipe, port, payload, summary, upstream, label = item
+            started = time.monotonic()
+            try:
+                if self._error is None:
+                    store_payload(recipe, port, payload, self.cache_dir,
+                                  upstream=upstream,
+                                  compression=self.compression)
+                    store_summary(recipe, port, summary, self.cache_dir)
+            except BaseException as exc:   # surfaces at the next wait
+                self._error = exc
+            else:
+                if self._error is None:
+                    elapsed = time.monotonic() - started
+                    with self._done:
+                        self.seconds += elapsed
+                        self.written.add((recipe, port))
+                        self.per_label[label] = (
+                            self.per_label.get(label, 0.0) + elapsed)
+                        self._log.append(
+                            f"cache: {label} written in {elapsed:.1f} s")
+            finally:
+                with self._done:
+                    self._queue.task_done()
+                    self._done.notify_all()
+
+    def _raise_if_failed(self) -> None:
+        if self._error is not None:
+            raise self._error
+
+    def wait_for(self, recipe: str, port: str) -> None:
+        """Block until (recipe, port) is on disk; raise a writer error."""
+        with self._done:
+            while (recipe, port) not in self.written and self._error is None:
+                if self._queue.unfinished_tasks == 0:
+                    break          # never submitted, or already failed
+                self._done.wait(0.05)
+        self._raise_if_failed()
+
+    def wait(self) -> None:
+        if self._thread.is_alive():
+            self._queue.join()
+        self._raise_if_failed()
+
+    def drain_log(self) -> list[str]:
+        with self._done:
+            lines, self._log = self._log, []
+        return lines
+
+    def close(self) -> None:
+        """Drain the queue and stop the thread. Never raises; idempotent."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._queue.join()
+        finally:
+            self._queue.put(None)
+            self._thread.join()

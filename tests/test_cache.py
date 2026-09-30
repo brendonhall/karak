@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
-import numpy as np
+import threading
+import time
 
-from karak.flow.cache import load_payload, recipe_hash, store_payload
+import numpy as np
+import pytest
+
+from karak.flow.cache import (
+    CacheWriter,
+    has_payload,
+    load_payload,
+    load_summary,
+    recipe_hash,
+    store_payload,
+)
 from karak.stages.payloads import ClusterStats
 
 
@@ -82,3 +93,115 @@ def test_store_payload_passes_the_compression_through(tmp_path):
     path = store_payload("r2", "bse", payload, tmp_path)
     with h5py.File(path) as fh:
         assert fh["payload"]["pixels"].compression == "lzf"
+
+
+def _bse(n=4):
+    from karak.stages.payloads import BseImage
+
+    return BseImage(pixels=np.zeros((n, n), np.float32))
+
+
+def test_writer_writes_entries_complete_or_not_at_all(tmp_path, monkeypatch):
+    import karak.flow.cache as cache
+
+    gate = threading.Event()
+    real = cache.store_payload
+
+    def slow_store(*args, **kwargs):
+        gate.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cache, "store_payload", slow_store)
+    writer = CacheWriter(tmp_path)
+    writer.submit("r1", "bse", _bse(), "BseImage 4×4", {"cube": "abc"})
+    time.sleep(0.05)
+    assert not has_payload("r1", "bse", tmp_path)   # still in the queue
+    assert not list(tmp_path.glob("*__bse.h5"))
+    gate.set()
+    writer.wait_for("r1", "bse")
+    assert has_payload("r1", "bse", tmp_path)
+    assert load_summary("r1", "bse", tmp_path) == "BseImage 4×4"
+    assert ("r1", "bse") in writer.written
+    writer.close()
+
+
+def test_writer_wait_drains_in_fifo_order(tmp_path, monkeypatch):
+    import karak.flow.cache as cache
+
+    order = []
+    real = cache.store_payload
+
+    def recording_store(recipe, port, *args, **kwargs):
+        order.append((recipe, port))
+        return real(recipe, port, *args, **kwargs)
+
+    monkeypatch.setattr(cache, "store_payload", recording_store)
+    writer = CacheWriter(tmp_path)
+    for i in range(5):
+        writer.submit(f"r{i}", "bse", _bse(), "", {})
+    writer.wait()
+    assert order == [(f"r{i}", "bse") for i in range(5)]
+    assert writer.seconds > 0
+    writer.close()
+
+
+def test_writer_exception_surfaces_at_wait(tmp_path, monkeypatch):
+    import karak.flow.cache as cache
+
+    def failing_store(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    writer = CacheWriter(tmp_path)
+    writer.submit("r1", "bse", _bse(), "", {})
+    with pytest.raises(OSError, match="disk full"):
+        writer.wait()
+    with pytest.raises(OSError, match="disk full"):   # sticky until close
+        writer.wait_for("r1", "bse")
+    writer.close()
+
+
+def test_writer_close_never_raises_after_an_error(tmp_path, monkeypatch):
+    import karak.flow.cache as cache
+
+    def failing_store(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    writer = CacheWriter(tmp_path)
+    writer.submit("r1", "bse", _bse(), "", {})
+    writer.close()          # must not raise
+    writer.close()
+    with pytest.raises(OSError, match="disk full"):
+        writer.wait()
+
+
+def test_writer_log_lines_name_the_entry_and_the_time(tmp_path):
+    writer = CacheWriter(tmp_path)
+    writer.submit("r1", "cube", _bse(), "", {}, label="dn.cube")
+    writer.wait()
+    lines = writer.drain_log()
+    assert len(lines) == 1
+    assert lines[0].startswith("cache: dn.cube written in ")
+    assert lines[0].endswith(" s")
+    assert writer.per_label["dn.cube"] > 0
+    assert writer.drain_log() == []
+    writer.close()
+
+
+def test_writer_close_is_idempotent_and_wait_after_close_is_a_noop(tmp_path):
+    writer = CacheWriter(tmp_path)
+    writer.submit("r1", "bse", _bse(), "", {})
+    writer.close()
+    writer.close()
+    writer.wait()
+    assert has_payload("r1", "bse", tmp_path)
+
+
+def test_tmp_name_is_unique_per_process(tmp_path):
+    import os
+
+    from karak.flow.cache import _tmp_path, payload_path
+
+    tmp = _tmp_path(payload_path("r1", "bse", tmp_path))
+    assert tmp.name == f"r1__bse.h5.{os.getpid()}.tmp"
