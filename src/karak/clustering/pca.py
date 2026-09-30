@@ -7,6 +7,7 @@ projects all mineral pixels into the reduced space.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -18,11 +19,49 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class PCAModel:
+    """The fitted PCA of the device path (host arrays, float64)."""
+
+    components_: np.ndarray
+    mean_: np.ndarray
+    explained_variance_ratio_: np.ndarray
+
+
+def _covariance_pca(spectra, n_components: int, xp):
+    """PCA through the covariance eigendecomposition, on ``xp``.
+
+    The algorithm of sklearn's ``svd_solver="covariance_eigh"`` (its
+    ``auto`` choice when C <= 1000 and N >= 10 C): C x C covariance, ``eigh``,
+    eigenpairs reversed to descending order, negative eigenvalues clipped
+    to zero, and ``svd_flip(u_based_decision=False)``: the
+    largest-magnitude loading of each component is positive. It works in
+    float64 where sklearn keeps the input dtype. Returns (components
+    (k, C), mean (C,), explained variance ratio (k,)) as ``xp`` float64
+    arrays.
+    """
+    x = xp.asarray(spectra, dtype=xp.float64)
+    n = x.shape[0]
+    mean = x.mean(axis=0)
+    centred = x - mean
+    cov = centred.T @ centred / (n - 1)
+    values, vectors = xp.linalg.eigh(cov)
+    values = xp.maximum(xp.flip(values, axis=0), 0.0)
+    vectors = xp.flip(vectors, axis=1)
+    components = vectors.T[:n_components]
+    evr = values[:n_components] / values.sum()
+    rows = xp.arange(components.shape[0])
+    signs = xp.sign(components[rows, xp.argmax(xp.abs(components), axis=1)])
+    signs = xp.where(signs == 0, 1.0, signs)
+    components = components * signs[:, None]
+    return components, mean, evr
+
+
 def fit_pca(
     normalized_cube: np.ndarray,
     mineral_mask: np.ndarray,
     config: PCAConfig,
-) -> tuple[PCA, np.ndarray, np.ndarray]:
+) -> tuple[PCA | PCAModel, np.ndarray, np.ndarray]:
     """Fit PCA on mineral pixels and project them into reduced space.
 
     Parameters
@@ -36,14 +75,21 @@ def fit_pca(
 
     Returns
     -------
-    pca_model : sklearn.decomposition.PCA
+    pca_model : sklearn.decomposition.PCA or PCAModel
         Fitted PCA model (access .explained_variance_ratio_ for scree plot).
+        A ``PCAModel`` with host arrays when the inputs are device arrays.
     pca_features : np.ndarray
         (N_mineral, n_components) float32 PCA-transformed mineral pixels.
+        On the input's device.
     mineral_indices : np.ndarray
         (N_mineral, 2) int32 array of (row, col) coordinates for each
-        mineral pixel, for mapping results back to image space.
+        mineral pixel, for mapping results back to image space. On the
+        input's device.
     """
+    from karak.accel import is_device_array, to_numpy
+    from karak.accel import xp as _xp
+
+    xp = _xp(normalized_cube)
     H, W, C = normalized_cube.shape
 
     # Extract mineral pixel spectra
@@ -52,8 +98,8 @@ def fit_pca(
     logger.info("Extracted %d mineral pixels with %d channels", n_mineral, C)
 
     # Store pixel coordinates for spatial reconstruction
-    rows, cols = np.where(mineral_mask)
-    mineral_indices = np.stack([rows, cols], axis=1).astype(np.int32)
+    rows, cols = xp.where(mineral_mask)
+    mineral_indices = xp.stack([rows, cols], axis=1).astype(xp.int32)
 
     # Determine n_components
     n_components = config.n_components if config.n_components is not None else C
@@ -63,10 +109,27 @@ def fit_pca(
     if config.subsample_fraction is not None and config.subsample_fraction < 1.0:
         n_fit = int(n_mineral * config.subsample_fraction)
         fit_idx = rng.choice(n_mineral, size=n_fit, replace=False)
-        fit_spectra = mineral_spectra[fit_idx]
+        fit_spectra = mineral_spectra[xp.asarray(fit_idx)]
         logger.info("Subsampled %d/%d pixels for PCA fitting", n_fit, n_mineral)
     else:
         fit_spectra = mineral_spectra
+
+    if is_device_array(normalized_cube):
+        components, mean, evr = _covariance_pca(fit_spectra, n_components, xp)
+        pca_features = (
+            (mineral_spectra.astype(xp.float64) - mean) @ components.T
+        ).astype(xp.float32)
+        model = PCAModel(
+            components_=to_numpy(components),
+            mean_=to_numpy(mean),
+            explained_variance_ratio_=to_numpy(evr),
+        )
+        logger.info(
+            "PCA fitted on the device: %d components, cumulative variance: %.1f%%",
+            n_components,
+            float(model.explained_variance_ratio_.sum()) * 100,
+        )
+        return model, pca_features, mineral_indices
 
     # Fit PCA
     pca_model = PCA(n_components=n_components, random_state=config.random_state)
