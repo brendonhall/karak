@@ -309,3 +309,16 @@ def test_gpu_budget_must_be_positive(tmp_path, capsys):
               "--plain", "--gpu-budget", "0"])
     assert exc.value.code == 2
     assert "--gpu-budget" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(not __import__("karak.accel", fromlist=["cuda_available"]).cuda_available(),
+                    reason="no CUDA")
+def test_stepwise_on_cuda_keeps_the_cube_on_the_device(tmp_path, scene):
+    data_dir, colormap = scene
+    out = tmp_path / "out" / "run"
+    assert main(["run", "--builtin", "stepwise", "--input", str(data_dir),
+                 "--out", str(out), "--plain", "--device", "cuda",
+                 "--set", f"src.colormap={colormap}"]) == 0
+    nodes = json.loads((out / "runs" / "latest" / "run.json").read_text())["nodes"]
+    assert nodes["src"]["outputs"]["cube"]["device"] == "cpu"
+    assert nodes["dn"]["outputs"]["cube"]["device"] == "cuda"

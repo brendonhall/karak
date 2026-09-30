@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Device-resident payloads: with `--device cuda`, stage outputs stay on the
+  GPU for the next GPU step. The executor places every input on the
+  consuming step's device; CPU steps always see host arrays; the cache gets
+  a host copy. `payload.device` and `payload.to()`; `--gpu-budget GB`
+  (default 80 % of free device memory) with host fallback; the run record
+  and the dashboard show placement and device memory.
+- normalize and pca gained a `device` param and GPU paths: a CuPy z-score
+  (exact tier, 1e-4) and a CuPy port of sklearn's covariance PCA (features
+  within 1e-3, explained variance ratios within 1e-5). cuML HDBSCAN now
+  takes and returns device arrays. The recipe hashes of `nrm`, `pca` and
+  downstream nodes changed; the shipped flows were regenerated.
+- API change for notebook callers: `denoise_cube(..., device="cuda")`,
+  `run_hdbscan(..., device="cuda")` and `fit_pca` with CuPy input now return
+  CuPy arrays.
 - Cache writes run on a background thread: the next step starts while the
   previous outputs are written; the run drains the writer before it
   returns, also on failure and Ctrl-C. Log lines report each write.

@@ -92,8 +92,8 @@ the registry; `karak schema` prints the same contract as JSON.
 | `load_elements` | – → `cube:raw`, `bse` | Discover element map files, trim annotation strips, downsample, invert the colormap to scalar [0, 1] intensities, stack into an (H, W, C) cube, and load the BSE image. |
 | `mask` | `cube:raw` → `masks` | Rasterize the valid-region polygon (if provided), then flag pixels that are zero across *all* element channels as background/epoxy. The mineral mask is the intersection; components smaller than `min_object_size` are removed. |
 | `denoise` | `cube:raw`, `masks`, optional `bse` → `cube:denoised` | Edge-aware smoothing of the raw [0, 1] cube, channel by channel — bilateral filter (default; scikit-image's, including its off-centre spatial kernel, for the published baseline), `bilateral_sym` (symmetric kernel), `joint_bilateral_total` / `joint_bilateral_bse` (range weight from the summed channels / the BSE image on the `bse` port), or anisotropic (Perona-Malik) diffusion. Operating on raw intensities preserves grain boundaries and physical signal. On `--device cuda` the bilateral methods run karak's CuPy kernel. |
-| `normalize` | `cube:denoised`, `masks` → `cube:normalized` | Per-channel z-score normalization: mean and standard deviation are computed over **mineral pixels only**, then `z = (x - mean) / std`. Non-mineral pixels are set to 0. |
-| `pca` | `cube:normalized`, `masks` → `features` | PCA fit + projection of mineral pixels. `n_components: 0` auto-selects the first count reaching 95% cumulative variance (minimum 5). |
+| `normalize` | `cube:denoised`, `masks` → `cube:normalized` | Per-channel z-score normalization: mean and standard deviation are computed over **mineral pixels only**, then `z = (x - mean) / std`. Non-mineral pixels are set to 0. On `--device cuda` runs on the GPU (exact tier). |
+| `pca` | `cube:normalized`, `masks` → `features` | PCA fit + projection of mineral pixels. `n_components: 0` auto-selects the first count reaching 95% cumulative variance (minimum 5). On `--device cuda` runs on the GPU (exact tier). |
 | `hdbscan_global` | `features` → `labels:raw` | Single HDBSCAN run over all mineral-pixel features. |
 | `hdbscan_tiled` | `features`, `cube:denoised` → `labels:raw`, `tiles` | Per-tile HDBSCAN with cosine-similarity phase-registry merging across tiles. |
 | `rare_phase` | `labels:raw`, `features`, `cube:denoised`, `tiles` → `labels:raw`, `tiles` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. |
@@ -282,6 +282,18 @@ it, the next step waits until the disk catches up. Host memory for stage
 outputs therefore stays below twice the budget (the default is half of the
 available memory). With `--no-cache` nothing is written or spilled.
 
+With `--device cuda`, a step's outputs stay on the GPU for the next GPU
+step. The executor moves each input to the consuming step's device (its
+`device` parameter, or the CPU when it has none), so a CPU step always
+sees host arrays, and a chain such as denoise, normalize, pca, hdbscan
+moves the cube to the device once. Device outputs are held up to a
+budget, 80 % of the free device memory at start (`--gpu-budget GB` to
+change it). Beyond it an output moves to host RAM (logged as `store:
+dn.cube (1.98 GB) moved to host, gpu budget 19.6 GB`) and the RAM rules
+apply. The cache always receives a host copy. The run record notes each
+output's placement (`"device": "cuda"`), and the dashboard shows the
+device memory next to the host figure.
+
 If a cache write fails (a full disk), the run stops before the next step
 and prints `error: cache writer: ...`. A run also deletes the partial
 `.tmp` files that killed runs left in the cache directory.
@@ -298,7 +310,7 @@ karak flow init --builtin NAME -o FLOW.json [--force]
 karak flow complete FLOW.json [-o OUT]
 karak run (FLOW.json | --builtin global|tiled|tiled-rare|stepwise)
           --input DIR --out BASE [--work DIR] [--no-cache] [--no-qc]
-          [--cache-compression lzf|gzip|none] [--ram-budget GB]
+          [--cache-compression lzf|gzip|none] [--ram-budget GB] [--gpu-budget GB]
           [--set NODE.PARAM=VALUE ...] [--device cpu|cuda] [--workers N] [--plain]
 karak validate (FLOW.json | --builtin NAME)
 karak schema
@@ -392,4 +404,5 @@ Tested on an AMD Ryzen AI 5 340 with 32 GB RAM (Linux).
 - A run with `--set src.downsample_factor=4 --set
   src.include_elements=Fe-K,Ca,Mg,Si` checks an installation in minutes on
   a laptop.
-- No GPU is required; all computation is CPU-based.
+- No GPU is required. With the `cuda` extra and `--device cuda`, denoise,
+  normalize, PCA and HDBSCAN run on the GPU.
