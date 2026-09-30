@@ -181,3 +181,39 @@ def test_unexpected_error_closes_reporter_as_failed(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"), "--plain"])
     assert closed[0] == "failed"
+
+
+def test_cache_compression_flag_reaches_the_executor_and_the_record(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+
+    def fake_run(graph, **kwargs):
+        seen.update(kwargs)
+        kwargs["record"].start()
+        kwargs["record"].finish("ok")
+        return {}
+
+    monkeypatch.setattr(executor, "run", fake_run)
+    out = tmp_path / "o"
+    assert main(["run", "--builtin", "stepwise", "--out", str(out), "--plain",
+                 "--cache-compression", "none"]) == 0
+    assert seen["cache_compression"] == "none"
+    data = json.loads((out / "runs" / "latest" / "run.json").read_text())
+    assert data["settings"]["cache_compression"] == "none"
+
+
+def test_cache_compression_defaults_to_lzf(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+
+    def fake_run(graph, **kwargs):
+        seen.update(kwargs)
+        kwargs["record"].start()
+        kwargs["record"].finish("ok")
+        return {}
+
+    monkeypatch.setattr(executor, "run", fake_run)
+    assert main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"), "--plain"]) == 0
+    assert seen["cache_compression"] == "lzf"

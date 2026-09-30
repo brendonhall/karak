@@ -95,6 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Work/cache directory (default: <out dir>/work)",
     )
     run_parser.add_argument("--no-cache", action="store_true")
+    run_parser.add_argument(
+        "--cache-compression", choices=["lzf", "gzip", "none"], default="lzf",
+        help="HDF5 filter for cache files (lzf: fast; gzip: small; none: "
+             "fastest, largest). Reads accept any.",
+    )
     run_parser.add_argument("--no-qc", action="store_true",
                             help="Skip QC figure sinks")
     run_parser.add_argument(
@@ -202,7 +207,8 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         source=args.flow or f"builtin:{args.builtin}",
         tokens={"input": args.input, "out": args.out, "work": work_dir},
         settings={"workers": args.workers, "cache": not args.no_cache,
-                  "no_qc": args.no_qc, "device": args.device},
+                  "no_qc": args.no_qc, "device": args.device,
+                  "cache_compression": args.cache_compression},
         overrides=overrides,
     )
     summary = run_flow(
@@ -211,6 +217,7 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         out_base=args.out,
         work_dir=work_dir,
         cache=not args.no_cache,
+        cache_compression=args.cache_compression,
         reporter=reporter,
         workers=args.workers,
         skip_types=QC_STAGE_TYPES if args.no_qc else frozenset(),
