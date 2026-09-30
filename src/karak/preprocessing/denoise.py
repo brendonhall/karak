@@ -130,7 +130,16 @@ def bilateral_denoise_cube(
         from karak.accel import get_array_module, to_numpy
 
         cp = get_array_module(device)  # raises StageError without CUDA
-        from cucim.skimage.restoration import denoise_bilateral as gpu_bilateral
+        try:
+            from cucim.skimage.restoration import denoise_bilateral as gpu_bilateral
+        except ImportError as exc:
+            from karak.errors import StageError
+            raise StageError(
+                "device='cuda' bilateral denoise needs "
+                "cucim.skimage.restoration.denoise_bilateral, which the "
+                "installed cucim does not provide; use device=cpu "
+                "(a CuPy bilateral filter is planned)"
+            ) from exc
 
         gpu_cube = cp.asarray(cube)
         gpu_mask = cp.asarray(mask)

@@ -109,6 +109,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `--device cuda` on the denoise step raises a clear `StageError` instead
+  of an `ImportError`: cucim (25.6 through 26.8) ships no
+  `denoise_bilateral`, so the GPU bilateral path has never run. A CuPy
+  bilateral filter is a follow-up; the GPU parity test is marked xfail
+  until then.
 - `load_valid_mask` failed with a string path (every flow run with
   `mask.valid_mask_path` set) after the shapes-CSV refactor.
 - The mask step no longer triggers scikit-image's `min_size` deprecation
