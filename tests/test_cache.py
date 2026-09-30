@@ -256,3 +256,122 @@ def test_wait_for_blocks_until_that_entry_is_written(tmp_path, monkeypatch):
     assert not t.is_alive()
     assert has_payload("r4", "bse", tmp_path)
     writer.close()
+
+
+class _BrokenPayload:
+    """A payload whose write fails partway (a full disk)."""
+
+    def to_h5(self, group, compression="lzf"):
+        group.create_dataset("partial", data=np.zeros(4))
+        raise OSError("disk full")
+
+
+def test_failed_write_leaves_no_tmp_file(tmp_path):
+    with pytest.raises(OSError, match="disk full"):
+        store_payload("r1", "bse", _BrokenPayload(), tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def _dead_pid() -> int:
+    import subprocess
+    import sys
+
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    return proc.pid
+
+
+def test_sweep_removes_dead_tmp_files_and_keeps_live_ones(tmp_path):
+    import os
+
+    from karak.flow.cache import sweep_stale_tmp
+
+    dead = tmp_path / f"r1__bse.h5.{_dead_pid()}.tmp"
+    live = tmp_path / f"r2__bse.h5.{os.getpid()}.tmp"
+    odd = tmp_path / "r3__bse.h5.notapid.tmp"
+    for path in (dead, live, odd):
+        path.write_bytes(b"x")
+    sweep_stale_tmp(tmp_path)
+    assert not dead.exists()
+    assert live.exists()
+    assert odd.exists()
+
+
+def test_sweep_of_a_missing_cache_dir_is_a_noop(tmp_path):
+    from karak.flow.cache import sweep_stale_tmp
+
+    sweep_stale_tmp(tmp_path / "nope")
+
+
+def test_store_summary_writes_through_a_tmp_file(tmp_path, monkeypatch):
+    import os
+
+    import karak.flow.cache as cache
+
+    replaced = []
+    real = os.replace
+
+    def spy(src, dst):
+        replaced.append((str(src), str(dst)))
+        return real(src, dst)
+
+    monkeypatch.setattr(cache.os, "replace", spy)
+    cache.store_summary("r1", "bse", "text", tmp_path)
+    assert replaced and replaced[0][0].endswith(f".{os.getpid()}.tmp")
+    assert load_summary("r1", "bse", tmp_path) == "text"
+    assert [p.name for p in tmp_path.iterdir()] == ["r1__bse.summary.txt"]
+
+
+def test_check_raises_the_sticky_error_and_passes_otherwise(tmp_path, monkeypatch):
+    import karak.flow.cache as cache
+
+    writer = CacheWriter(tmp_path)
+    writer.check()                          # no error yet: returns
+
+    def failing_store(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    writer.submit("r1", "bse", _bse(), "", {})
+    deadline = time.monotonic() + 5
+    while writer._error is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    with pytest.raises(OSError, match="disk full"):
+        writer.check()
+    writer.close()
+
+
+def test_interrupt_during_close_discards_the_queue(tmp_path, monkeypatch):
+    writer, gate = _gated_writer(tmp_path, monkeypatch, n=5)
+    real_join = writer._queue.join
+    calls = []
+
+    def interrupted_join():
+        if not calls:
+            calls.append(1)
+            raise KeyboardInterrupt
+        return real_join()
+
+    monkeypatch.setattr(writer._queue, "join", interrupted_join)
+    timer = threading.Timer(0.3, gate.set)   # the item in flight finishes
+    timer.start()
+    started = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        writer.close()
+    assert time.monotonic() - started < 6
+    timer.join()
+    assert not writer._thread.is_alive()
+    assert writer._pending == set()
+    written = {p.name.split("__")[0] for p in tmp_path.glob("*__bse.h5")}
+    assert written <= {"r0"}                  # r1..r4 were discarded
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_dataset_treats_compression_none_as_no_filter(tmp_path):
+    import h5py
+
+    from karak.stages.payloads import _dataset
+
+    with h5py.File(tmp_path / "f.h5", "w") as fh:
+        ds = _dataset(fh, "a", np.zeros((4, 4)), compression=None)
+        assert ds.compression is None

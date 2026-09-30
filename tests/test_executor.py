@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
 import numpy as np
@@ -648,9 +649,79 @@ def test_writer_failure_fails_the_run(tmp_path, monkeypatch):
         raise OSError("disk full")
 
     monkeypatch.setattr(cache, "store_payload", failing_store)
-    with pytest.raises(OSError, match="disk full"):
+    reporter = _Timeline()
+    with pytest.raises(FlowError, match="cache writer: disk full"):
         run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
-            work_dir=str(tmp_path / "w"))
+            work_dir=str(tmp_path / "w"), reporter=reporter)
+    # the FlowError carries the message; the executor does not log it too
+    assert not [e for e in reporter.events if e[0] == "log" and e[3] == "error"]
+
+
+_WRITE_FAILED = threading.Event()
+
+
+class WaitAdd(Stage):
+    """Adds like FakeAdd, but only once the writer has failed."""
+
+    id = "fake_wait_add"
+    label = "Wait add"
+    INPUTS = [Port("num")]
+    OUTPUTS = [Port("num")]
+    PARAMS: list = []
+
+    def apply(self, inputs, params):
+        assert _WRITE_FAILED.wait(5)
+        RECORD.append(("fake_wait_add",))
+        return {"num": ClusterStats(stats={"value": inputs["num"].stats["value"]})}
+
+
+def test_writer_error_stops_the_run_at_the_next_node(tmp_path, monkeypatch):
+    from karak.flow import cache
+
+    _WRITE_FAILED.clear()
+
+    def failing_store(*args, **kwargs):
+        try:
+            raise OSError("disk full")
+        finally:
+            _WRITE_FAILED.set()
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    registry.register(WaitAdd)
+    try:
+        graph = complete(Graph(name="stop", nodes=(
+            Node("src", "fake_source", {"value": 1, "path": "x"}),
+            Node("mid", "fake_wait_add", {}),
+            Node("out", "fake_sink"),
+        ), edges=(
+            Edge("e1", Endpoint("src", "num"), Endpoint("mid", "num")),
+            Edge("e2", Endpoint("mid", "num"), Endpoint("out", "num")),
+        )))
+        with pytest.raises(FlowError, match="cache writer: disk full"):
+            run(graph, input_path="x", out_base=str(tmp_path / "o"),
+                work_dir=str(tmp_path / "w"))
+    finally:
+        registry._REGISTRY.pop(WaitAdd.id, None)
+    assert [r[0] for r in RECORD] == ["fake_source", "fake_wait_add"]
+
+
+def test_run_start_sweeps_stale_tmp_files(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    cache_dir = tmp_path / "w" / "cache"
+    cache_dir.mkdir(parents=True)
+    dead = cache_dir / f"abc__num.h5.{proc.pid}.tmp"
+    live = cache_dir / f"def__num.h5.{os.getpid()}.tmp"
+    dead.write_bytes(b"x")
+    live.write_bytes(b"x")
+    run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
+        work_dir=str(tmp_path / "w"))
+    assert not dead.exists()
+    assert live.exists()
 
 
 class Boom(Stage):

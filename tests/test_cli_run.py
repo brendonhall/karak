@@ -237,3 +237,47 @@ def test_ram_budget_flag_is_gigabytes(tmp_path, monkeypatch):
     assert seen["ram_budget"] == int(1.5 * 2**30)
     data = json.loads((out / "runs" / "latest" / "run.json").read_text())
     assert data["settings"]["ram_budget_gb"] == 1.5
+
+
+class _CliSource(Stage):
+    id = "cli_test_source"
+    label = "Source"
+    OUTPUTS = [Port("num")]
+
+    def apply(self, inputs, params):
+        from karak.stages.payloads import ClusterStats
+
+        return {"num": ClusterStats(stats={"value": 1})}
+
+
+def test_cache_writer_failure_exits_1_with_an_error_line(tmp_path, monkeypatch, capsys):
+    import karak.flow.cache as cache
+
+    def failing_store(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    registry.register(_CliSource)
+    try:
+        flow = tmp_path / "flow.json"
+        flow.write_text(json.dumps({
+            "version": 2, "name": "writer",
+            "nodes": [{"id": "src", "type": "cli_test_source", "params": {}}],
+            "edges": [],
+        }))
+        rc = main(["run", str(flow), "--out", str(tmp_path / "o"), "--plain"])
+    finally:
+        registry._REGISTRY.pop(_CliSource.id, None)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error: cache writer: disk full" in err
+    assert "Traceback" not in err
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_ram_budget_must_be_positive(tmp_path, capsys, value):
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"),
+              "--plain", "--ram-budget", value])
+    assert exc.value.code == 2
+    assert "--ram-budget" in capsys.readouterr().err

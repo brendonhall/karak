@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A total RAM budget for outputs held between steps (`--ram-budget GB`,
   default half of the available memory) replaces the fixed 256 MB
   per-payload spill threshold; spills are logged.
+- A failed cache write (a full disk) stops the run at the next step with
+  an `error: cache writer: ...` line; runs delete `.tmp` files left in the
+  cache by killed runs.
 - `karak flow init --builtin NAME -o FILE` writes a builtin flow with every
   parameter listed; `karak flow complete FILE [-o OUT]` fills missing
   parameters from the stage templates, prints what it added, and upgrades

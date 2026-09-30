@@ -276,8 +276,14 @@ Between steps, outputs stay in RAM up to a budget, half of the available
 memory by default (`--ram-budget GB` to change it). An output that would
 exceed the budget is spilled: karak does not hold it, and each consumer
 reads it back from the cache. The log says so (`store: dn.cube (1.98 GB)
-spilled to cache, budget 11.0 GB`). With `--no-cache` nothing is written or
-spilled.
+spilled to cache, budget 11.0 GB`). The budget covers outputs held for
+later steps only. An output waiting for its cache write stays in RAM until
+the write finishes, outside the budget. With `--no-cache` nothing is
+written or spilled.
+
+If a cache write fails (a full disk), the run stops before the next step
+and prints `error: cache writer: ...`. A run also deletes the partial
+`.tmp` files that killed runs left in the cache directory.
 
 An interrupted run resumes the same way: completed stage outputs are
 already in the cache, so the next invocation continues from the crash

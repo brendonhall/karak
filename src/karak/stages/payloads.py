@@ -60,6 +60,8 @@ def _dataset(group, name, data, compression=CACHE_COMPRESSION):
     chunks of up to 2**20 elements. 0-d and empty arrays stay unchunked.
     """
     data = np.asarray(data)
+    if compression is None:
+        compression = "none"
     if compression not in COMPRESSIONS:
         raise ValueError(
             f"compression must be one of {COMPRESSIONS}, got {compression!r}"

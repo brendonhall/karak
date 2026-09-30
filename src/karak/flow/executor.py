@@ -24,6 +24,7 @@ from karak.flow.cache import (
     load_summary,
     payload_path,
     recipe_hash,
+    sweep_stale_tmp,
 )
 from karak.flow.events import NullReporter, ParamValue, RunInfo
 from karak.flow.graph import Graph
@@ -34,6 +35,18 @@ from karak.stages import registry
 
 class FlowError(Exception):
     """Raised when a flow fails validation or execution."""
+
+
+class CacheWriteError(FlowError):
+    """A background cache write failed (for example, a full disk)."""
+
+
+def _writer_call(method, *args) -> None:
+    """Call a CacheWriter method; its error becomes a CacheWriteError."""
+    try:
+        method(*args)
+    except Exception as exc:
+        raise CacheWriteError(f"cache writer: {exc}") from exc
 
 
 def _payload_nbytes(payload) -> int:
@@ -267,7 +280,7 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
     def _reload(node: str, port: str):
         recipe = hashes[(node, port)]
         if writer is not None:
-            writer.wait_for(recipe, port)   # the file may still be queued
+            _writer_call(writer.wait_for, recipe, port)   # may still be queued
         return load_payload(recipe, port, cache_dir)
 
     def _on_spill(node, port, nbytes, budget):
@@ -306,15 +319,21 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
 
     # Outputs go to disk on a background thread; the next node starts at
     # once. Created last so nothing above can leave the thread running.
-    writer = CacheWriter(cache_dir, compression=cache_compression) if cache else None
+    writer = None
+    if cache:
+        sweep_stale_tmp(cache_dir)   # debris of runs that were killed
+        writer = CacheWriter(cache_dir, compression=cache_compression)
 
     def _drain_writer_log() -> None:
+        """Emit the writer's log lines, then fail fast on a writer error."""
         if writer is not None:
             for line in writer.drain_log():
                 _emit(reporter, "log", "info", line)
+            _writer_call(writer.check)
 
     try:
         for node_id in _topo_order(graph):
+            _drain_writer_log()
             node = graph.node(node_id)
             if node_id in skipped:
                 summary[node_id] = {"cached": False, "seconds": 0.0,
@@ -415,23 +434,27 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
                     },
                 )
             _drain_writer_log()
-    except BaseException:
+    except BaseException as failure:
         # A stage failure or Ctrl-C is propagating: finish the queued writes
         # so earlier outputs land, but never mask the original exception.
+        # A second Ctrl-C in close() abandons the queue and propagates.
         if writer is not None:
             writer.close()
-            _drain_writer_log()
-            try:
-                writer.wait()       # after close: only reports, never blocks
-            except BaseException as exc:
-                _emit(reporter, "log", "error", f"cache writer: {exc}")
+            for line in writer.drain_log():
+                _emit(reporter, "log", "info", line)
+            if not isinstance(failure, CacheWriteError):
+                try:
+                    writer.check()   # a writer error the failure hid
+                except Exception as exc:
+                    _emit(reporter, "log", "error", f"cache writer: {exc}")
         raise
     if writer is not None:
         try:
-            writer.wait()           # re-raises a writer error: the run fails
+            _writer_call(writer.wait)   # a writer error fails the run
         finally:
             writer.close()
-            _drain_writer_log()
+            for line in writer.drain_log():
+                _emit(reporter, "log", "info", line)
         for node_id, entry in summary.items():
             entry["write_seconds"] = sum(
                 seconds for label, seconds in writer.per_label.items()

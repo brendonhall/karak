@@ -18,6 +18,17 @@ QC_STAGE_TYPES = frozenset({
 })
 
 
+def _positive_gb(text: str) -> float:
+    """argparse type for --ram-budget: a number of GB above zero."""
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {text!r}") from None
+    if not value > 0:
+        raise argparse.ArgumentTypeError(f"must be above 0 GB, got {text}")
+    return value
+
+
 def _load_graph(args) -> Graph:
     if args.builtin:
         return builtin_flow(args.builtin)
@@ -101,9 +112,11 @@ def build_parser() -> argparse.ArgumentParser:
              "fastest, largest). Reads accept any.",
     )
     run_parser.add_argument(
-        "--ram-budget", type=float, default=None, metavar="GB",
+        "--ram-budget", type=_positive_gb, default=None, metavar="GB",
         help="Host memory to hold stage outputs between steps before "
-             "spilling them to the cache (default: half of available memory).",
+             "spilling them to the cache (default: half of available "
+             "memory). Outputs waiting for their cache write are held "
+             "until the write finishes and are not counted.",
     )
     run_parser.add_argument("--no-qc", action="store_true",
                             help="Skip QC figure sinks")

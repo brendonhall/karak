@@ -55,12 +55,16 @@ def store_payload(
     path = payload_path(recipe, port, cache_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = _tmp_path(path)
-    with h5py.File(tmp, "w") as fh:
-        group = fh.create_group("payload")
-        payload.to_h5(group, compression=compression)
-        if upstream:
-            group.attrs["upstream"] = json.dumps(dict(sorted(upstream.items())))
-    os.replace(tmp, path)
+    try:
+        with h5py.File(tmp, "w") as fh:
+            group = fh.create_group("payload")
+            payload.to_h5(group, compression=compression)
+            if upstream:
+                group.attrs["upstream"] = json.dumps(dict(sorted(upstream.items())))
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)   # a full disk must not leave debris
+        raise
     return path
 
 
@@ -68,6 +72,33 @@ def _tmp_path(path: Path) -> Path:
     """A tmp name unique to this process, so two runs that race on the same
     entry never write the same file."""
     return path.with_name(f"{path.name}.{os.getpid()}.tmp")
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True   # another user's live process
+    return True
+
+
+def sweep_stale_tmp(cache_dir: str | Path) -> None:
+    """Remove tmp files (``<name>.<pid>.tmp``) left by dead processes.
+
+    A killed run can leave one; its pid never comes back to finish it.
+    Files of live processes and names without a pid are kept.
+    """
+    cache_dir = Path(cache_dir)
+    if not cache_dir.is_dir():
+        return
+    for tmp in cache_dir.glob("*.tmp"):
+        pid_text = tmp.name[:-len(".tmp")].rpartition(".")[2]
+        if not pid_text.isdigit() or int(pid_text) <= 0:
+            continue
+        if not _pid_alive(int(pid_text)):
+            tmp.unlink(missing_ok=True)
 
 
 def load_upstream(path: str | Path) -> dict:
@@ -105,7 +136,13 @@ def store_summary(
     """
     path = _summary_path(recipe, port, cache_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    tmp = _tmp_path(path)
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def load_summary(recipe: str, port: str, cache_dir: str | Path) -> str | None:
@@ -121,7 +158,8 @@ class CacheWriter:
 
     ``submit`` enqueues a host payload; the thread calls ``store_payload``
     and ``store_summary``. ``wait_for`` and ``wait`` block on the disk state
-    and re-raise the first error the thread hit. ``close`` never raises. The
+    and re-raise the first error the thread hit; ``check`` re-raises it
+    without blocking. ``close`` raises only a second Ctrl-C. The
     thread never talks to a reporter: it appends log lines that ``drain_log``
     hands back to the caller's thread.
     """
@@ -188,6 +226,10 @@ class CacheWriter:
         if self._error is not None:
             raise self._error
 
+    def check(self) -> None:
+        """Raise the first error the thread hit, if any; never blocks."""
+        self._raise_if_failed()
+
     def wait_for(self, recipe: str, port: str) -> None:
         """Block until (recipe, port), if submitted, is on disk.
 
@@ -209,12 +251,33 @@ class CacheWriter:
         return lines
 
     def close(self) -> None:
-        """Drain the queue and stop the thread. Never raises; idempotent."""
+        """Drain the queue and stop the thread. Idempotent.
+
+        Raises nothing, except a ``KeyboardInterrupt`` during the drain:
+        then the queued writes are discarded, the entry in flight gets
+        5 s to finish, and the interrupt propagates.
+        """
         if self._closed:
             return
         self._closed = True
         try:
             self._queue.join()
-        finally:
+        except KeyboardInterrupt:
+            self._discard_queued()
             self._queue.put(None)
-            self._thread.join()
+            self._thread.join(5)
+            raise
+        self._queue.put(None)
+        self._thread.join()
+
+    def _discard_queued(self) -> None:
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            with self._done:
+                if item is not None:
+                    self._pending.discard((item[0], item[1]))
+                self._queue.task_done()
+                self._done.notify_all()
