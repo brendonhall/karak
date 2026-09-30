@@ -135,6 +135,7 @@ class CacheWriter:
         self._queue: queue.Queue = queue.Queue()
         self._done = threading.Condition()
         self._error: BaseException | None = None
+        self._pending: set[tuple[str, str]] = set()   # submitted, not yet done
         self._log: list[str] = []
         self._closed = False
         self._thread = threading.Thread(
@@ -145,6 +146,8 @@ class CacheWriter:
                upstream: dict | None, label: str | None = None) -> None:
         if self._closed:
             raise RuntimeError("CacheWriter is closed")
+        with self._done:
+            self._pending.add((recipe, port))
         self._queue.put((recipe, port, payload, summary, upstream,
                          label or f"{recipe[:8]}.{port}"))
 
@@ -152,6 +155,7 @@ class CacheWriter:
         while True:
             item = self._queue.get()
             if item is None:
+                self._queue.task_done()
                 return
             recipe, port, payload, summary, upstream, label = item
             started = time.monotonic()
@@ -162,7 +166,8 @@ class CacheWriter:
                                   compression=self.compression)
                     store_summary(recipe, port, summary, self.cache_dir)
             except BaseException as exc:   # surfaces at the next wait
-                self._error = exc
+                with self._done:
+                    self._error = exc
             else:
                 if self._error is None:
                     elapsed = time.monotonic() - started
@@ -175,6 +180,7 @@ class CacheWriter:
                             f"cache: {label} written in {elapsed:.1f} s")
             finally:
                 with self._done:
+                    self._pending.discard((recipe, port))
                     self._queue.task_done()
                     self._done.notify_all()
 
@@ -183,11 +189,12 @@ class CacheWriter:
             raise self._error
 
     def wait_for(self, recipe: str, port: str) -> None:
-        """Block until (recipe, port) is on disk; raise a writer error."""
+        """Block until (recipe, port), if submitted, is on disk.
+
+        Returns at once for a key never submitted. Raises a writer error.
+        """
         with self._done:
-            while (recipe, port) not in self.written and self._error is None:
-                if self._queue.unfinished_tasks == 0:
-                    break          # never submitted, or already failed
+            while (recipe, port) in self._pending and self._error is None:
                 self._done.wait(0.05)
         self._raise_if_failed()
 

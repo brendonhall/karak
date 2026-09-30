@@ -205,3 +205,54 @@ def test_tmp_name_is_unique_per_process(tmp_path):
 
     tmp = _tmp_path(payload_path("r1", "bse", tmp_path))
     assert tmp.name == f"r1__bse.h5.{os.getpid()}.tmp"
+
+
+def _gated_writer(tmp_path, monkeypatch, n=5):
+    import karak.flow.cache as cache
+
+    gate = threading.Event()
+    real = cache.store_payload
+
+    def slow_store(*args, **kwargs):
+        gate.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cache, "store_payload", slow_store)
+    writer = CacheWriter(tmp_path)
+    for i in range(n):
+        writer.submit(f"r{i}", "bse", _bse(), "", {})
+    return writer, gate
+
+
+def test_wait_for_unknown_key_after_close_returns(tmp_path):
+    writer = CacheWriter(tmp_path)
+    writer.close()
+    t = threading.Thread(target=writer.wait_for, args=("never", "x"))
+    t.start()
+    t.join(2)
+    assert not t.is_alive()
+
+
+def test_wait_for_never_submitted_key_does_not_wait_for_the_queue(
+        tmp_path, monkeypatch):
+    writer, gate = _gated_writer(tmp_path, monkeypatch)
+    t = threading.Thread(target=writer.wait_for, args=("never", "bse"))
+    t.start()
+    t.join(1)
+    finished = not t.is_alive()
+    gate.set()
+    writer.close()
+    assert finished
+
+
+def test_wait_for_blocks_until_that_entry_is_written(tmp_path, monkeypatch):
+    writer, gate = _gated_writer(tmp_path, monkeypatch)
+    t = threading.Thread(target=writer.wait_for, args=("r4", "bse"))
+    t.start()
+    t.join(0.2)
+    assert t.is_alive()
+    gate.set()
+    t.join(5)
+    assert not t.is_alive()
+    assert has_payload("r4", "bse", tmp_path)
+    writer.close()
