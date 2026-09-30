@@ -44,8 +44,8 @@ karak run ... --plain                      # line output instead of the live das
 uv run --extra view karak view BASE [--mask CSV]    # open a run's cached load outputs in napari
 karak run ... --no-cache                             # ignore the node cache
 karak run ... --workers 0                  # parallel stages on all cores (same results)
-karak run ... --cache-compression gzip        # cache file filter: lzf (default), gzip, none
-karak run ... --ram-budget 8               # GB of outputs held between steps (default: half of free RAM)
+karak run ... --cache-compression gzip     # cache file filter: lzf (default), gzip, none
+karak run ... --ram-budget 8               # GB of outputs held between steps (default: half of available memory)
 karak run ... --device cuda                # GPU paths where stages support it
 karak validate (FLOW.json | --builtin NAME)          # structural validation
 karak schema                                         # stage palette as JSON

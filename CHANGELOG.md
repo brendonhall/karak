@@ -11,10 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cache writes run on a background thread: the next step starts while the
   previous outputs are written; the run drains the writer before it
   returns, also on failure and Ctrl-C. Log lines report each write.
-- Cache files default to the HDF5 `lzf` filter (2.4x faster writes than
-  gzip on the NWA 4587 cube at 1.5x the size); `karak run
-  --cache-compression {lzf,gzip,none}`. Datasets are chunked (512, 512).
-  Existing gzip cache files stay readable.
+- Cache files default to the HDF5 `lzf` filter (NWA 4587 denoise output:
+  written in 8.8 s and 972 MB, against about 35 s and 842 MB for the
+  previous gzip file); `karak run --cache-compression {lzf,gzip,none}`.
+  Datasets are chunked (512, 512). Existing gzip cache files stay
+  readable.
 - A total RAM budget for outputs held between steps (`--ram-budget GB`,
   default half of the available memory) replaces the fixed 256 MB
   per-payload spill threshold; spills are logged.
