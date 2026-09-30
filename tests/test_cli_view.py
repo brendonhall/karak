@@ -19,11 +19,11 @@ from karak.stages.payloads import (
 )
 
 
-def _cube(names=("Al", "Fe-K", "Si"), factor=2, trim=0):
+def _cube(names=("Al", "Fe-K", "Si"), factor=2, trim=0, space=Space.RAW):
     return ElementCube(
         pixels=np.zeros((4, 5, len(names)), np.float32),
         element_names=tuple(names),
-        space=Space.RAW,
+        space=space,
         downsample_factor=factor,
         header_trim_px=trim,
     )
@@ -175,9 +175,9 @@ def test_view_opens_layers_and_mask(tmp_path, monkeypatch, capsys):
     assert "ElementCube 4×5×3" in out
 
 
-def _write_record(out_base, outputs, masks=None):
-    """A minimal run record whose src node lists the given cache files
-    and whose msk node, when ``masks`` is given, lists that file."""
+def _write_record(out_base, outputs, masks=None, denoised=None):
+    """A minimal run record whose src node lists the given cache files,
+    plus a msk node for ``masks`` and a dn node for ``denoised`` when given."""
     import json
 
     def node(stage, files):
@@ -188,6 +188,8 @@ def _write_record(out_base, outputs, masks=None):
     nodes = {"src": node("load_elements", outputs)}
     if masks is not None:
         nodes["msk"] = node("mask", {"masks": masks})
+    if denoised is not None:
+        nodes["dn"] = node("denoise", {"cube": denoised})
     run_dir = out_base / "runs" / "2026-09-29T14-05-12Z"
     run_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(json.dumps({
@@ -313,3 +315,68 @@ def test_open_viewer_adds_labels_layers_with_add_labels(monkeypatch):
     view.open_viewer(specs, [])
     assert ("labels", "mineral mask", True) in calls
     assert ("image", "Al") in calls
+
+
+def _denoised():
+    return _cube(space=Space.DENOISED)
+
+
+def test_pick_denoised_cube_linked_to_the_raw_cube_from_a_cache_scan(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "dn-old", "cube", _denoised(), 1500, upstream={"cube": "raw", "masks": "m"})
+    _store(cache, "dn-new", "cube", _denoised(), 2500, upstream={"cube": "raw", "masks": "m"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.cube.recipe == "raw"
+    assert picked.denoised.recipe == "dn-new"
+    assert [e.recipe for e in picked.other_cubes] == ["dn-old"]
+
+
+def test_pick_no_denoised_cube_when_none_links_to_the_raw_cube(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 3000)
+    _store(cache, "dn-other", "cube", _denoised(), 4000, upstream={"cube": "other"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.cube.recipe == "raw"
+    assert picked.denoised is None
+    assert [e.recipe for e in picked.other_cubes] == ["dn-other"]
+
+
+def test_pick_denoised_cube_of_the_recorded_run(tmp_path):
+    from karak.cli.view import find_run_outputs
+
+    cache = tmp_path / "output" / "work" / "cache"
+    raw = _store(cache, "raw", "cube", _cube(), 1000)
+    dn = _store(cache, "dn", "cube", _denoised(), 1000, upstream={"cube": "raw"})
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": raw}, denoised=dn)
+    picked = pick_outputs(find_run_outputs(out_base), newest_first=False)
+    assert (picked.cube.recipe, picked.denoised.recipe) == ("raw", "dn")
+
+
+def test_layer_specs_add_prefixed_denoised_layers_after_the_raw_ones():
+    specs = layer_specs(_cube(), _bse(), _masks(), _denoised(), show=("Si",))
+    names = [s.name for s in specs]
+    assert names == ["BSE", "Al", "Fe-K", "Si", "dn: Al", "dn: Fe-K", "dn: Si",
+                     "mineral mask", "valid mask"]
+    visible = [s.name for s in specs if s.visible]
+    assert visible == ["BSE", "Si", "dn: Si", "mineral mask"]
+    by_name = {s.name: s for s in specs}
+    assert by_name["dn: Si"].kind == "image"
+    assert (by_name["dn: Si"].scale, by_name["dn: Si"].translate) == (
+        by_name["Si"].scale, by_name["Si"].translate)
+
+
+def test_view_main_opens_the_denoised_cube(tmp_path, monkeypatch, capsys):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "dn", "cube", _denoised(), 2000, upstream={"cube": "raw"})
+    opened = {}
+    monkeypatch.setattr(view, "_napari_available", lambda: True)
+    monkeypatch.setattr(view, "open_viewer",
+                        lambda specs, shapes: opened.update(specs=specs))
+    assert view_main([str(tmp_path / "work")]) == 0
+    assert "dn: Fe-K" in [s.name for s in opened["specs"]]
+    out = capsys.readouterr().out
+    assert "space=denoised" in out
+    assert "other cube" not in out

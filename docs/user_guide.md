@@ -303,8 +303,8 @@ log), the same information prints as plain lines.
 `karak run` exits with 1 when a step fails and with 130 on Ctrl-C;
 completed steps stay cached.
 
-To inspect the load and mask steps' outputs, open them in napari (install
-the extra once with `uv sync --extra view`):
+To inspect the load, mask, and denoise steps' outputs, open them in
+napari (install the extra once with `uv sync --extra view`):
 
 ```
 uv run --extra view karak view BASE [--show Fe-K,Si] [--mask mask/Valid_mask.csv]
@@ -314,14 +314,18 @@ uv run --extra view karak view BASE [--show Fe-K,Si] [--mask mask/Valid_mask.csv
 cached `.h5` file copied from another machine. Given an `--out` value, the
 command opens the outputs listed in the latest run record
 (`{out}/runs/latest/run.json`): the load step's element cube, the BSE
-image from the same step, and the mask step's masks. Without a record (or
-if its cache files are gone) it opens the newest cached element cube and
-the newest cached masks computed from that cube instead (each cached
-output records the recipes it consumed; masks from another run or cube are
-never overlaid). It shows one gray layer per element (only
-`--show` elements visible), then the mineral mask as a labels layer
-(visible) and, when the flow set `msk.valid_mask_path`, the valid mask as a
-second labels layer (hidden). Every layer is placed in full-resolution
+image from the same step, the mask step's masks, and the denoise step's
+cube. Without a record (or if its cache files are gone) it opens the newest
+cached load cube, and the newest cached masks and denoised cube computed
+from it, instead (each cached output records the recipes it consumed;
+outputs from another run or cube are never overlaid). It shows one gray
+layer per element (only `--show` elements visible), the denoised elements
+as `dn: <element>` layers (visible for the same `--show` elements), then
+the mineral mask as a labels layer (visible) and, when the flow set
+`msk.valid_mask_path`, the valid mask as a second labels layer (hidden).
+Toggle an element and its `dn:` layer to compare raw and denoised. With
+the denoised cube the viewer holds two cubes in memory (about 4 GB for
+NWA 4587). Every layer is placed in full-resolution
 coordinates, so the cursor position matches the original exports and a
 napari shapes CSV such as the valid-area mask lines up. It loads the whole
 cube into memory (about 2 GB for NWA 4587).
