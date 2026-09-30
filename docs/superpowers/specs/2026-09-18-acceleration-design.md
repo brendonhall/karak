@@ -78,11 +78,11 @@ One new module holds the whole acceleration surface (about 80 lines):
 
 ### Numeric core rules
 
-Core functions stay pure, numpy in and numpy out. Two patterns:
-
 Superseded for stages with a `device` param by
 `2026-09-30-async-cache-and-device-residency-design.md`: GPU paths take and
 return device arrays; payloads may hold them.
+
+Core functions stay pure, numpy in and numpy out. Two patterns:
 
 1. CPU-parallel functions gain `workers: int = 1` and split their natural
    unit across a `ProcessPoolExecutor` (files, channels, tiles). The units
