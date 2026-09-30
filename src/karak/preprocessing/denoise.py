@@ -61,7 +61,10 @@ def _bilateral_channel(channel, mask, sigma_color, sigma_spatial,
 
 
 def _joint_guide(cube, mask, method, guide):
-    """The mask-filled guide image for a joint method, or None."""
+    """The mask-filled guide image for a joint method, or None. Runs on
+    whatever array module ``cube`` lives on."""
+    from karak.accel import xp as _xp
+
     if method not in JOINT_METHODS:
         return None
     if method == "joint_bilateral_total":
@@ -72,7 +75,8 @@ def _joint_guide(cube, mask, method, guide):
             "method='joint_bilateral_bse' needs the BSE image: connect the "
             "edge src.bse -> dn.bse (the denoise stage's optional 'bse' port)"
         )
-    guide = np.ascontiguousarray(guide, dtype=np.float32).copy()
+    xp = _xp(cube)
+    guide = xp.ascontiguousarray(xp.asarray(guide), dtype=xp.float32).copy()
     guide[~mask] = guide[mask].mean()
     return guide
 
@@ -156,7 +160,9 @@ def bilateral_denoise_cube(
         Number of parallel workers (default 1).
     device : str
         "cpu" or "cuda". On CUDA every method runs karak's CuPy kernel;
-        ``bilateral`` reproduces scikit-image to float32 precision.
+        ``bilateral`` reproduces scikit-image to float32 precision. CuPy
+        inputs are accepted and the result is a CuPy array; host inputs are
+        moved to the device. ``cpu`` with a CuPy input raises StageError.
     on_channel : callable, optional
         Called as ``on_channel(done, total, index)`` after each channel
         completes; with ``workers > 1`` in completion order.
@@ -176,15 +182,23 @@ def bilateral_denoise_cube(
     """
     if method not in BILATERAL_METHODS:
         raise ValueError(f"unknown bilateral method {method!r}")
+    from karak.accel import is_device_array
+
+    if device == "cpu" and (is_device_array(cube) or is_device_array(mask)):
+        from karak.errors import StageError
+        raise StageError(
+            "device='cpu' received a device array; the executor places "
+            "inputs on the stage's device, so run this stage with device='cuda'"
+        )
     guide = _joint_guide(cube, mask, method, guide)
     H, W, C = cube.shape
 
     if device == "cuda":
-        from karak.accel import get_array_module, to_numpy
+        from karak.accel import get_array_module
         from karak.preprocessing.bilateral import bilateral_cupy
 
         cp = get_array_module(device)  # raises StageError without CUDA
-        gpu_cube = cp.asarray(cube)
+        gpu_cube = cp.asarray(cube)  # no-op for a device array
         gpu_mask = cp.asarray(mask)
         gpu_guide = None if guide is None else cp.asarray(guide)
         out = cp.zeros_like(gpu_cube)
@@ -203,7 +217,7 @@ def bilateral_denoise_cube(
             "Bilateral denoise complete (GPU, %s): shape %s, sigma_color=%s, "
             "sigma_spatial=%s", method, out.shape, sigma_color, sigma_spatial,
         )
-        return to_numpy(out).astype(cube.dtype)
+        return out.astype(cube.dtype)  # stays on the device
 
     denoised = np.zeros_like(cube)
     args = [(cube[:, :, i].copy(), mask, sigma_color, sigma_spatial, method, guide)
@@ -501,7 +515,8 @@ def denoise_cube(
     workers : int
         Number of parallel workers (default 1).
     device : str
-        Device to use: "cpu" or "cuda" (default "cpu").
+        "cpu" or "cuda" (default "cpu"); with cuda the result is a CuPy
+        array and CuPy inputs are accepted.
     on_channel : callable, optional
         Called as ``on_channel(done, total, index)`` after each channel
         completes; with ``workers > 1`` in completion order.
