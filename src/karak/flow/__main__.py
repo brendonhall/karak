@@ -19,7 +19,7 @@ QC_STAGE_TYPES = frozenset({
 
 
 def _positive_gb(text: str) -> float:
-    """argparse type for --ram-budget: a number of GB above zero."""
+    """argparse type for --ram-budget/--gpu-budget: a number of GB above zero."""
     try:
         value = float(text)
     except ValueError:
@@ -117,6 +117,12 @@ def build_parser() -> argparse.ArgumentParser:
              "spilling them to the cache (default: half of available "
              "memory). Writes waiting for the disk are bounded by the "
              "same amount; a step waits when the queue is full.",
+    )
+    run_parser.add_argument(
+        "--gpu-budget", type=_positive_gb, default=None, metavar="GB",
+        help="Device memory to hold stage outputs between GPU steps before "
+             "moving them to host memory (default: 80%% of free device "
+             "memory at start). Used only when a node runs on cuda.",
     )
     run_parser.add_argument("--no-qc", action="store_true",
                             help="Skip QC figure sinks")
@@ -227,7 +233,8 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         settings={"workers": args.workers, "cache": not args.no_cache,
                   "no_qc": args.no_qc, "device": args.device,
                   "cache_compression": args.cache_compression,
-                  "ram_budget_gb": args.ram_budget},
+                  "ram_budget_gb": args.ram_budget,
+                  "gpu_budget_gb": args.gpu_budget},
         overrides=overrides,
     )
     summary = run_flow(
@@ -239,6 +246,8 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         cache_compression=args.cache_compression,
         ram_budget=(None if args.ram_budget is None
                     else int(args.ram_budget * 2**30)),
+        gpu_budget=(None if args.gpu_budget is None
+                    else int(args.gpu_budget * 2**30)),
         reporter=reporter,
         workers=args.workers,
         skip_types=QC_STAGE_TYPES if args.no_qc else frozenset(),

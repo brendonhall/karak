@@ -810,6 +810,279 @@ def test_no_cache_creates_no_writer_and_writes_nothing(tmp_path, monkeypatch):
     assert all(v["write_seconds"] == 0.0 for v in summary.values())
 
 
+# ----- device placement ---------------------------------------------------
+
+import karak.accel as accel  # noqa: E402
+
+
+class _FakeDeviceArray:
+    """Stands in for a CuPy array: the module name marks it as a device array."""
+
+    __module__ = "cupy"
+
+    def __init__(self, host):
+        self.host = np.asarray(host)
+        self.shape, self.dtype = self.host.shape, self.host.dtype
+        self.nbytes = self.host.nbytes
+
+    def get(self):
+        return self.host
+
+
+class _FakeCupy:
+    @staticmethod
+    def asarray(arr):
+        return arr if isinstance(arr, _FakeDeviceArray) else _FakeDeviceArray(arr)
+
+
+@pytest.fixture
+def fake_cuda(monkeypatch):
+    monkeypatch.setattr(accel, "cuda_available", lambda: True)
+    monkeypatch.setattr(accel, "get_array_module",
+                        lambda device: _FakeCupy if device == "cuda" else np)
+    monkeypatch.setattr(accel, "device_memory_info", lambda: (10 * 2**30, 24 * 2**30))
+    monkeypatch.setattr(accel, "free_device_memory", lambda: None)
+
+
+SEEN: dict = {}
+
+
+class FakeDeviceSource(Stage):
+    id = "fake_device_source"
+    label = "Fake device source"
+    OUTPUTS = [Port("bse")]
+    PARAMS = [Param("n", "int", 4)]
+
+    def apply(self, inputs, params):
+        return {"bse": BseImage(pixels=np.ones((params["n"], params["n"]), np.float32))}
+
+
+class FakeDeviceDouble(Stage):
+    """Doubles the image; on cuda it must receive and return device arrays."""
+
+    id = "fake_device_double"
+    label = "Fake device double"
+    INPUTS = [Port("bse")]
+    OUTPUTS = [Port("bse")]
+    PARAMS = [Param("device", "str", "cpu", choices=("cpu", "cuda"))]
+
+    def apply(self, inputs, params):
+        bse = inputs["bse"]
+        SEEN[self.node_id] = accel.device_of(bse.pixels)
+        if params["device"] == "cuda":
+            assert isinstance(bse.pixels, _FakeDeviceArray)
+            return {"bse": bse.replace(pixels=_FakeDeviceArray(bse.pixels.host * 2))}
+        return {"bse": bse.replace(pixels=bse.pixels * 2)}
+
+
+class FakeHostSum(Stage):
+    id = "fake_host_sum"
+    label = "Fake host sum"
+    INPUTS = [Port("bse")]
+    OUTPUTS = [Port("num")]
+    PARAMS: list = []
+
+    def apply(self, inputs, params):
+        pixels = inputs["bse"].pixels
+        SEEN[self.node_id] = type(pixels).__name__
+        assert isinstance(pixels, np.ndarray)
+        return {"num": ClusterStats(stats={"value": float(pixels.sum())})}
+
+
+@pytest.fixture
+def _device_stages():
+    classes = (FakeDeviceSource, FakeDeviceDouble, FakeHostSum)
+    for cls in classes:
+        registry.register(cls)
+    SEEN.clear()
+    yield
+    for cls in classes:
+        registry._REGISTRY.pop(cls.id, None)
+
+
+def _device_chain(device="cuda", n=4):
+    return complete(Graph(name="dev", nodes=(
+        Node(id="src", type="fake_device_source", params={"n": n}),
+        Node(id="d1", type="fake_device_double", params={"device": device}),
+        Node(id="d2", type="fake_device_double", params={"device": device}),
+        Node(id="s", type="fake_host_sum", params={}),
+        Node(id="out", type="fake_sink", params={"out": "{out}"}),
+    ), edges=(
+        Edge(id="e1", src=Endpoint("src", "bse"), dst=Endpoint("d1", "bse")),
+        Edge(id="e2", src=Endpoint("d1", "bse"), dst=Endpoint("d2", "bse")),
+        Edge(id="e3", src=Endpoint("d2", "bse"), dst=Endpoint("s", "bse")),
+        Edge(id="e4", src=Endpoint("s", "num"), dst=Endpoint("out", "num")),
+    )))
+
+
+def test_inputs_are_placed_on_the_node_device_and_outputs_stay_there(
+        tmp_path, fake_cuda, _device_stages):
+    run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"))
+    assert SEEN["d1"] == "cuda" and SEEN["d2"] == "cuda"   # moved once, then stayed
+    assert SEEN["s"] == "ndarray"                            # CPU consumer got numpy
+    assert RECORD[-1][1] == 4 * 4 * 4.0                      # 1 * 2 * 2 over 16 px
+
+
+def test_cpu_stage_downstream_of_a_device_stage_gets_numpy(
+        tmp_path, fake_cuda, _device_stages):
+    """Also: the cache writer only ever sees host payloads."""
+    import h5py
+
+    run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"))
+    assert SEEN["s"] == "ndarray"
+    files = list((tmp_path / "w" / "cache").glob("*__bse.h5"))
+    assert len(files) == 3
+    for path in files:
+        with h5py.File(path) as fh:
+            assert fh["payload"]["pixels"].shape == (4, 4)
+
+
+def test_record_stores_each_output_placement(tmp_path, fake_cuda, _device_stages):
+    import json
+
+    from karak.flow.record import RunRecord
+
+    graph = _device_chain()
+    record = RunRecord(str(tmp_path / "o"), graph, argv=[], source="t",
+                       tokens={}, settings={}, overrides={})
+    run(graph, out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"),
+        record=record)
+    data = json.loads((record.path / "run.json").read_text())
+    assert data["nodes"]["d1"]["outputs"]["bse"]["device"] == "cuda"
+    assert data["nodes"]["src"]["outputs"]["bse"]["device"] == "cpu"
+    assert data["nodes"]["s"]["outputs"]["num"]["device"] == "cpu"
+
+
+def test_cache_hit_output_is_placed_on_the_consumer_device(
+        tmp_path, fake_cuda, _device_stages):
+    """Outputs loaded from the cache are host payloads; placement moves them."""
+    class Hashes:
+        def __init__(self):
+            self.recipes = {}
+
+        def node_cache(self, node_id, recipe, hit, cache_dir):
+            self.recipes[node_id] = recipe
+
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+
+    hashes = Hashes()
+    work = tmp_path / "w"
+    run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(work),
+        reporter=hashes)
+    (work / "cache" / f"{hashes.recipes['s']}__num.h5").unlink()
+    SEEN.clear()
+    run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(work))
+    assert "d1" not in SEEN and "d2" not in SEEN      # cache hits
+    assert SEEN["s"] == "ndarray"                      # host payload from disk
+
+    (work / "cache" / f"{hashes.recipes['d2']}__bse.h5").unlink()
+    SEEN.clear()
+    run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(work))
+    assert "d1" not in SEEN
+    assert SEEN["d2"] == "cuda"                        # d1's disk payload, placed
+
+    SEEN.clear()
+    run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(work),
+        cache=False)
+    assert SEEN["d1"] == "cuda" and SEEN["d2"] == "cuda"
+
+
+def test_placement_without_cuda_names_the_node(tmp_path, monkeypatch, _device_stages):
+    monkeypatch.setattr(accel, "cuda_available", lambda: False)
+    monkeypatch.setattr(accel, "free_device_memory", lambda: None)
+    with pytest.raises(FlowError, match=r"node 'd1' \(fake_device_double\).*karak\[cuda\]"):
+        run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"))
+    assert "d1" not in SEEN
+
+
+def test_device_budget_fallback_moves_the_output_to_host(
+        tmp_path, fake_cuda, _device_stages):
+    class Logger:
+        def __init__(self):
+            self.lines = []
+
+        def log(self, level, msg):
+            self.lines.append(msg)
+
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+
+    reporter = Logger()
+    run(_device_chain(n=64), out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"),
+        reporter=reporter, gpu_budget=1024)
+    assert SEEN["d2"] == "cuda"       # moved back to the device for the consumer
+    fallbacks = [line for line in reporter.lines if "moved to host" in line]
+    assert fallbacks[0] == "store: d1.bse (16 kB) moved to host, gpu budget 1 kB"
+    assert sum(line.startswith("store: d1.bse") for line in fallbacks) == 1
+
+
+def test_payload_store_device_budget_and_release():
+    calls = []
+    store = PayloadStore({("a", "x"): 1, ("b", "x"): 1}, gpu_budget=100,
+                         on_device_fallback=lambda *a: calls.append(a))
+    on_device = BseImage(pixels=_FakeDeviceArray(np.zeros(20, np.float32)))  # 80 B
+    store.put("a", "x", on_device)
+    assert store.held_device_bytes == 80 and store.held_bytes == 0
+    store.put("b", "x", on_device)          # 160 B > 100 B: to host
+    assert calls == [("b", "x", 80, 100)]
+    assert store.held_device_bytes == 80 and store.held_bytes == 80
+    assert isinstance(store.get("b", "x").pixels, np.ndarray)
+    store.release("a", "x")
+    assert store.held_device_bytes == 0 and store.held_bytes == 0
+
+
+def _spy_store(monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+    real = executor.PayloadStore
+
+    class Spy(real):
+        def __init__(self, *args, **kwargs):
+            seen.update(kwargs)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(executor, "PayloadStore", Spy)
+    return seen
+
+
+def test_gpu_budget_defaults_to_80_percent_of_free_memory(
+        tmp_path, fake_cuda, _device_stages, monkeypatch):
+    seen = _spy_store(monkeypatch)
+    run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"))
+    assert seen["gpu_budget"] == int(0.8 * 10 * 2**30)
+
+
+def test_no_gpu_budget_without_a_cuda_node(tmp_path, fake_cuda, _device_stages,
+                                           monkeypatch):
+    seen = _spy_store(monkeypatch)
+    run(_device_chain(device="cpu"), out_base=str(tmp_path / "o"),
+        work_dir=str(tmp_path / "w"), gpu_budget=1024)
+    assert seen["gpu_budget"] is None
+
+
+def test_cuda_run_frees_device_memory_once_even_on_failure(
+        tmp_path, fake_cuda, _device_stages, monkeypatch):
+    freed = []
+    monkeypatch.setattr(accel, "free_device_memory", lambda: freed.append(1))
+    run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"))
+    assert freed == [1]
+
+    def boom(self, inputs, params):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(FakeHostSum, "apply", boom)
+    with pytest.raises(FlowError):
+        run(_device_chain(), out_base=str(tmp_path / "o2"),
+            work_dir=str(tmp_path / "w2"))
+    assert freed == [1, 1]
+    with pytest.raises(FlowError):
+        run(_device_chain(device="cpu"), out_base=str(tmp_path / "o3"),
+            work_dir=str(tmp_path / "w3"))
+    assert freed == [1, 1]            # no cuda node: nothing to free
+
+
 def test_writer_queue_is_bounded_by_the_ram_budget(tmp_path, monkeypatch):
     import karak.flow.executor as executor
 

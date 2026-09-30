@@ -281,3 +281,31 @@ def test_ram_budget_must_be_positive(tmp_path, capsys, value):
               "--plain", "--ram-budget", value])
     assert exc.value.code == 2
     assert "--ram-budget" in capsys.readouterr().err
+
+
+def test_gpu_budget_flag_is_gigabytes(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+
+    def fake_run(graph, **kwargs):
+        seen.update(kwargs)
+        kwargs["record"].start()
+        kwargs["record"].finish("ok")
+        return {}
+
+    monkeypatch.setattr(executor, "run", fake_run)
+    out = tmp_path / "o"
+    assert main(["run", "--builtin", "stepwise", "--out", str(out), "--plain",
+                 "--gpu-budget", "2"]) == 0
+    assert seen["gpu_budget"] == 2 * 2**30
+    data = json.loads((out / "runs" / "latest" / "run.json").read_text())
+    assert data["settings"]["gpu_budget_gb"] == 2.0
+
+
+def test_gpu_budget_must_be_positive(tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"),
+              "--plain", "--gpu-budget", "0"])
+    assert exc.value.code == 2
+    assert "--gpu-budget" in capsys.readouterr().err

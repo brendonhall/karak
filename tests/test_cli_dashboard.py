@@ -21,10 +21,10 @@ class FakeSampler:
         pass
 
 
-def _info(workers=None):
+def _info(workers=None, device="cpu"):
     return RunInfo(
         flow="stepwise", input_path="/data/NWA_4587_data", out_base="out/nwa",
-        work_dir="out/work", cache=True, workers=workers, device="cpu",
+        work_dir="out/work", cache=True, workers=workers, device=device,
         version="0.2.0", nodes=(("src", "load_elements"),),
     )
 
@@ -200,3 +200,15 @@ def test_finished_view_shows_the_run_record():
     d.node_finished("src", 1.0, False)
     d.run_finished({"src": {"cached": False, "seconds": 1.0}}, 1.1)
     assert "record out/nwa/runs/2026-09-29T14-05-12Z" in _text(d)
+
+
+def test_header_shows_the_gpu_figure_for_cuda_runs(monkeypatch):
+    import karak.cli.memory as memory
+
+    monkeypatch.setattr(memory, "device_memory",
+                        lambda: (2_100_000_000, 24_000_000_000))
+    reporter = _dashboard()
+    reporter.run_started(_info(device="cuda"))
+    assert "gpu 2.1 GB / 24.0 GB" in reporter._memory_text()
+    reporter.run_started(_info(device="cpu"))
+    assert "gpu" not in reporter._memory_text()

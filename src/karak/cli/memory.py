@@ -70,3 +70,14 @@ class MemorySampler:
             self._thread.join()
             self._thread = None
         self.sample()
+
+
+def device_memory() -> tuple[int, int] | None:
+    """(used, total) bytes on GPU 0, or None without a usable CUDA stack."""
+    from karak import accel
+
+    info = accel.device_memory_info()
+    if info is None:
+        return None
+    free, total = info
+    return total - free, total
