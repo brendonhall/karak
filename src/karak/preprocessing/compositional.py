@@ -27,6 +27,9 @@ def zscore_normalize(
     pixels only, then normalize: ``z = (x - mean) / std``.  Non-mineral
     pixels are set to 0.
 
+    Works on numpy or CuPy arrays; the normalized cube comes back on the
+    input's device, ``means`` and ``stds`` always as numpy ``(C,)`` float32.
+
     Parameters
     ----------
     cube : np.ndarray
@@ -43,6 +46,9 @@ def zscore_normalize(
     stds : np.ndarray
         (C,) per-channel standard deviations on mineral pixels.
     """
+    from karak.accel import to_numpy, xp as _xp
+
+    xp = _xp(cube)
     H, W, C = cube.shape
     mineral_data = cube[mask]  # (N, C)
 
@@ -52,8 +58,8 @@ def zscore_normalize(
     # Guard against zero-std channels (constant values)
     stds_safe = stds.copy()
     zero_std = stds_safe < 1e-10
-    if zero_std.any():
-        n_zero = zero_std.sum()
+    if bool(zero_std.any()):
+        n_zero = int(zero_std.sum())
         logger.warning(
             "%d channels have near-zero std -- setting std to 1.0 to avoid division by zero",
             n_zero,
@@ -61,18 +67,22 @@ def zscore_normalize(
         stds_safe[zero_std] = 1.0
 
     # Normalize
-    normalized = np.zeros((H, W, C), dtype=np.float32)
-    normalized[mask] = ((mineral_data - means) / stds_safe).astype(np.float32)
+    normalized = xp.zeros((H, W, C), dtype=xp.float32)
+    normalized[mask] = ((mineral_data - means) / stds_safe).astype(xp.float32)
 
     logger.info(
         "Z-score normalization: %d channels, %d mineral pixels, "
         "range [%.4f, %.4f]",
         C,
-        mask.sum(),
-        normalized[mask].min(),
-        normalized[mask].max(),
+        int(mask.sum()),
+        float(normalized[mask].min()),
+        float(normalized[mask].max()),
     )
-    return normalized, means, stds
+    return (
+        normalized,
+        to_numpy(means).astype(np.float32),
+        to_numpy(stds).astype(np.float32),
+    )
 
 
 def validate_normalization(
