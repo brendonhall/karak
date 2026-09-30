@@ -291,7 +291,8 @@ On a terminal, `karak run` shows a live dashboard: the run context
 (input, output, workers, device, cache, memory), a table of steps with
 their status and time, the running step's parameters with changed values
 first, a progress bar where the stage reports progress (the load step
-reports one tick per file), output summaries such as
+reports one tick per file, the denoise step one per element), output
+summaries such as
 `ElementCube 6525×3990×19 float32 1.98 GB space=raw`, and the last five
 log lines. A cached step shows the first 8 characters of its recipe hash.
 When the run ends, the last frame stays on screen as the summary.

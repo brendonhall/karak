@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 from medpy.filter.smoothing import anisotropic_diffusion
@@ -56,6 +56,36 @@ def _anisotropic_channel(channel, mask, niter, kappa, gamma, option):
     return diffused * (cmax - cmin) + cmin
 
 
+def _run_channels(fn, args, workers, on_channel):
+    """Apply ``fn(*args[i])`` to every channel, serially or in a process
+    pool, and return the results in channel order. ``on_channel(done,
+    total, index)`` fires as each channel completes (completion order in
+    the pool), so callers can report progress before all channels are in.
+    """
+    total = len(args)
+    results = [None] * total
+    if workers > 1:
+        import multiprocessing
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        mp_context = multiprocessing.get_context("forkserver")
+        with ProcessPoolExecutor(
+            max_workers=workers, mp_context=mp_context,
+        ) as pool:
+            futures = {pool.submit(fn, *a): i for i, a in enumerate(args)}
+            for done, future in enumerate(as_completed(futures), start=1):
+                index = futures[future]
+                results[index] = future.result()
+                if on_channel is not None:
+                    on_channel(done, total, index)
+    else:
+        for index, a in enumerate(args):
+            results[index] = fn(*a)
+            if on_channel is not None:
+                on_channel(index + 1, total, index)
+    return results
+
+
 def bilateral_denoise_cube(
     cube: np.ndarray,
     mask: np.ndarray,
@@ -64,6 +94,7 @@ def bilateral_denoise_cube(
     sigma_spatial: float,
     workers: int = 1,
     device: str = "cpu",
+    on_channel: Callable[[int, int, int], None] | None = None,
 ) -> np.ndarray:
     """Apply bilateral filter independently to each channel.
 
@@ -86,6 +117,9 @@ def bilateral_denoise_cube(
         Number of parallel workers (default 1).
     device : str
         Device to use: "cpu" or "cuda" (default "cpu").
+    on_channel : callable, optional
+        Called as ``on_channel(done, total, index)`` after each channel
+        completes; with ``workers > 1`` in completion order.
 
     Returns
     -------
@@ -108,6 +142,8 @@ def bilateral_denoise_cube(
             out[:, :, i] = gpu_bilateral(
                 channel, sigma_color=sigma_color, sigma_spatial=sigma_spatial,
             )
+            if on_channel is not None:
+                on_channel(i + 1, C, i)
         out[~gpu_mask] = 0.0
         logger.info(
             "Bilateral denoise complete (GPU): shape %s, sigma_color=%s, sigma_spatial=%s",
@@ -122,17 +158,7 @@ def bilateral_denoise_cube(
 
     args = [(cube[:, :, i].copy(), mask, sigma_color, sigma_spatial)
             for i in range(C)]
-    if workers > 1:
-        import multiprocessing
-        from concurrent.futures import ProcessPoolExecutor
-
-        mp_context = multiprocessing.get_context("forkserver")
-        with ProcessPoolExecutor(
-            max_workers=workers, mp_context=mp_context,
-        ) as pool:
-            channels = list(pool.map(_bilateral_channel, *zip(*args)))
-    else:
-        channels = [_bilateral_channel(*a) for a in args]
+    channels = _run_channels(_bilateral_channel, args, workers, on_channel)
     for i, ch in enumerate(channels):
         denoised[:, :, i] = ch
         logger.info("Bilateral denoise: channel %d/%d done", i + 1, C)
@@ -158,6 +184,7 @@ def anisotropic_denoise_cube(
     gamma: float,
     option: int,
     workers: int = 1,
+    on_channel: Callable[[int, int, int], None] | None = None,
 ) -> np.ndarray:
     """Apply Perona-Malik anisotropic diffusion independently per channel.
 
@@ -182,6 +209,9 @@ def anisotropic_denoise_cube(
         2 = favours wide regions over smaller ones (default 2).
     workers : int
         Number of parallel workers (default 1).
+    on_channel : callable, optional
+        Called as ``on_channel(done, total, index)`` after each channel
+        completes; with ``workers > 1`` in completion order.
 
     Returns
     -------
@@ -193,17 +223,7 @@ def anisotropic_denoise_cube(
 
     args = [(cube[:, :, i].copy(), mask, niter, kappa, gamma, option)
             for i in range(C)]
-    if workers > 1:
-        import multiprocessing
-        from concurrent.futures import ProcessPoolExecutor
-
-        mp_context = multiprocessing.get_context("forkserver")
-        with ProcessPoolExecutor(
-            max_workers=workers, mp_context=mp_context,
-        ) as pool:
-            channels = list(pool.map(_anisotropic_channel, *zip(*args)))
-    else:
-        channels = [_anisotropic_channel(*a) for a in args]
+    channels = _run_channels(_anisotropic_channel, args, workers, on_channel)
     for i, ch in enumerate(channels):
         denoised[:, :, i] = ch
         logger.info("Anisotropic denoise: channel %d/%d done", i + 1, C)
@@ -417,6 +437,7 @@ def denoise_cube(
     config: DenoiseConfig,
     workers: int = 1,
     device: str = "cpu",
+    on_channel: Callable[[int, int, int], None] | None = None,
 ) -> np.ndarray:
     """Dispatch to bilateral or anisotropic denoiser based on config.
 
@@ -432,6 +453,9 @@ def denoise_cube(
         Number of parallel workers (default 1).
     device : str
         Device to use: "cpu" or "cuda" (default "cpu").
+    on_channel : callable, optional
+        Called as ``on_channel(done, total, index)`` after each channel
+        completes; with ``workers > 1`` in completion order.
 
     Returns
     -------
@@ -453,6 +477,7 @@ def denoise_cube(
             sigma_spatial=config.sigma_spatial,
             workers=workers,
             device=device,
+            on_channel=on_channel,
         )
     elif config.method == "anisotropic_diffusion":
         return anisotropic_denoise_cube(
@@ -463,6 +488,7 @@ def denoise_cube(
             gamma=config.gamma,
             option=config.option,
             workers=workers,
+            on_channel=on_channel,
         )
     else:
         raise ValueError(

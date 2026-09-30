@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prints the same information as lines.
 - `stepwise` builtin flow, which grows one step at a time; it currently
   runs the load, mask, and denoise steps.
+- The denoise step reports progress per element channel to the dashboard,
+  also with `--workers` (channels complete in any order) and on CUDA;
+  `denoise_cube` and the per-method functions take an `on_channel` callback.
 - Payloads have `summary()`; the cache stores it next to each payload.
 - `karak view PATH` opens the newest cached element cube and its BSE image
   in napari (optional `karak[view]` extra): one gray layer per element,

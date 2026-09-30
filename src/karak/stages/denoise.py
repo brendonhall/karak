@@ -60,9 +60,16 @@ class DenoiseStage(Stage):
 
         cube = inputs["cube"]
         config = denoise_config(params)
+        reporter, node_id, names = self.reporter, self.node_id, cube.element_names
+
+        def on_channel(done: int, total: int, index: int) -> None:
+            if reporter is not None:
+                reporter.progress(node_id, done, total, names[index])
+
         denoised = denoise_cube(
             cube.pixels, inputs["masks"].mineral_mask, config,
             workers=resolve_workers(self.workers),
-            device=params["device"]
+            device=params["device"],
+            on_channel=on_channel,
         )
         return {"cube": cube.replace(pixels=denoised, space=Space.DENOISED)}
