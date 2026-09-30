@@ -37,7 +37,7 @@ Cluster counts, sizes, and noise fraction for the labels.
 
 ## `denoise` — Denoise
 
-Edge-aware denoising (bilateral or Perona-Malik anisotropic diffusion) applied per channel on raw intensities.
+Edge-aware denoising (bilateral, symmetric or joint bilateral, or Perona-Malik anisotropic diffusion) applied per channel on raw intensities.
 
 **Inputs**
 
@@ -45,6 +45,7 @@ Edge-aware denoising (bilateral or Perona-Malik anisotropic diffusion) applied p
 |------|----------|----------|-------|
 | `cube` | `raw` | yes | (H, W, C) raw element cube |
 | `masks` | - | yes | mineral mask restricts smoothing to sample pixels |
+| `bse` | - | no | BSE image: the range guide for method=joint_bilateral_bse |
 
 **Outputs**
 
@@ -56,14 +57,14 @@ Edge-aware denoising (bilateral or Perona-Malik anisotropic diffusion) applied p
 
 | name | type | default | bounds / choices | help |
 |------|------|---------|------------------|------|
-| `method` | enum | `bilateral` | bilateral \| anisotropic_diffusion | Method |
-| `sigma_color` | float | `None` | 0.0.. | Bilateral color sigma (None = auto from data range) |
+| `method` | enum | `bilateral` | bilateral \| bilateral_sym \| joint_bilateral_total \| joint_bilateral_bse \| anisotropic_diffusion | bilateral = scikit-image's filter (the published baseline, off-centre spatial table); bilateral_sym = symmetric kernel; joint_bilateral_total / joint_bilateral_bse = range weight from the summed channels / the BSE image (bse port) |
+| `sigma_color` | float | `None` | 0.0.. | Bilateral range sigma (None = std of the channel, or of the guide for the joint methods) |
 | `sigma_spatial` | float | `1.0` | 0.0.. | Spatial sigma |
 | `niter` | int | `10` | 1.. | Iterations |
 | `kappa` | float | `50.0` | 0.0.. | Conductance coefficient for diffusion |
 | `gamma` | float | `0.1` | 0.0..0.25 | Diffusion speed (0-0.25 stable) |
 | `option` | int | `2` | 1 \| 2 | Perona-Malik option |
-| `device` | str | `cpu` | cpu \| cuda | cpu or cuda (GPU bilateral via cuCIM; needs karak[cuda]). Results match cpu within float tolerance. |
+| `device` | str | `cpu` | cpu \| cuda | cpu or cuda (bilateral methods on the GPU via karak's CuPy kernel; needs karak[cuda]). Results match cpu within 1e-5. |
 
 ## `export_h5` — Export HDF5
 

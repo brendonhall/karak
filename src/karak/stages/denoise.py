@@ -26,12 +26,15 @@ class DenoiseStage(Stage):
     id = "denoise"
     label = "Denoise"
     description = (
-        "Edge-aware denoising (bilateral or Perona-Malik anisotropic "
-        "diffusion) applied per channel on raw intensities."
+        "Edge-aware denoising (bilateral, symmetric or joint bilateral, or "
+        "Perona-Malik anisotropic diffusion) applied per channel on raw "
+        "intensities."
     )
     INPUTS = [
         Port("cube", space=Space.RAW, help="(H, W, C) raw element cube"),
         Port("masks", help="mineral mask restricts smoothing to sample pixels"),
+        Port("bse", required=False,
+             help="BSE image: the range guide for method=joint_bilateral_bse"),
     ]
     OUTPUTS = [
         Port("cube", space=Space.DENOISED,
@@ -39,9 +42,15 @@ class DenoiseStage(Stage):
     ]
     PARAMS = [
         Param("method", "enum", "bilateral", "Method",
-              choices=("bilateral", "anisotropic_diffusion")),
+              "bilateral = scikit-image's filter (the published baseline, "
+              "off-centre spatial table); bilateral_sym = symmetric kernel; "
+              "joint_bilateral_total / joint_bilateral_bse = range weight "
+              "from the summed channels / the BSE image (bse port)",
+              choices=("bilateral", "bilateral_sym", "joint_bilateral_total",
+                       "joint_bilateral_bse", "anisotropic_diffusion")),
         Param("sigma_color", "float", None, "Color sigma",
-              "Bilateral color sigma (None = auto from data range)", min=0.0),
+              "Bilateral range sigma (None = std of the channel, or of the "
+              "guide for the joint methods)", min=0.0),
         Param("sigma_spatial", "float", 1.0, "Spatial sigma", min=0.0),
         Param("niter", "int", 10, "Iterations", min=1),
         Param("kappa", "float", 50.0, "Kappa",
@@ -50,8 +59,8 @@ class DenoiseStage(Stage):
               "Diffusion speed (0-0.25 stable)", min=0.0, max=0.25),
         Param("option", "int", 2, "Perona-Malik option", choices=(1, 2)),
         Param("device", "str", "cpu", "Device",
-              "cpu or cuda (GPU bilateral via cuCIM; needs karak[cuda]). "
-              "Results match cpu within float tolerance.",
+              "cpu or cuda (bilateral methods on the GPU via karak's CuPy "
+              "kernel; needs karak[cuda]). Results match cpu within 1e-5.",
               choices=("cpu", "cuda")),
     ]
 
@@ -66,10 +75,12 @@ class DenoiseStage(Stage):
             if reporter is not None:
                 reporter.progress(node_id, done, total, names[index])
 
+        bse = inputs.get("bse")
         denoised = denoise_cube(
             cube.pixels, inputs["masks"].mineral_mask, config,
             workers=resolve_workers(self.workers),
             device=params["device"],
             on_channel=on_channel,
+            guide=None if bse is None else bse.pixels,
         )
         return {"cube": cube.replace(pixels=denoised, space=Space.DENOISED)}

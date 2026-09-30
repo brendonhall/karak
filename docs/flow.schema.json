@@ -176,7 +176,7 @@
     },
     "node_denoise": {
       "title": "Denoise",
-      "description": "Edge-aware denoising (bilateral or Perona-Malik anisotropic diffusion) applied per channel on raw intensities.",
+      "description": "Edge-aware denoising (bilateral, symmetric or joint bilateral, or Perona-Malik anisotropic diffusion) applied per channel on raw intensities.",
       "type": "object",
       "required": [
         "id",
@@ -215,8 +215,12 @@
         "method": {
           "type": "string",
           "title": "Method",
+          "description": "bilateral = scikit-image's filter (the published baseline, off-centre spatial table); bilateral_sym = symmetric kernel; joint_bilateral_total / joint_bilateral_bse = range weight from the summed channels / the BSE image (bse port)",
           "enum": [
             "bilateral",
+            "bilateral_sym",
+            "joint_bilateral_total",
+            "joint_bilateral_bse",
             "anisotropic_diffusion"
           ],
           "default": "bilateral"
@@ -227,7 +231,7 @@
             "null"
           ],
           "title": "Color sigma",
-          "description": "Bilateral color sigma (None = auto from data range)",
+          "description": "Bilateral range sigma (None = std of the channel, or of the guide for the joint methods)",
           "minimum": 0.0,
           "default": null
         },
@@ -270,7 +274,7 @@
         "device": {
           "type": "string",
           "title": "Device",
-          "description": "cpu or cuda (GPU bilateral via cuCIM; needs karak[cuda]). Results match cpu within float tolerance.",
+          "description": "cpu or cuda (bilateral methods on the GPU via karak's CuPy kernel; needs karak[cuda]). Results match cpu within 1e-5.",
           "enum": [
             "cpu",
             "cuda"

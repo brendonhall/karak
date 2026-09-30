@@ -21,23 +21,6 @@ def test_cuda_without_gpu_raises(monkeypatch):
         bilateral_denoise_cube(cube, mask, sigma_color=None, sigma_spatial=1.0, device="cuda")
 
 
-def test_cuda_without_cucim_bilateral_is_a_clear_stage_error(monkeypatch):
-    """cucim (25.6 through 26.8) ships no denoise_bilateral; the CUDA path
-    must say so instead of leaking an ImportError."""
-    import sys
-    import types
-
-    import karak.accel as accel
-
-    monkeypatch.setattr(accel, "get_array_module", lambda device: np)
-    for name in ("cucim", "cucim.skimage", "cucim.skimage.restoration"):
-        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
-    cube = make_synthetic_scene()
-    mask = cube.sum(axis=-1) > 0
-    with pytest.raises(StageError, match="cucim.*denoise_bilateral.*device=cpu"):
-        bilateral_denoise_cube(cube, mask, sigma_color=None, sigma_spatial=1.0, device="cuda")
-
-
 def test_anisotropic_cuda_unsupported():
     cube = make_synthetic_scene()
     mask = cube.sum(axis=-1) > 0
@@ -55,12 +38,15 @@ def test_anisotropic_cuda_unsupported():
 
 
 @pytest.mark.skipif(not cuda_available(), reason="no CUDA")
-@pytest.mark.xfail(strict=True, raises=StageError,
-                   reason="cucim has no denoise_bilateral; a CuPy port is a follow-up")
-def test_bilateral_gpu_matches_cpu():
+@pytest.mark.parametrize("method", ["bilateral", "bilateral_sym",
+                                    "joint_bilateral_total", "joint_bilateral_bse"])
+def test_bilateral_gpu_matches_cpu(method):
     cube = make_synthetic_scene()
     mask = cube.sum(axis=-1) > 0
-    cpu = bilateral_denoise_cube(cube, mask, sigma_color=None, sigma_spatial=1.0)
-    gpu = bilateral_denoise_cube(cube, mask, sigma_color=None, sigma_spatial=1.0, device="cuda")
+    guide = np.random.default_rng(9).random(cube.shape[:2], dtype=np.float32)
+    cfg = denoise_cfg(method=method, sigma_color=None, sigma_spatial=1.0,
+                      niter=10, kappa=50.0, gamma=0.1, option=2)
+    cpu = denoise_cube(cube, mask, cfg, guide=guide)
+    gpu = denoise_cube(cube, mask, cfg, guide=guide, device="cuda")
     assert gpu.dtype == cpu.dtype
-    assert np.allclose(cpu, gpu, atol=1e-5)
+    np.testing.assert_allclose(cpu, gpu, atol=1e-5)

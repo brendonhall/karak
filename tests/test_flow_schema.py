@@ -65,7 +65,9 @@ def test_bounds_choices_and_ui_are_expressed():
     assert load["downsample_factor"]["minimum"] == 1
     assert load["downsample_factor"]["default"] == 2       # the template value
     denoise = schema["$defs"]["params_denoise"]["properties"]
-    assert set(denoise["method"]["enum"]) == {"bilateral", "anisotropic_diffusion"}
+    assert set(denoise["method"]["enum"]) == {
+        "bilateral", "bilateral_sym", "joint_bilateral_total",
+        "joint_bilateral_bse", "anisotropic_diffusion"}
     flow = _stepwise()
     flow["nodes"][0]["ui"] = {"x": 120, "y": 40}
     jsonschema.validate(flow, schema)
