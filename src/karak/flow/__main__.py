@@ -100,6 +100,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="HDF5 filter for cache files (lzf: fast; gzip: small; none: "
              "fastest, largest). Reads accept any.",
     )
+    run_parser.add_argument(
+        "--ram-budget", type=float, default=None, metavar="GB",
+        help="Host memory to hold stage outputs between steps before "
+             "spilling them to the cache (default: half of available memory).",
+    )
     run_parser.add_argument("--no-qc", action="store_true",
                             help="Skip QC figure sinks")
     run_parser.add_argument(
@@ -208,7 +213,8 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         tokens={"input": args.input, "out": args.out, "work": work_dir},
         settings={"workers": args.workers, "cache": not args.no_cache,
                   "no_qc": args.no_qc, "device": args.device,
-                  "cache_compression": args.cache_compression},
+                  "cache_compression": args.cache_compression,
+                  "ram_budget_gb": args.ram_budget},
         overrides=overrides,
     )
     summary = run_flow(
@@ -218,6 +224,8 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         work_dir=work_dir,
         cache=not args.no_cache,
         cache_compression=args.cache_compression,
+        ram_budget=(None if args.ram_budget is None
+                    else int(args.ram_budget * 2**30)),
         reporter=reporter,
         workers=args.workers,
         skip_types=QC_STAGE_TYPES if args.no_qc else frozenset(),

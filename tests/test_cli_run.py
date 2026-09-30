@@ -217,3 +217,23 @@ def test_cache_compression_defaults_to_lzf(tmp_path, monkeypatch):
     monkeypatch.setattr(executor, "run", fake_run)
     assert main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"), "--plain"]) == 0
     assert seen["cache_compression"] == "lzf"
+
+
+def test_ram_budget_flag_is_gigabytes(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+
+    def fake_run(graph, **kwargs):
+        seen.update(kwargs)
+        kwargs["record"].start()
+        kwargs["record"].finish("ok")
+        return {}
+
+    monkeypatch.setattr(executor, "run", fake_run)
+    out = tmp_path / "o"
+    assert main(["run", "--builtin", "stepwise", "--out", str(out), "--plain",
+                 "--ram-budget", "1.5"]) == 0
+    assert seen["ram_budget"] == int(1.5 * 2**30)
+    data = json.loads((out / "runs" / "latest" / "run.json").read_text())
+    assert data["settings"]["ram_budget_gb"] == 1.5

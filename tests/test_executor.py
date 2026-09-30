@@ -178,24 +178,42 @@ def test_payload_store_refcount_eviction():
     assert ("a", "num") not in store._in_ram  # dropped after last consumer
 
 
-def test_payload_store_spills_large_payloads():
+def test_payload_store_spills_only_when_the_total_exceeds_the_budget():
     import numpy as np
 
     from karak.stages.payloads import BseImage
 
-    big = BseImage(pixels=np.zeros((64, 64), dtype=np.float32))
-    reloads = []
+    one_kb = BseImage(pixels=np.zeros((16, 16), dtype=np.float32))   # 1024 bytes
+    reloads, spills = [], []
 
     def reload(node, port):
         reloads.append((node, port))
-        return big
+        return one_kb
 
-    store = PayloadStore({("a", "bse"): 2}, reload=reload, spill_threshold=1)
+    store = PayloadStore({("a", "bse"): 1, ("b", "bse"): 1, ("c", "bse"): 2},
+                         reload=reload, ram_budget=2048,
+                         on_spill=lambda *args: spills.append(args))
+    store.put("a", "bse", one_kb)
+    store.put("b", "bse", one_kb)
+    assert store.held_bytes == 2048
+    store.put("c", "bse", one_kb)            # would make 3072 > 2048: spilled
+    assert ("c", "bse") not in store._in_ram
+    assert spills == [("c", "bse", 1024, 2048)]
+    assert store.get("a", "bse") is one_kb   # released: 1024 held
+    assert store.held_bytes == 1024
+    assert store.get("c", "bse") is one_kb and store.get("c", "bse") is one_kb
+    assert len(reloads) == 2                 # once per consumer of the spilled one
+
+
+def test_payload_store_without_a_budget_never_spills():
+    import numpy as np
+
+    from karak.stages.payloads import BseImage
+
+    big = BseImage(pixels=np.zeros((256, 256), dtype=np.float32))
+    store = PayloadStore({("a", "bse"): 1}, reload=lambda n, p: None, ram_budget=None)
     store.put("a", "bse", big)
-    assert ("a", "bse") not in store._in_ram  # never held in RAM
-    assert store.get("a", "bse") is big
-    assert store.get("a", "bse") is big
-    assert len(reloads) == 2  # reloaded once per consumer
+    assert ("a", "bse") in store._in_ram
 
 
 def test_branching_graph_both_consumers_get_payload(tmp_path):
@@ -587,14 +605,40 @@ def test_spilled_reload_waits_for_the_pending_write(tmp_path, monkeypatch,
         Edge("e2", Endpoint("add1", "bse"), Endpoint("add2", "bse")),
         Edge("e3", Endpoint("add2", "bse"), Endpoint("out", "bse")),
     )))
-    # a zero threshold spills every payload, so each consumer reloads its
+    # a zero budget spills every payload, so each consumer reloads its
     # input from a file the writer may not have finished yet
     summary = run(graph, input_path="x", out_base=str(tmp_path / "o"),
-                  work_dir=str(tmp_path / "w"), spill_threshold=0)
+                  work_dir=str(tmp_path / "w"), ram_budget=0)
     assert summary["add2"]["cached"] is False
     name, pixels = RECORD[-1]
     assert name == "fake_image_sink"
     np.testing.assert_array_equal(pixels, np.full((8, 8), 4.0, np.float32))
+
+
+def test_run_passes_the_ram_budget_and_logs_spills(tmp_path, _image_stages):
+    class Logger:
+        def __init__(self):
+            self.lines = []
+
+        def log(self, level, msg):
+            self.lines.append(msg)
+
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+
+    graph = complete(Graph(name="images", nodes=(
+        Node("src", "fake_image_source", {"value": 1.0}),
+        Node("add", "fake_image_add", {"add": 1.0}),
+        Node("out", "fake_image_sink"),
+    ), edges=(
+        Edge("e1", Endpoint("src", "bse"), Endpoint("add", "bse")),
+        Edge("e2", Endpoint("add", "bse"), Endpoint("out", "bse")),
+    )))
+    reporter = Logger()
+    run(graph, input_path="x", out_base=str(tmp_path / "o"),
+        work_dir=str(tmp_path / "w"), reporter=reporter, ram_budget=0)
+    assert any(line.startswith("store: src.bse (") and "spilled to cache" in line
+               for line in reporter.lines)
 
 
 def test_writer_failure_fails_the_run(tmp_path, monkeypatch):

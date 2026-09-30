@@ -2,10 +2,10 @@
 
 Memory model: every producing node's outputs are handed to a background
 ``CacheWriter`` (the next node starts while the file is written), then held
-in RAM only while downstream consumers remain (refcount).
-Payloads whose arrays exceed ``spill_threshold`` bytes are dropped from RAM
-immediately after caching and reloaded per consumer — the generic form of
-the old runner's pop-then-reread-HDF5 trick.
+in RAM only while downstream consumers remain (refcount), up to a total
+``ram_budget`` in bytes. A payload that would push the held total over the
+budget is spilled: it is not held, and each consumer reloads it from the
+cache after its background write completes.
 """
 
 from __future__ import annotations
@@ -46,34 +46,44 @@ def _payload_nbytes(payload) -> int:
 
 
 class PayloadStore:
-    """Refcounted in-RAM payload store with optional spill-to-cache.
+    """Refcounted in-RAM payload store with a total memory budget.
 
     ``consumers`` maps (node, port) -> number of downstream consumers.
     ``get`` decrements the count and evicts the payload once it reaches 0.
-    Payloads larger than ``spill_threshold`` bytes are not held in RAM at
-    all; ``reload`` fetches them from the cache per consumer.
+    A payload is spilled (not held; ``reload`` fetches it from the cache
+    per consumer) when holding it would push the total above
+    ``ram_budget`` bytes. ``ram_budget=None`` never spills. ``on_spill``
+    is called as ``on_spill(node, port, nbytes, budget)`` once per spill.
     """
 
     def __init__(self, consumers: dict, reload=None,
-                 spill_threshold: int | None = None):
+                 ram_budget: int | None = None, on_spill=None):
         self._remaining = dict(consumers)
         self._in_ram: dict = {}
+        self._sizes: dict = {}
         self._spilled: set = set()
         self._reload = reload
-        self._spill_threshold = spill_threshold
+        self._budget = ram_budget
+        self._on_spill = on_spill
+        self.held_bytes = 0
 
     def put(self, node: str, port: str, payload) -> None:
         key = (node, port)
         if self._remaining.get(key, 0) <= 0:
-            return  # unconsumed output — drop immediately
+            return  # unconsumed output: drop immediately
+        nbytes = _payload_nbytes(payload)
         if (
-            self._spill_threshold is not None
+            self._budget is not None
             and self._reload is not None
-            and _payload_nbytes(payload) > self._spill_threshold
+            and self.held_bytes + nbytes > self._budget
         ):
             self._spilled.add(key)
+            if self._on_spill is not None:
+                self._on_spill(node, port, nbytes, self._budget)
             return
         self._in_ram[key] = payload
+        self._sizes[key] = nbytes
+        self.held_bytes += nbytes
 
     def get(self, node: str, port: str):
         key = (node, port)
@@ -90,7 +100,8 @@ class PayloadStore:
         remaining = self._remaining.get(key, 0) - 1
         self._remaining[key] = remaining
         if remaining <= 0:
-            self._in_ram.pop(key, None)
+            if self._in_ram.pop(key, None) is not None:
+                self.held_bytes -= self._sizes.pop(key, 0)
             self._spilled.discard(key)
 
 
@@ -182,7 +193,7 @@ def run(
     reporter=None,
     workers: int | None = None,
     skip_types: frozenset | set = frozenset(),
-    spill_threshold: int = 256 * 1024 * 1024,
+    ram_budget: int | None = None,
     record=None,
     cache_compression: str = "lzf",
 ) -> dict:
@@ -202,7 +213,7 @@ def run(
             graph, input_path=input_path, out_base=out_base,
             work_dir=work_dir, cache=cache, reporter=reporter,
             workers=workers, skip_types=skip_types,
-            spill_threshold=spill_threshold, record=record,
+            ram_budget=ram_budget, record=record,
             cache_compression=cache_compression,
         )
     except KeyboardInterrupt:
@@ -219,8 +230,11 @@ def run(
 
 
 def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
-             reporter, workers, skip_types, spill_threshold, record,
+             reporter, workers, skip_types, ram_budget, record,
              cache_compression="lzf") -> dict:
+    from karak.flow.budget import default_ram_budget
+    from karak.stages.payloads import format_bytes
+
     errors = [i for i in validate(graph) if i.level == "error"]
     if errors:
         detail = "; ".join(f"[{i.where}] {i.message}" for i in errors)
@@ -256,11 +270,17 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
             writer.wait_for(recipe, port)   # the file may still be queued
         return load_payload(recipe, port, cache_dir)
 
-    store = PayloadStore(
-        consumers,
-        reload=_reload,
-        spill_threshold=spill_threshold if cache else None,
-    )
+    def _on_spill(node, port, nbytes, budget):
+        _emit(reporter, "log", "info",
+              f"store: {node}.{port} ({format_bytes(nbytes)}) spilled to "
+              f"cache, budget {format_bytes(budget)}")
+
+    if not cache:
+        budget = None
+    else:
+        budget = default_ram_budget() if ram_budget is None else ram_budget
+    store = PayloadStore(consumers, reload=_reload, ram_budget=budget,
+                         on_spill=_on_spill)
     summary: dict = {}
     run_started_at = time.monotonic()
     order = [n for n in _topo_order(graph) if n not in skipped]
