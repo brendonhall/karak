@@ -10,12 +10,10 @@ cache after its background write completes.
 
 from __future__ import annotations
 
-import dataclasses
 import time
 from collections import Counter
 from pathlib import Path
 
-import numpy as np
 
 from karak.flow.cache import (
     CacheWriter,
@@ -50,12 +48,10 @@ def _writer_call(method, *args) -> None:
 
 
 def _payload_nbytes(payload) -> int:
-    total = 0
-    for field in dataclasses.fields(payload):
-        value = getattr(payload, field.name)
-        if isinstance(value, np.ndarray):
-            total += value.nbytes
-    return total
+    """Host bytes a payload holds (the RAM budget counts these)."""
+    from karak.stages.payloads import payload_nbytes
+
+    return payload_nbytes(payload)[0]
 
 
 class PayloadStore:
