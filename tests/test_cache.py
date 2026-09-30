@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import numpy as np
+
 from karak.flow.cache import load_payload, recipe_hash, store_payload
 from karak.stages.payloads import ClusterStats
 
@@ -66,3 +68,17 @@ def test_missing_summary_returns_none(tmp_path):
     from karak.flow.cache import load_summary
 
     assert load_summary("nope", "cube", tmp_path) is None
+
+
+def test_store_payload_passes_the_compression_through(tmp_path):
+    import h5py
+
+    from karak.stages.payloads import BseImage
+
+    payload = BseImage(pixels=np.zeros((4, 4), np.float32))
+    path = store_payload("r1", "bse", payload, tmp_path, compression="none")
+    with h5py.File(path) as fh:
+        assert fh["payload"]["pixels"].compression is None
+    path = store_payload("r2", "bse", payload, tmp_path)
+    with h5py.File(path) as fh:
+        assert fh["payload"]["pixels"].compression == "lzf"

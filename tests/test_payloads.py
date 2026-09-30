@@ -201,3 +201,78 @@ def test_fingerprints_h5_roundtrip(tmp_path):
     assert back.data["element_names"] == ["Fe", "Mg"]
     np.testing.assert_array_equal(back.data["element_order"], [1, 0])
     assert back.similar_pairs == [(0, 1, 0.97)]
+
+
+@pytest.mark.parametrize("compression", ["lzf", "gzip", "none"])
+def test_every_payload_roundtrips_under_each_compression(tmp_path, compression):
+    """Each payload class writes with the requested filter and reads back."""
+    import h5py
+
+    cube = _cube()
+    payloads = [
+        cube,
+        BseImage(pixels=np.zeros((4, 5), np.float32)),
+        MaskSet(mineral_mask=np.ones((4, 5), bool), valid_mask=None),
+        PCAFeatures(features=np.zeros((7, 3), np.float32),
+                    mineral_indices=np.zeros((7, 2), np.int32),
+                    image_shape=(4, 5),
+                    explained_variance_ratio=np.array([0.5, 0.3, 0.2]),
+                    n_kept=2),
+        Labels(labels=np.zeros(7, np.int32), probabilities=None,
+               mineral_indices=np.zeros((7, 2), np.int32),
+               image_shape=(4, 5), state=LabelState.RAW),
+        ClusterStats(stats={"n": 1}),
+    ]
+    for payload in payloads:
+        path = tmp_path / f"{type(payload).__name__}.h5"
+        with h5py.File(path, "w") as fh:
+            payload.to_h5(fh.create_group("p"), compression=compression)
+        with h5py.File(path, "r") as fh:
+            back = payload_from_h5(fh["p"])
+            pixels = fh["p"].get("pixels")
+            if pixels is not None:
+                expected = None if compression == "none" else compression
+                assert pixels.compression == expected
+                assert pixels.chunks is not None
+        assert type(back) is type(payload)
+
+
+def test_to_h5_defaults_to_lzf(tmp_path):
+    import h5py
+
+    with h5py.File(tmp_path / "d.h5", "w") as fh:
+        _cube().to_h5(fh.create_group("p"))
+    with h5py.File(tmp_path / "d.h5", "r") as fh:
+        assert fh["p"]["pixels"].compression == "lzf"
+
+
+def test_one_dimensional_labels_are_chunked_and_compressed(tmp_path):
+    import h5py
+
+    labels = Labels(labels=np.zeros(7, np.int32), probabilities=None,
+                    mineral_indices=np.zeros((7, 2), np.int32),
+                    image_shape=(4, 5), state=LabelState.RAW)
+    with h5py.File(tmp_path / "l.h5", "w") as fh:
+        labels.to_h5(fh.create_group("p"))
+    with h5py.File(tmp_path / "l.h5", "r") as fh:
+        assert fh["p"]["labels"].compression == "lzf"
+        assert fh["p"]["labels"].chunks == (7,)
+
+
+def test_gzip_file_written_before_the_change_still_loads(tmp_path):
+    """HDF5 records the filter per dataset; the reader does not care."""
+    import h5py
+
+    cube = _cube()
+    with h5py.File(tmp_path / "old.h5", "w") as fh:
+        g = fh.create_group("p")
+        g.attrs["payload_type"] = "element_cube"
+        g.attrs["element_names"] = list(cube.element_names)
+        g.attrs["space"] = "raw"
+        g.attrs["downsample_factor"] = 2
+        g.attrs["header_trim_px"] = 100
+        g.attrs["left_trim_px"] = 0
+        g.create_dataset("pixels", data=cube.pixels, compression="gzip")
+    with h5py.File(tmp_path / "old.h5", "r") as fh:
+        back = payload_from_h5(fh["p"])
+    np.testing.assert_array_equal(back.pixels, cube.pixels)

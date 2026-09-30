@@ -43,21 +43,28 @@ def payload_path(recipe: str, port: str, cache_dir: str | Path) -> Path:
 
 def store_payload(
     recipe: str, port: str, payload, cache_dir: str | Path,
-    upstream: dict | None = None,
+    upstream: dict | None = None, compression: str = "lzf",
 ) -> Path:
     """Write a payload to the cache. ``upstream`` maps the producing
     node's input ports to the recipe hashes they consumed; it is stored
-    as an attribute so a cache scan can tell which outputs belong together."""
+    as an attribute so a cache scan can tell which outputs belong together.
+    ``compression`` is the HDF5 filter: "lzf" (default), "gzip" or "none"."""
     path = payload_path(recipe, port, cache_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".h5.tmp")
+    tmp = _tmp_path(path)
     with h5py.File(tmp, "w") as fh:
         group = fh.create_group("payload")
-        payload.to_h5(group)
+        payload.to_h5(group, compression=compression)
         if upstream:
             group.attrs["upstream"] = json.dumps(dict(sorted(upstream.items())))
     os.replace(tmp, path)
     return path
+
+
+def _tmp_path(path: Path) -> Path:
+    """A tmp name unique to this process, so two runs that race on the same
+    entry never write the same file."""
+    return path.with_name(f"{path.name}.{os.getpid()}.tmp")
 
 
 def load_upstream(path: str | Path) -> dict:
