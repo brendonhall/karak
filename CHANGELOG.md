@@ -69,7 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the run summary. `--plain` (automatic when stdout is not a terminal)
   prints the same information as lines.
 - `stepwise` builtin flow, which grows one step at a time; it currently
-  runs the load, mask, and denoise steps.
+  runs the load, mask, denoise, and normalize steps.
+- `karak view` also opens the normalize step's cube as `nrm: <element>`
+  layers, with contrast limits from the 1st and 99th percentiles of the
+  mineral pixels.
 - Bilateral filter core (`karak.preprocessing.bilateral`): a numpy
   reference and a CuPy kernel for the bilateral and the joint (guided)
   bilateral filter. `--device cuda` on the denoise step now runs this

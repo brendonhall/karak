@@ -42,6 +42,15 @@
         "option": 2,
         "device": "cpu"
       }
+    },
+    {
+      "id": "nrm",
+      "type": "normalize",
+      "params": {
+        "method": "zscore",
+        "accumulate": "float64",
+        "device": "cpu"
+      }
     }
   ],
   "edges": [
@@ -75,6 +84,28 @@
       },
       "to": {
         "node": "dn",
+        "port": "masks"
+      }
+    },
+    {
+      "id": "e4",
+      "from": {
+        "node": "dn",
+        "port": "cube"
+      },
+      "to": {
+        "node": "nrm",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e5",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "nrm",
         "port": "masks"
       }
     }
