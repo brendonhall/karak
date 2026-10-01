@@ -274,6 +274,7 @@ Per-channel z-score normalization over mineral pixels; non-mineral pixels are se
 | name | type | default | bounds / choices | help |
 |------|------|---------|------------------|------|
 | `method` | enum | `zscore` | zscore | Method |
+| `accumulate` | enum | `float64` | float64 \| float32 | Precision of the mean/std sums: float64 is accurate; float32 reproduces the published NWA 4587 baseline (std up to 3.6 % off on 12.5 M pixels) |
 | `device` | str | `cpu` | cpu \| cuda | cpu or cuda (the executor moves the inputs; needs karak[cuda]) |
 
 ## `pca` — PCA

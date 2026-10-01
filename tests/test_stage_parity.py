@@ -177,7 +177,7 @@ def test_denoise_parity(raw_cube, mask_set, synthetic_scene):
 
 def test_normalize_parity(raw_cube, mask_set, synthetic_scene):
     denoised = raw_cube.replace(space=Space.DENOISED)
-    expected, means, stds = zscore_normalize(synthetic_scene, mask_set.mineral_mask)
+    expected, means, stds = zscore_normalize(synthetic_scene, mask_set.mineral_mask, accumulate="float64")
 
     out = get("normalize")().run({"cube": denoised, "masks": mask_set})
 

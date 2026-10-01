@@ -810,6 +810,7 @@
       "type": "object",
       "required": [
         "method",
+        "accumulate",
         "device"
       ],
       "properties": {
@@ -820,6 +821,16 @@
             "zscore"
           ],
           "default": "zscore"
+        },
+        "accumulate": {
+          "type": "string",
+          "title": "Accumulate",
+          "description": "Precision of the mean/std sums: float64 is accurate; float32 reproduces the published NWA 4587 baseline (std up to 3.6 % off on 12.5 M pixels)",
+          "enum": [
+            "float64",
+            "float32"
+          ],
+          "default": "float64"
         },
         "device": {
           "type": "string",

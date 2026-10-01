@@ -55,7 +55,7 @@ def chain():
     H, W, _ = cube.shape
     mask = create_mineral_mask(cube, valid_mask=None, min_object_size=10)
     denoised = denoise_cube(cube, mask, denoise_cfg(method="bilateral"))
-    normalized, means, stds = zscore_normalize(denoised, mask)
+    normalized, means, stds = zscore_normalize(denoised, mask, accumulate="float64")
     _, features_full, mineral_indices = fit_pca(
         normalized, mask, pca_cfg(n_components=3, random_state=0)
     )
