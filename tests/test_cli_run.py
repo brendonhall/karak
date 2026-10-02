@@ -132,7 +132,8 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
         "msk.masks -> MaskSet mineral",
         "dn.cube -> ElementCube 32×32×3 float32", "space=denoised",
         "nrm.cube -> ElementCube 32×32×3 float32", "space=normalized",
-        "run finished in", "(4 ran, 0 cached)", "Found 4 matching files",
+        "pca.features -> PCAFeatures",
+        "run finished in", "(5 ran, 0 cached)", "Found 4 matching files",
     ]:
         assert expected in out, expected
     assert "nodes:" not in out
@@ -144,7 +145,8 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     assert "msk: cached (" in out
     assert "dn: cached (" in out
     assert "nrm: cached (" in out
-    assert "(0 ran, 4 cached)" in out
+    assert "pca: cached (" in out
+    assert "(0 ran, 5 cached)" in out
 
 
 def test_run_links_cached_outputs_to_their_upstream_recipes(tmp_path, scene):
@@ -325,6 +327,7 @@ def test_stepwise_on_cuda_keeps_the_cube_on_the_device(tmp_path, scene):
     assert nodes["src"]["outputs"]["cube"]["device"] == "cpu"
     assert nodes["dn"]["outputs"]["cube"]["device"] == "cuda"
     assert nodes["nrm"]["outputs"]["cube"]["device"] == "cuda"
+    assert nodes["pca"]["outputs"]["features"]["device"] == "cuda"
 
 
 def test_explicit_set_device_overrides_the_device_flag(tmp_path, monkeypatch):

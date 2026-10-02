@@ -140,21 +140,23 @@ def test_apply_device_no_declaring_nodes_is_identity():
     assert result is graph
 
 
-def test_stepwise_runs_load_mask_denoise_then_normalize():
+def test_stepwise_runs_load_mask_denoise_normalize_then_pca():
     from karak.stages.denoise import DenoiseStage
     from karak.stages.load import LoadElementsStage
     from karak.stages.mask import MaskStage
     from karak.stages.normalize import NormalizeStage
+    from karak.stages.pca import PCAStage
 
     graph = builtin_flow("stepwise")
     assert [(n.id, n.type) for n in graph.nodes] == [
         ("src", "load_elements"), ("msk", "mask"), ("dn", "denoise"),
-        ("nrm", "normalize"),
+        ("nrm", "normalize"), ("pca", "pca"),
     ]
     assert graph.node("src").params == LoadElementsStage.template()
     assert graph.node("msk").params == MaskStage.template()
     assert graph.node("dn").params == DenoiseStage.template()
     assert graph.node("nrm").params == NormalizeStage.template()
+    assert graph.node("pca").params == PCAStage.template()
     assert [(e.src.node, e.src.port, e.dst.node, e.dst.port)
             for e in graph.edges] == [
         ("src", "cube", "msk", "cube"),
@@ -162,4 +164,6 @@ def test_stepwise_runs_load_mask_denoise_then_normalize():
         ("msk", "masks", "dn", "masks"),
         ("dn", "cube", "nrm", "cube"),
         ("msk", "masks", "nrm", "masks"),
+        ("nrm", "cube", "pca", "cube"),
+        ("msk", "masks", "pca", "masks"),
     ]

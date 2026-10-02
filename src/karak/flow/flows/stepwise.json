@@ -51,6 +51,18 @@
         "accumulate": "float64",
         "device": "cpu"
       }
+    },
+    {
+      "id": "pca",
+      "type": "pca",
+      "params": {
+        "n_components": 0,
+        "variance_threshold": 0.95,
+        "min_components": 5,
+        "subsample_fraction": 0.0,
+        "random_state": 42,
+        "device": "cpu"
+      }
     }
   ],
   "edges": [
@@ -106,6 +118,28 @@
       },
       "to": {
         "node": "nrm",
+        "port": "masks"
+      }
+    },
+    {
+      "id": "e6",
+      "from": {
+        "node": "nrm",
+        "port": "cube"
+      },
+      "to": {
+        "node": "pca",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e7",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "pca",
         "port": "masks"
       }
     }
