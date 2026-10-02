@@ -112,6 +112,7 @@ def _bench_devices(tmp_path, monkeypatch, argv, cuda=True):
         return {}
 
     monkeypatch.setattr(accel, "cuda_available", lambda: cuda)
+    monkeypatch.setattr(accel, "gpu_name", lambda: None)   # no CuPy in CI
     monkeypatch.setattr(executor, "run", fake_run)
     out = str(tmp_path / "o")
     assert bench_main(["--builtin", "global", "--input", "", "--out", out,
