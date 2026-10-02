@@ -437,3 +437,49 @@ def test_scan_omits_the_mask_when_the_denoised_cube_names_a_missing_one(tmp_path
     picked = pick_outputs(find_cache_files(cache))
     assert picked.denoised.recipe == "d1"
     assert picked.masks is None
+def _normalized(fill=0.0):
+    cube = _cube(space=Space.NORMALIZED)
+    rng = np.random.default_rng(3)
+    pixels = rng.normal(0.0, 1.0, cube.pixels.shape).astype(np.float32)
+    pixels[0, 0, :] = 50.0          # one outlier per channel
+    return cube.replace(pixels=pixels)
+
+
+def test_pick_normalized_cube_linked_to_the_denoised_cube_from_a_cache_scan(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "dn", "cube", _denoised(), 2000, upstream={"cube": "raw"})
+    _store(cache, "nrm", "cube", _normalized(), 3000, upstream={"cube": "dn", "masks": "m"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert (picked.cube.recipe, picked.denoised.recipe) == ("raw", "dn")
+    assert picked.normalized.recipe == "nrm"
+    assert picked.other_cubes == []
+
+
+def test_pick_no_normalized_cube_without_a_denoised_one(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "nrm", "cube", _normalized(), 3000, upstream={"cube": "other"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.denoised is None and picked.normalized is None
+
+
+def test_normalized_layers_use_contrast_limits_from_the_data():
+    specs = layer_specs(_cube(), None, None, _denoised(), _normalized(), show=("Si",))
+    names = [s.name for s in specs]
+    assert names[-3:] == ["nrm: Al", "nrm: Fe-K", "nrm: Si"]
+    by_name = {s.name: s for s in specs}
+    lo, hi = by_name["nrm: Si"].contrast_limits
+    assert lo < 0 < hi
+    assert hi < 50.0                      # the outlier does not set the range
+    assert by_name["nrm: Si"].visible and not by_name["nrm: Al"].visible
+    assert by_name["Si"].contrast_limits == (0.0, 1.0)
+
+
+def test_normalized_contrast_limits_ignore_the_zeroed_background():
+    cube = _normalized()
+    pixels = cube.pixels.copy()
+    pixels[:2] = 0.0                       # half the image is non-mineral
+    specs = layer_specs(_cube(), None, None, None, cube.replace(pixels=pixels))
+    lo, hi = {s.name: s for s in specs}["nrm: Al"].contrast_limits
+    assert lo < -0.1 and hi > 0.1

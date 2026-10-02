@@ -140,21 +140,26 @@ def test_apply_device_no_declaring_nodes_is_identity():
     assert result is graph
 
 
-def test_stepwise_runs_load_mask_then_denoise():
+def test_stepwise_runs_load_mask_denoise_then_normalize():
     from karak.stages.denoise import DenoiseStage
     from karak.stages.load import LoadElementsStage
     from karak.stages.mask import MaskStage
+    from karak.stages.normalize import NormalizeStage
 
     graph = builtin_flow("stepwise")
     assert [(n.id, n.type) for n in graph.nodes] == [
         ("src", "load_elements"), ("msk", "mask"), ("dn", "denoise"),
+        ("nrm", "normalize"),
     ]
     assert graph.node("src").params == LoadElementsStage.template()
     assert graph.node("msk").params == MaskStage.template()
     assert graph.node("dn").params == DenoiseStage.template()
+    assert graph.node("nrm").params == NormalizeStage.template()
     assert [(e.src.node, e.src.port, e.dst.node, e.dst.port)
             for e in graph.edges] == [
         ("src", "cube", "msk", "cube"),
         ("src", "cube", "dn", "cube"),
         ("msk", "masks", "dn", "masks"),
+        ("dn", "cube", "nrm", "cube"),
+        ("msk", "masks", "nrm", "masks"),
     ]

@@ -150,11 +150,12 @@ by `edges` (output port to input port). Four builtins ship with karak:
 | `global` | `hdbscan_global → noise_assign` |
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
-| `stepwise` | none yet: load, mask, and denoise steps only |
+| `stepwise` | none yet: load, mask, denoise, and normalize steps only |
 
 `stepwise` grows one step at a time as steps join the dashboard work;
-today it runs the load step (`src`), the mask step (`msk`), and the
-denoise step (`dn`, bilateral with the `global` values). The
+today it runs the load step (`src`), the mask step (`msk`), the denoise
+step (`dn`, bilateral with the `global` values), and the normalize step
+(`nrm`, z-scores with float64 sums). The
 builtin leaves `msk.valid_mask_path` at `null` (no polygon); set it in your
 own copy (`karak flow init --builtin stepwise -o FILE`), for example to
 `"{input}/mask/Valid_mask.csv"`.
@@ -344,7 +345,7 @@ log), the same information prints as plain lines.
 `karak run` exits with 1 when a step fails and with 130 on Ctrl-C;
 completed steps stay cached.
 
-To inspect the load, mask, and denoise steps' outputs, open them in
+To inspect the load, mask, denoise, and normalize steps' outputs, open them in
 napari (install the extra once with `uv sync --extra view`):
 
 ```
@@ -355,20 +356,24 @@ uv run --extra view karak view BASE [--show Fe-K,Si] [--mask mask/Valid_mask.csv
 cached `.h5` file copied from another machine. Given an `--out` value, the
 command opens the outputs listed in the latest run record
 (`{out}/runs/latest/run.json`): the load step's element cube, the BSE
-image from the same step, the mask step's masks, and the denoise step's
-cube. Without a record (or if its cache files are gone) it opens the newest
-cached load cube, and the newest cached masks and denoised cube computed
-from it, instead (each cached output records the recipes it consumed;
+image from the same step, the mask step's masks, the denoise step's cube,
+and the normalize step's cube. Without a record (or if its cache files are
+gone) it opens the newest cached load cube, and the newest cached masks
+and denoised cube computed from it and the normalized cube computed from
+that, instead (each cached output records the recipes it consumed;
 outputs from another run or cube are never overlaid; the masks shown
 with a denoised cube are the ones it consumed, and a cached file without
 these recipes is only opened through its run record). It shows one gray
 layer per element (only `--show` elements visible), the denoised elements
-as `dn: <element>` layers (visible for the same `--show` elements), then
+as `dn: <element>` layers and the z-scores as `nrm: <element>` layers
+(both visible for the same `--show` elements; z-score layers take their
+contrast limits from the 1st and 99th percentiles of the mineral pixels),
+then
 the mineral mask as a labels layer (visible) and, when the flow set
 `msk.valid_mask_path`, the valid mask as a second labels layer (hidden).
 Toggle an element and its `dn:` layer to compare raw and denoised. With
-the denoised cube the viewer holds two cubes in memory (about 4 GB for
-NWA 4587). Every layer is placed in full-resolution
+the denoised and normalized cubes the viewer holds three cubes in memory
+(about 6 GB for NWA 4587). Every layer is placed in full-resolution
 coordinates, so the cursor position matches the original exports and a
 napari shapes CSV such as the valid-area mask lines up. It loads the whole
 cube into memory (about 2 GB for NWA 4587).

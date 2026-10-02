@@ -1,14 +1,16 @@
-"""karak view: open a run's cached load, mask and denoise outputs in napari.
+"""karak view: open a run's cached load, mask, denoise and normalize outputs in napari.
 
 It opens the outputs listed in the run's latest record
 (``{out}/runs/latest/run.json``): the load step's ElementCube (the first
 with no upstream cube), the BseImage from the same step, the first MaskSet
-(the mask step's), and the denoised ElementCube computed from that cube
-(the denoise step's). Without a record it scans the cache, which names
-files by recipe hash, reading each file's ``payload_type`` and upstream
-recipes to find the newest of each. Elements are image layers, the
-denoised elements ``dn: <element>`` layers, and the mineral mask and the
-valid mask labels layers. Layers are placed in full-resolution coordinates
+(the mask step's), the denoised ElementCube computed from that cube (the
+denoise step's), and the normalized ElementCube computed from the denoised
+one (the normalize step's). Without a record it scans the cache, which
+names files by recipe hash, reading each file's ``payload_type`` and
+upstream recipes to find the newest of each. Elements are image layers,
+the denoised elements ``dn: <element>`` layers, the z-scores
+``nrm: <element>`` layers with contrast limits from the data, and the
+mineral mask and the valid mask labels layers. Layers are placed in full-resolution coordinates
 (scale = downsample factor, offset = trims) so positions match the
 original exports and the napari shapes the valid mask was drawn with.
 
@@ -65,6 +67,7 @@ class PickedOutputs:
     bse: CacheFile | None
     masks: CacheFile | None
     denoised: CacheFile | None
+    normalized: CacheFile | None
     other_cubes: list
 
 
@@ -132,10 +135,12 @@ def find_run_outputs(target: str | Path) -> list[CacheFile] | None:
 
 def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedOutputs:
     """The load step's ElementCube, the BseImage from the same step, the
-    MaskSet and the denoised ElementCube computed from that cube, and the
-    other cubes.
+    MaskSet and the denoised ElementCube computed from that cube, the
+    normalized ElementCube computed from the denoised one, and the other
+    cubes.
 
-    Cubes are told apart by their ``space`` tag (raw, denoised). With a run
+    Cubes are told apart by their ``space`` tag (raw, denoised,
+    normalized). With a run
     record (``newest_first=False``) every listed file comes from that run,
     so the first cube of each space is taken in flow order, whether or not
     the file carries upstream recipes (files written before the attribute
@@ -143,9 +148,10 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
     is shown only when its upstream ``cube`` is the selected raw cube, and
     the masks shown are the ones that denoised cube consumed (its upstream
     ``masks``), so a newer mask from an interrupted rerun is never overlaid
-    on an older denoised cube. Without a denoised cube the newest masks
-    computed from the raw cube are shown. Another run's outputs are never
-    overlaid.
+    on an older denoised cube; the normalized cube shown is one whose
+    upstream ``cube`` is that denoised cube. Without a denoised cube the
+    newest masks computed from the raw cube are shown. Another run's
+    outputs are never overlaid.
     """
     def newest(found):
         found = list(found)
@@ -170,6 +176,13 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
         denoised_cubes = [e for e in denoised_cubes
                           if e.upstream.get("cube") == cube.recipe]
     denoised = (denoised_cubes or [None])[0]
+    normalized = None
+    if denoised is not None:
+        normalized_cubes = [e for e in cubes if is_space(e, "normalized")]
+        if newest_first:
+            normalized_cubes = [e for e in normalized_cubes
+                                if e.upstream.get("cube") == denoised.recipe]
+        normalized = (normalized_cubes or [None])[0]
     if not newest_first:
         masks = (mask_sets or [None])[0]
     elif denoised is not None:
@@ -178,15 +191,33 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
     else:
         masks = (newest(e for e in mask_sets
                         if e.upstream.get("cube") == cube.recipe) or [None])[0]
-    others = [e for e in cubes if e is not cube and e is not denoised]
-    return PickedOutputs(cube, bse, masks, denoised, others)
+    shown = (cube, denoised, normalized)
+    others = [e for e in cubes if all(e is not s for s in shown)]
+    return PickedOutputs(cube, bse, masks, denoised, normalized, others)
 
 
-def layer_specs(cube, bse, masks=None, denoised=None,
+def _zscore_limits(channel: np.ndarray) -> tuple:
+    """Contrast limits for a z-score channel: the 1st and 99th percentiles
+    of the mineral pixels (non-zero), from a strided sample so a 2 GB cube
+    stays quick."""
+    step = max(1, int(np.sqrt(channel.size / 1_000_000)))
+    sample = channel[::step, ::step]
+    values = sample[sample != 0]
+    if values.size == 0:
+        return (-1.0, 1.0)
+    lo, hi = np.percentile(values, [1, 99])
+    if lo == hi:
+        lo, hi = lo - 1.0, hi + 1.0
+    return (float(lo), float(hi))
+
+
+def layer_specs(cube, bse, masks=None, denoised=None, normalized=None,
                 show=("Fe-K",)) -> list[LayerSpec]:
     """BSE, one layer per element, the denoised cube's elements as
-    ``dn: <element>``, then the masks as labels layers, all placed in
-    full-resolution pixels. Only ``show`` elements start visible."""
+    ``dn: <element>``, the normalized cube's as ``nrm: <element>`` (z-scores,
+    so contrast limits come from the data), then the masks as labels
+    layers, all placed in full-resolution pixels. Only ``show`` elements
+    start visible."""
     factor = cube.downsample_factor
     offset = (factor - 1) / 2  # a block's center, in full-resolution pixels
     translate = (
@@ -206,6 +237,12 @@ def layer_specs(cube, bse, masks=None, denoised=None,
         for i, name in enumerate(denoised.element_names):
             specs.append(LayerSpec(f"dn: {name}", denoised.pixels[..., i],
                                    scale, translate, name in visible))
+    if normalized is not None:
+        for i, name in enumerate(normalized.element_names):
+            channel = normalized.pixels[..., i]
+            specs.append(LayerSpec(f"nrm: {name}", channel, scale, translate,
+                                   name in visible,
+                                   contrast_limits=_zscore_limits(channel)))
     if masks is not None:
         specs.append(LayerSpec("mineral mask", masks.mineral_mask.astype(np.uint8),
                                scale, translate, True, kind="labels"))
@@ -248,7 +285,7 @@ def open_viewer(specs: list[LayerSpec], shapes) -> None:
 def view_main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="karak view",
-        description="Open the cached load, mask and denoise outputs of a run in napari.",
+        description="Open the cached load, mask, denoise and normalize outputs of a run in napari.",
     )
     parser.add_argument(
         "path",
@@ -295,7 +332,8 @@ def view_main(argv: list[str]) -> int:
     bse = load(picked.bse) if picked.bse is not None else None
     masks = load(picked.masks) if picked.masks is not None else None
     denoised = load(picked.denoised) if picked.denoised is not None else None
-    specs = layer_specs(cube, bse, masks, denoised,
+    normalized = load(picked.normalized) if picked.normalized is not None else None
+    specs = layer_specs(cube, bse, masks, denoised, normalized,
                         show=tuple(args.show.split(",")))
     shapes = read_napari_shapes(args.mask) if args.mask else []
     open_viewer(specs, shapes)
