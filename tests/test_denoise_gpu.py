@@ -21,6 +21,23 @@ def test_cuda_without_gpu_raises(monkeypatch):
         bilateral_denoise_cube(cube, mask, sigma_color=None, sigma_spatial=1.0, device="cuda")
 
 
+def test_cuda_without_cucim_bilateral_is_a_clear_stage_error(monkeypatch):
+    """cucim (25.6 through 26.8) ships no denoise_bilateral; the CUDA path
+    must say so instead of leaking an ImportError."""
+    import sys
+    import types
+
+    import karak.accel as accel
+
+    monkeypatch.setattr(accel, "get_array_module", lambda device: np)
+    for name in ("cucim", "cucim.skimage", "cucim.skimage.restoration"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    cube = make_synthetic_scene()
+    mask = cube.sum(axis=-1) > 0
+    with pytest.raises(StageError, match="cucim.*denoise_bilateral.*device=cpu"):
+        bilateral_denoise_cube(cube, mask, sigma_color=None, sigma_spatial=1.0, device="cuda")
+
+
 def test_anisotropic_cuda_unsupported():
     cube = make_synthetic_scene()
     mask = cube.sum(axis=-1) > 0
@@ -38,6 +55,8 @@ def test_anisotropic_cuda_unsupported():
 
 
 @pytest.mark.skipif(not cuda_available(), reason="no CUDA")
+@pytest.mark.xfail(strict=True, raises=StageError,
+                   reason="cucim has no denoise_bilateral; a CuPy port is a follow-up")
 def test_bilateral_gpu_matches_cpu():
     cube = make_synthetic_scene()
     mask = cube.sum(axis=-1) > 0

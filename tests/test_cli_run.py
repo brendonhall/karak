@@ -129,8 +129,9 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     for expected in [
         "flow=stepwise", "src.colormap = lut:", "src: 4/4",
         "src.cube -> ElementCube 32×32×3 float32", "src.bse -> BseImage",
-        "msk.masks -> MaskSet mineral", "run finished in",
-        "(2 ran, 0 cached)", "Found 4 matching files",
+        "msk.masks -> MaskSet mineral",
+        "dn.cube -> ElementCube 32×32×3 float32", "space=denoised",
+        "run finished in", "(3 ran, 0 cached)", "Found 4 matching files",
     ]:
         assert expected in out, expected
     assert "nodes:" not in out
@@ -140,7 +141,8 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     assert "src: cached (" in out
     assert "src.cube -> ElementCube 32×32×3" in out
     assert "msk: cached (" in out
-    assert "(0 ran, 2 cached)" in out
+    assert "dn: cached (" in out
+    assert "(0 ran, 3 cached)" in out
 
 
 def test_run_links_cached_outputs_to_their_upstream_recipes(tmp_path, scene):

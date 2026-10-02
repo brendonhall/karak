@@ -33,7 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the run summary. `--plain` (automatic when stdout is not a terminal)
   prints the same information as lines.
 - `stepwise` builtin flow, which grows one step at a time; it currently
-  runs the load and mask steps.
+  runs the load, mask, and denoise steps.
+- The denoise step reports progress per element channel to the dashboard,
+  also with `--workers` (channels complete in any order) and on CUDA;
+  `denoise_cube` and the per-method functions take an `on_channel` callback.
 - Payloads have `summary()`; the cache stores it next to each payload.
 - `karak view PATH` opens the newest cached element cube and its BSE image
   in napari (optional `karak[view]` extra): one gray layer per element,
@@ -46,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set one. Cached payloads record the recipes of the outputs they consumed
   (an `upstream` attribute), so a cache scan overlays only masks computed
   from the cube it opens.
+- `karak view` also opens the denoise step's cube as `dn: <element>`
+  layers next to the raw elements, visible for the same `--show` elements.
+  Cubes are told apart by their space tag, so a cache scan never mistakes
+  a denoised cube for a raw one, also for files written before upstream
+  recipes were recorded. A cache scan shows a denoised cube with the masks
+  it consumed, never a newer mask from an interrupted rerun.
 - Exit codes for `karak run`: 1 when a step fails, 130 on Ctrl-C.
 - Warnings raised while loading maps (for example PIL's
   `DecompressionBombWarning` on 104 Mpx exports) are logged once through
@@ -102,6 +111,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `--device cuda` on the denoise step raises a clear `StageError` instead
+  of an `ImportError`: cucim (25.6 through 26.8) ships no
+  `denoise_bilateral`, so the GPU bilateral path has never run. A CuPy
+  bilateral filter is a follow-up; the GPU parity test is marked xfail
+  until then.
 - `load_valid_mask` failed with a string path (every flow run with
   `mask.valid_mask_path` set) after the shapes-CSV refactor.
 - The mask step no longer triggers scikit-image's `min_size` deprecation

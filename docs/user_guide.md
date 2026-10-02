@@ -150,10 +150,11 @@ by `edges` (output port to input port). Four builtins ship with karak:
 | `global` | `hdbscan_global → noise_assign` |
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
-| `stepwise` | none yet: load and mask steps only |
+| `stepwise` | none yet: load, mask, and denoise steps only |
 
 `stepwise` grows one step at a time as steps join the dashboard work;
-today it runs the load step (`src`) and the mask step (`msk`). The
+today it runs the load step (`src`), the mask step (`msk`), and the
+denoise step (`dn`, bilateral with the `global` values). The
 builtin leaves `msk.valid_mask_path` at `null` (no polygon); set it in your
 own copy (`karak flow init --builtin stepwise -o FILE`), for example to
 `"{input}/mask/Valid_mask.csv"`.
@@ -290,7 +291,8 @@ On a terminal, `karak run` shows a live dashboard: the run context
 (input, output, workers, device, cache, memory), a table of steps with
 their status and time, the running step's parameters with changed values
 first, a progress bar where the stage reports progress (the load step
-reports one tick per file), output summaries such as
+reports one tick per file, the denoise step one per element), output
+summaries such as
 `ElementCube 6525×3990×19 float32 1.98 GB space=raw`, and the last five
 log lines. A cached step shows the first 8 characters of its recipe hash.
 When the run ends, the last frame stays on screen as the summary.
@@ -301,8 +303,8 @@ log), the same information prints as plain lines.
 `karak run` exits with 1 when a step fails and with 130 on Ctrl-C;
 completed steps stay cached.
 
-To inspect the load and mask steps' outputs, open them in napari (install
-the extra once with `uv sync --extra view`):
+To inspect the load, mask, and denoise steps' outputs, open them in
+napari (install the extra once with `uv sync --extra view`):
 
 ```
 uv run --extra view karak view BASE [--show Fe-K,Si] [--mask mask/Valid_mask.csv]
@@ -312,14 +314,20 @@ uv run --extra view karak view BASE [--show Fe-K,Si] [--mask mask/Valid_mask.csv
 cached `.h5` file copied from another machine. Given an `--out` value, the
 command opens the outputs listed in the latest run record
 (`{out}/runs/latest/run.json`): the load step's element cube, the BSE
-image from the same step, and the mask step's masks. Without a record (or
-if its cache files are gone) it opens the newest cached element cube and
-the newest cached masks computed from that cube instead (each cached
-output records the recipes it consumed; masks from another run or cube are
-never overlaid). It shows one gray layer per element (only
-`--show` elements visible), then the mineral mask as a labels layer
-(visible) and, when the flow set `msk.valid_mask_path`, the valid mask as a
-second labels layer (hidden). Every layer is placed in full-resolution
+image from the same step, the mask step's masks, and the denoise step's
+cube. Without a record (or if its cache files are gone) it opens the newest
+cached load cube, and the newest cached masks and denoised cube computed
+from it, instead (each cached output records the recipes it consumed;
+outputs from another run or cube are never overlaid; the masks shown
+with a denoised cube are the ones it consumed, and a cached file without
+these recipes is only opened through its run record). It shows one gray
+layer per element (only `--show` elements visible), the denoised elements
+as `dn: <element>` layers (visible for the same `--show` elements), then
+the mineral mask as a labels layer (visible) and, when the flow set
+`msk.valid_mask_path`, the valid mask as a second labels layer (hidden).
+Toggle an element and its `dn:` layer to compare raw and denoised. With
+the denoised cube the viewer holds two cubes in memory (about 4 GB for
+NWA 4587). Every layer is placed in full-resolution
 coordinates, so the cursor position matches the original exports and a
 napari shapes CSV such as the valid-area mask lines up. It loads the whole
 cube into memory (about 2 GB for NWA 4587).

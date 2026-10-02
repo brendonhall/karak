@@ -28,6 +28,20 @@
         "min_object_size": 100,
         "valid_mask_path": null
       }
+    },
+    {
+      "id": "dn",
+      "type": "denoise",
+      "params": {
+        "method": "bilateral",
+        "sigma_color": null,
+        "sigma_spatial": 1.0,
+        "niter": 10,
+        "kappa": 50.0,
+        "gamma": 0.1,
+        "option": 2,
+        "device": "cpu"
+      }
     }
   ],
   "edges": [
@@ -40,6 +54,28 @@
       "to": {
         "node": "msk",
         "port": "cube"
+      }
+    },
+    {
+      "id": "e2",
+      "from": {
+        "node": "src",
+        "port": "cube"
+      },
+      "to": {
+        "node": "dn",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e3",
+      "from": {
+        "node": "msk",
+        "port": "masks"
+      },
+      "to": {
+        "node": "dn",
+        "port": "masks"
       }
     }
   ]
