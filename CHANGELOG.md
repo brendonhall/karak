@@ -22,12 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   within 1e-3, explained variance ratios within 1e-5). cuML HDBSCAN now
   takes and returns device arrays. cuML HDBSCAN on the global flow at
   NWA 4587 scale runs out of memory on a 24 GB GPU; `subsample_n` is
-  ignored on cuda. On large images the cpu and cuda normalize steps
-  differ, because the cpu path sums the mineral-pixel means and standard
-  deviations in float32 (on NWA 4587 the standard deviations differ by up
-  to 3.6 %); the difference carries into PCA and the labels. The recipe
-  hashes of `nrm`, `pca` and
-  downstream nodes changed; the shipped flows were regenerated.
+  ignored on cuda. The recipe hashes of `nrm`, `pca` and downstream nodes
+  changed; the shipped flows were regenerated.
 - API change for notebook callers: `denoise_cube(..., device="cuda")`,
   `run_hdbscan(..., device="cuda")` and `fit_pca` with CuPy input now return
   CuPy arrays.
@@ -174,6 +170,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The normalize step summed the mineral-pixel means and standard deviations
+  in float32 along a 12.5 M-row axis, row by row. On the NWA 4587 denoised
+  cube the means were off by up to 0.013 (0.13 z-units) and the standard
+  deviations by up to 3.6 %. The sums now run in float64 (new normalize
+  param `accumulate`, default `float64`). `accumulate: float32` reproduces
+  the published baseline exactly. The recipe hashes of `nrm` and every
+  downstream node changed, so cached normalize outputs are recomputed.
 - The GPU bilateral path never ran: cucim (25.6 through 26.8) ships no
   `denoise_bilateral`. `--device cuda` on the denoise step now uses
   karak's own CuPy kernel (see Added).

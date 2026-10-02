@@ -17,9 +17,14 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+ACCUMULATE = ("float64", "float32")
+
+
 def zscore_normalize(
     cube: np.ndarray,
     mask: np.ndarray,
+    *,
+    accumulate: str,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Per-channel z-score normalization over mineral pixels.
 
@@ -36,6 +41,12 @@ def zscore_normalize(
         (H, W, C) element cube (raw or denoised [0,1] values).
     mask : np.ndarray
         (H, W) boolean mask, True = mineral pixel.
+    accumulate : str
+        Precision of the mean and standard-deviation sums. ``"float64"``
+        is accurate. ``"float32"`` reproduces the published NWA 4587
+        baseline: numpy sums a float32 (N, C) array along axis 0 row by
+        row in float32, and on 12.5 M pixels the standard deviations come
+        out up to 3.6 % off. On CuPy the reduction is a tree either way.
 
     Returns
     -------
@@ -52,8 +63,11 @@ def zscore_normalize(
     H, W, C = cube.shape
     mineral_data = cube[mask]  # (N, C)
 
-    means = mineral_data.mean(axis=0)  # (C,)
-    stds = mineral_data.std(axis=0)  # (C,)
+    if accumulate not in ACCUMULATE:
+        raise ValueError(f"accumulate must be one of {ACCUMULATE}, got {accumulate!r}")
+    # float32 output either way; only the sums run at the requested precision
+    means = mineral_data.mean(axis=0, dtype=accumulate).astype(xp.float32)  # (C,)
+    stds = mineral_data.std(axis=0, dtype=accumulate).astype(xp.float32)  # (C,)
 
     # Guard against zero-std channels (constant values)
     stds_safe = stds.copy()

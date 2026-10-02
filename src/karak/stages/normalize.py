@@ -26,6 +26,11 @@ class NormalizeStage(Stage):
     ]
     PARAMS = [
         Param("method", "enum", "zscore", "Method", choices=("zscore",)),
+        Param("accumulate", "enum", "float64", "Accumulate",
+              "Precision of the mean/std sums: float64 is accurate; float32 "
+              "reproduces the published NWA 4587 baseline (std up to 3.6 % "
+              "off on 12.5 M pixels)",
+              choices=("float64", "float32")),
         Param("device", "str", "cpu", "Device",
               "cpu or cuda (the executor moves the inputs; needs karak[cuda])",
               choices=("cpu", "cuda")),
@@ -34,7 +39,8 @@ class NormalizeStage(Stage):
     def apply(self, inputs: dict, params: dict) -> dict:
         cube = inputs["cube"]
         normalized, means, stds = zscore_normalize(
-            cube.pixels, inputs["masks"].mineral_mask
+            cube.pixels, inputs["masks"].mineral_mask,
+            accumulate=params["accumulate"],
         )
         return {
             "cube": cube.replace(

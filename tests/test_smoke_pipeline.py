@@ -29,7 +29,7 @@ def test_smoke_two_phase_recovery(synthetic_scene):
 
     # Denoise raw [0,1] cube, then z-score normalize on mineral pixels
     denoised = denoise_cube(cube, mask, denoise_cfg(method="bilateral"))
-    normalized, means, stds = zscore_normalize(denoised, mask)
+    normalized, means, stds = zscore_normalize(denoised, mask, accumulate="float64")
     assert normalized.shape == (H, W, C)
     assert means.shape == (C,)
 

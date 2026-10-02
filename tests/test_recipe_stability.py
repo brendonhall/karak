@@ -13,6 +13,9 @@ removed. Same results, new recipe, so rare and its downstream nodes (knn,
 stats, fp) carry new hashes; everything upstream is unchanged.
 2026-09-30: normalize and pca gained a `device` param, so `nrm`, `pca` and
 everything downstream carry new hashes.
+2026-10-01: normalize gained `accumulate` (float64 by default; float32
+reproduces the published baseline), so `nrm` and everything downstream carry
+new hashes again.
 """
 
 from __future__ import annotations
@@ -30,27 +33,27 @@ _SHARED = {
     "src": "c733f2990a76f1f1650fd2fc685dede3",
     "msk": "de849a4979083e3a9d90a9ad611e1324",
     "dn": "cb5acfb9994e901758fd9e32846a090a",
-    "nrm": "e3dcb4d85ce5f90b92d0301d7d583bd4",
-    "pca": "45a7ea9a77dab82a9b598d1925bf9a26",
+    "nrm": "e22f6388e1c0d49a47ba28742638754f",
+    "pca": "700ce0030be91ee0d4d2e06cea32ef2c",
 }
 
 GOLDEN = {
     "global": {**_SHARED,
-               "hdb": "06b13f0c6949ffeaf444b1cdd52697e9",
-               "knn": "e794780fafbcb13effd4b08d2017e20a",
-               "stats": "8622d05748c5a5fb27a50e63e2f6718a",
-               "fp": "882515ae986434ccaefe2427c80ea09f"},
+               "hdb": "001dae34839b919b681ba865cb8fecaa",
+               "knn": "55c4edbf5108a643da343f5ba63a3b71",
+               "stats": "f2849f33b4e6ffb8fd0a020ae7df6cc6",
+               "fp": "093c99a813eff869fca680cbfb39f7b6"},
     "tiled": {**_SHARED,
-              "hdb": "24e1eb7f0560456f4003e24ca4521264",
-              "knn": "500ae8c4fcac49750f506e30f372f8bf",
-              "stats": "ab30898c2404a832059079a303adc4dc",
-              "fp": "6665869557395018dffa71cf4af69f2e"},
+              "hdb": "8a54033635797cd25cc20df0f519cc4b",
+              "knn": "96746eab5e102fe965164e94487dc2c1",
+              "stats": "c34b782bbe67198799fe5f5b0e708561",
+              "fp": "e3fde16555a4bf5792436c77556d206b"},
     "tiled-rare": {**_SHARED,
-                   "hdb": "24e1eb7f0560456f4003e24ca4521264",
-                   "rare": "8d2cb990caa0c7aa0414e54e576433e7",
-                   "knn": "5a9efa0aacc5250abfe02c4c3160fef9",
-                   "stats": "13d698af885e53e33d81eae0d902fddd",
-                   "fp": "d45a6316582c29c959fa60087e2d4506"},
+                   "hdb": "8a54033635797cd25cc20df0f519cc4b",
+                   "rare": "34d2726979907355c0f8ae7c827b885d",
+                   "knn": "2940e567c669b482ee9b2bbffe0cc1be",
+                   "stats": "63c97e5b24b6c58ef69ad3f3634c418a",
+                   "fp": "c164dc3e20e0de35b435816bbdbcbc14"},
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
                  "dn": _SHARED["dn"]},
 }
