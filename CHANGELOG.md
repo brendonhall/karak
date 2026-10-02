@@ -177,6 +177,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `karak bench` applied `--set` before each config's `device`, so an
+  explicit `--set NODE.device=...` was lost when a config set `device`.
+  Bench now uses the same order as `karak run` (device first, then
+  `--set`) through the shared `apply_overrides`. A `--set` that names an
+  unknown node or param now exits with a message, and the CUDA check also
+  covers a `--set NODE.device=cuda`.
 - The normalize step summed the mineral-pixel means and standard deviations
   in float32 along a 12.5 M-row axis, row by row. On the NWA 4587 denoised
   cube the means were off by up to 0.013 (0.13 z-units) and the standard
