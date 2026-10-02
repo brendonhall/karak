@@ -51,8 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the cube it opens.
 - `karak view` also opens the denoise step's cube as `dn: <element>`
   layers next to the raw elements, visible for the same `--show` elements.
-  The opened cube is the load step's (no upstream cube), so a cache scan
-  never mistakes a denoised cube for a raw one.
+  Cubes are told apart by their space tag, so a cache scan never mistakes
+  a denoised cube for a raw one, also for files written before upstream
+  recipes were recorded. A cache scan shows a denoised cube with the masks
+  it consumed, never a newer mask from an interrupted rerun.
 - Exit codes for `karak run`: 1 when a step fails, 130 on Ctrl-C.
 - Warnings raised while loading maps (for example PIL's
   `DecompressionBombWarning` on 104 Mpx exports) are logged once through

@@ -380,3 +380,60 @@ def test_view_main_opens_the_denoised_cube(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "space=denoised" in out
     assert "other cube" not in out
+
+
+# --- review fixes: legacy cache files and coherent mask/denoise pairs ------
+
+def test_legacy_cache_scan_picks_the_raw_cube_by_space(tmp_path):
+    """Files written before the upstream attribute: the newer denoised cube
+    must not be mistaken for the load step's cube."""
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "dn", "cube", _denoised(), 2000)            # no upstream
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.cube.recipe == "raw"
+    assert picked.denoised is None                          # no provable link
+    assert [e.recipe for e in picked.other_cubes] == ["dn"]
+
+
+def test_legacy_run_record_keeps_the_denoised_cube(tmp_path):
+    from karak.cli.view import find_run_outputs
+
+    cache = tmp_path / "output" / "work" / "cache"
+    raw = _store(cache, "raw", "cube", _cube(), 1000)
+    dn = _store(cache, "dn", "cube", _denoised(), 1000)       # no upstream
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": raw}, denoised=dn)
+    picked = pick_outputs(find_run_outputs(out_base), newest_first=False)
+    assert (picked.cube.recipe, picked.denoised.recipe) == ("raw", "dn")
+
+
+def test_scan_pairs_the_denoised_cube_with_the_mask_it_consumed(tmp_path):
+    """Mask M1 -> denoise D1, then a new mask M2 with the rerun interrupted
+    before denoise: the viewer must not overlay M2 on D1."""
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "m1", "masks", _masks(), 1500, upstream={"cube": "raw"})
+    _store(cache, "d1", "cube", _denoised(), 2000, upstream={"cube": "raw", "masks": "m1"})
+    _store(cache, "m2", "masks", _masks(), 3000, upstream={"cube": "raw"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert (picked.denoised.recipe, picked.masks.recipe) == ("d1", "m1")
+
+
+def test_scan_without_a_denoised_cube_shows_the_newest_mask(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "m1", "masks", _masks(), 1500, upstream={"cube": "raw"})
+    _store(cache, "m2", "masks", _masks(), 3000, upstream={"cube": "raw"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.denoised is None and picked.masks.recipe == "m2"
+
+
+def test_scan_omits_the_mask_when_the_denoised_cube_names_a_missing_one(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "m2", "masks", _masks(), 3000, upstream={"cube": "raw"})
+    _store(cache, "d1", "cube", _denoised(), 2000, upstream={"cube": "raw", "masks": "gone"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.denoised.recipe == "d1"
+    assert picked.masks is None

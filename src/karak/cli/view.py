@@ -42,6 +42,7 @@ class CacheFile:
     payload_type: str
     mtime: float
     upstream: dict = field(default_factory=dict)  # input port -> recipe
+    space: str | None = None   # ElementCube space tag: raw | denoised | normalized
 
 
 @dataclass(frozen=True)
@@ -81,13 +82,15 @@ def _read_entry(path: Path) -> CacheFile | None:
     recipe, _, port = path.stem.partition("__")
     try:
         with h5py.File(path, "r") as fh:
-            payload_type = str(fh["payload"].attrs["payload_type"])
-            raw = fh["payload"].attrs.get("upstream")
+            attrs = fh["payload"].attrs
+            payload_type = str(attrs["payload_type"])
+            raw = attrs.get("upstream")
+            space = attrs.get("space")
     except (OSError, KeyError):
         return None
     upstream = json.loads(str(raw)) if raw is not None else {}
     return CacheFile(path, recipe, port, payload_type, path.stat().st_mtime,
-                     upstream)
+                     upstream, None if space is None else str(space))
 
 
 def find_cache_files(target: str | Path) -> list[CacheFile]:
@@ -132,29 +135,49 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
     MaskSet and the denoised ElementCube computed from that cube, and the
     other cubes.
 
-    ``newest_first`` picks the most recent files (cache scan); otherwise
-    the first in list order (a run record lists outputs in flow order).
-    The load step's cube is one with no upstream ``cube`` (see
-    ``store_payload``); in a cache scan the masks and the denoised cube
-    must name it as their upstream ``cube``, so another run's outputs are
-    never overlaid. With a record, the run itself links the masks.
+    Cubes are told apart by their ``space`` tag (raw, denoised). With a run
+    record (``newest_first=False``) every listed file comes from that run,
+    so the first cube of each space is taken in flow order, whether or not
+    the file carries upstream recipes (files written before the attribute
+    existed do not). In a cache scan (``newest_first=True``) a denoised cube
+    is shown only when its upstream ``cube`` is the selected raw cube, and
+    the masks shown are the ones that denoised cube consumed (its upstream
+    ``masks``), so a newer mask from an interrupted rerun is never overlaid
+    on an older denoised cube. Without a denoised cube the newest masks
+    computed from the raw cube are shown. Another run's outputs are never
+    overlaid.
     """
     def newest(found):
+        found = list(found)
         return sorted(found, key=lambda e: e.mtime, reverse=True) if newest_first else found
 
-    cubes = newest([e for e in entries if e.payload_type == "element_cube"])
+    def is_space(entry, space):
+        if entry.space is not None:
+            return entry.space == space
+        # files without a space attribute: fall back to provenance
+        return ("cube" not in entry.upstream) == (space == "raw")
+
+    cubes = newest(e for e in entries if e.payload_type == "element_cube")
     if not cubes:
         raise ValueError("no ElementCube in the cache; run the load step first")
-    cube = next((e for e in cubes if "cube" not in e.upstream), cubes[0])
+    cube = next((e for e in cubes if is_space(e, "raw")), cubes[0])
     bses = [e for e in entries if e.payload_type == "bse_image"]
     same_step = [e for e in bses if e.recipe == cube.recipe]
     bse = (same_step or sorted(bses, key=lambda e: e.mtime, reverse=True) or [None])[0]
     mask_sets = [e for e in entries if e.payload_type == "mask_set"]
+    denoised_cubes = [e for e in cubes if e is not cube and is_space(e, "denoised")]
     if newest_first:
-        mask_sets = newest(e for e in mask_sets if e.upstream.get("cube") == cube.recipe)
-    masks = (mask_sets or [None])[0]
-    derived = [e for e in cubes if e.upstream.get("cube") == cube.recipe]
-    denoised = (derived or [None])[0]
+        denoised_cubes = [e for e in denoised_cubes
+                          if e.upstream.get("cube") == cube.recipe]
+    denoised = (denoised_cubes or [None])[0]
+    if not newest_first:
+        masks = (mask_sets or [None])[0]
+    elif denoised is not None:
+        wanted = denoised.upstream.get("masks")
+        masks = next((e for e in mask_sets if e.recipe == wanted), None)
+    else:
+        masks = (newest(e for e in mask_sets
+                        if e.upstream.get("cube") == cube.recipe) or [None])[0]
     others = [e for e in cubes if e is not cube and e is not denoised]
     return PickedOutputs(cube, bse, masks, denoised, others)
 
@@ -254,8 +277,10 @@ def view_main(argv: list[str]) -> int:
     else:
         picked = pick_outputs(find_cache_files(args.path))
     for other in picked.other_cubes:
+        note = "" if other.upstream else ", no upstream recipes"
         print(f"other cube: {other.path.name} "
-              f"({time.strftime('%Y-%m-%d %H:%M', time.localtime(other.mtime))})")
+              f"({other.space or 'unknown space'}{note}, "
+              f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(other.mtime))})")
 
     def load(entry):
         size_mb = entry.path.stat().st_size / 1e6

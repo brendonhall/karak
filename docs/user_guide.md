@@ -318,7 +318,9 @@ image from the same step, the mask step's masks, and the denoise step's
 cube. Without a record (or if its cache files are gone) it opens the newest
 cached load cube, and the newest cached masks and denoised cube computed
 from it, instead (each cached output records the recipes it consumed;
-outputs from another run or cube are never overlaid). It shows one gray
+outputs from another run or cube are never overlaid; the masks shown
+with a denoised cube are the ones it consumed, and a cached file without
+these recipes is only opened through its run record). It shows one gray
 layer per element (only `--show` elements visible), the denoised elements
 as `dn: <element>` layers (visible for the same `--show` elements), then
 the mineral mask as a labels layer (visible) and, when the flow set
