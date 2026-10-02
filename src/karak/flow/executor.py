@@ -327,7 +327,10 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
               f"store: {node}.{port} ({format_bytes(nbytes)}) spilled to "
               f"cache, budget {format_bytes(budget)}")
 
+    fallbacks: list = []   # outputs moved to host by the device budget
+
     def _on_device_fallback(node, port, nbytes, budget):
+        fallbacks.append((node, port))
         _emit(reporter, "log", "info",
               f"store: {node}.{port} ({format_bytes(nbytes)}) moved to host, "
               f"gpu budget {format_bytes(budget)}")
@@ -446,7 +449,7 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
                     payload = store.get(e.src.node, e.src.port)
                     try:
                         inputs[e.dst.port] = payload.to(placement)
-                    except StageError as exc:
+                    except Exception as exc:   # StageError, CuPy out of memory
                         _emit(reporter, "node_failed", node_id, str(exc))
                         if record is not None:
                             record.node(node_id, status="failed", error=str(exc))
@@ -507,6 +510,12 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
             # holds a host copy, and the device array must be freed before
             # the next node runs; the writer keeps its own host copies.
             outputs = host_outputs = inputs = payload = None
+            if fallbacks:
+                # The fallback freed device arrays into CuPy's pool; give the
+                # blocks back to the driver so cuML/RMM in the next stage
+                # can use them.
+                accel.free_device_memory()
+                fallbacks.clear()
             _drain_writer_log()
     except BaseException as failure:
         # A stage failure or Ctrl-C is propagating: finish the queued writes

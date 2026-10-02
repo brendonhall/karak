@@ -1144,3 +1144,83 @@ def test_writer_queue_is_bounded_by_the_ram_budget(tmp_path, monkeypatch):
     run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
         work_dir=str(tmp_path / "w"), ram_budget=12345)
     assert seen["max_pending_bytes"] == 12345
+
+
+# --- review fix on #7: return pooled device memory after a fallback ---------
+
+POOL_SEEN: dict = {}
+
+
+class RealCupySource(Stage):
+    """Produces a real CuPy array of `mib` MiB (device param, cuda only)."""
+    id = "real_cupy_source"
+    label = "Real CuPy source"
+    OUTPUTS = [Port("bse")]
+    PARAMS = [Param("mib", "int", 64),
+              Param("device", "str", "cuda", choices=("cpu", "cuda"))]
+
+    def apply(self, inputs, params):
+        import cupy as cp
+
+        n = int(np.sqrt(params["mib"] * 2**20 / 4))
+        return {"bse": BseImage(pixels=cp.ones((n, n), cp.float32))}
+
+
+class PoolProbe(Stage):
+    """A CPU stage that records the CuPy pool's reservation when it runs."""
+    id = "pool_probe"
+    label = "Pool probe"
+    INPUTS = [Port("bse")]
+    OUTPUTS = [Port("num")]
+    PARAMS = []
+
+    def apply(self, inputs, params):
+        import cupy as cp
+
+        POOL_SEEN["total"] = cp.get_default_memory_pool().total_bytes()
+        POOL_SEEN["is_numpy"] = isinstance(inputs["bse"].pixels, np.ndarray)
+        return {"num": ClusterStats(stats={"value": 1})}
+
+
+@pytest.fixture
+def _pool_stages():
+    for cls in (RealCupySource, PoolProbe):
+        registry.register(cls)
+    POOL_SEEN.clear()
+    yield
+    for cls in (RealCupySource, PoolProbe):
+        registry._REGISTRY.pop(cls.id, None)
+
+
+@pytest.mark.skipif(not accel.cuda_available(), reason="no CUDA")
+def test_device_budget_fallback_returns_the_pool_reservation(tmp_path, _pool_stages):
+    import cupy as cp
+
+    cp.get_default_memory_pool().free_all_blocks()
+    graph = complete(Graph(name="pool", nodes=(
+        Node(id="src", type="real_cupy_source", params={"mib": 256, "device": "cuda"}),
+        Node(id="probe", type="pool_probe", params={}),
+        Node(id="out", type="fake_sink", params={"out": "{out}"}),
+    ), edges=(
+        Edge(id="e1", src=Endpoint("src", "bse"), dst=Endpoint("probe", "bse")),
+        Edge(id="e2", src=Endpoint("probe", "num"), dst=Endpoint("out", "num")),
+    )))
+    run(graph, out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"),
+        gpu_budget=1)
+    assert POOL_SEEN["is_numpy"]
+    assert POOL_SEEN["total"] < 2**20      # the 256 MiB block went back
+
+
+def test_out_of_memory_at_placement_fails_the_node_with_a_flow_error(tmp_path, monkeypatch, _device_stages):
+    class OOMCupy:
+        @staticmethod
+        def asarray(arr):
+            raise MemoryError("Out of memory allocating 1,000,000,000 bytes")
+
+    monkeypatch.setattr(accel, "cuda_available", lambda: True)
+    monkeypatch.setattr(accel, "get_array_module",
+                        lambda device: OOMCupy if device == "cuda" else np)
+    monkeypatch.setattr(accel, "device_memory_info", lambda: (10 * 2**30, 24 * 2**30))
+    monkeypatch.setattr(accel, "free_device_memory", lambda: None)
+    with pytest.raises(FlowError, match=r"node 'd1' \(fake_device_double\).*Out of memory"):
+        run(_device_chain(), out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"))

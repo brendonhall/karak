@@ -290,8 +290,12 @@ the cube moves to the device once and each step passes device outputs to
 the next. Device outputs are held up to a
 budget, 80 % of the free device memory at start (`--gpu-budget GB` to
 change it). Beyond it an output moves to host RAM (logged as `store:
-dn.cube (1.98 GB) moved to host, gpu budget 19.6 GB`) and the RAM rules
-apply. The cache always receives a host copy. The run record notes where
+dn.cube (1.98 GB) moved to host, gpu budget 19.6 GB`), the freed device
+memory goes back to the driver before the next step, and the RAM rules
+apply. The budget governs outputs held between steps only: if moving a
+step's inputs to the GPU, or the step itself, runs out of device memory,
+the step fails with an `error:` line that names it. The cache always
+receives a host copy. The run record notes where
 the run held each output (`"device": "cuda"`, or `"cpu"` after a move to
 host RAM), and the dashboard shows the
 device memory next to the host figure.

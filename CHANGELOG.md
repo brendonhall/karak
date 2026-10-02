@@ -12,8 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GPU for the next GPU step. The executor places every input on the
   consuming step's device; CPU steps always see host arrays; the cache gets
   a host copy. `payload.device` and `payload.to()`; `--gpu-budget GB`
-  (default 80 % of free device memory) with host fallback; the run record
-  and the dashboard show placement and device memory.
+  (default 80 % of free device memory) with host fallback for outputs held
+  between steps (the freed device memory returns to the driver before the
+  next step); the run record and the dashboard show placement and device
+  memory. Running out of device memory while moving a step's inputs or
+  inside a step fails that step with a named error.
 - normalize and pca gained a `device` param and GPU paths: a CuPy z-score
   (matches the CPU path within 1e-4 on the test scenes) and a CuPy port of sklearn's covariance PCA (features
   within 1e-3, explained variance ratios within 1e-5). cuML HDBSCAN now
