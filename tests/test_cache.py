@@ -375,3 +375,78 @@ def test_dataset_treats_compression_none_as_no_filter(tmp_path):
     with h5py.File(tmp_path / "f.h5", "w") as fh:
         ds = _dataset(fh, "a", np.zeros((4, 4)), compression=None)
         assert ds.compression is None
+
+
+# --- review fixes: release finished payloads, bound queued bytes ------------
+
+def test_idle_writer_does_not_retain_the_last_written_payload(tmp_path):
+    import gc
+    import weakref
+
+    writer = CacheWriter(tmp_path)
+    payload = _bse(64)
+    ref = weakref.ref(payload)
+    writer.submit("r1", "bse", payload, "", {})
+    del payload
+    writer.wait()
+    gc.collect()
+    assert ref() is None            # collected while the writer is still open
+    assert writer._thread.is_alive()
+    writer.close()
+
+
+def test_submit_blocks_while_queued_bytes_exceed_the_bound(tmp_path, monkeypatch):
+    import karak.flow.cache as cache
+
+    gate = threading.Event()
+    real = cache.store_payload
+
+    def slow_store(*args, **kwargs):
+        gate.wait(10)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cache, "store_payload", slow_store)
+    one = _bse(16).pixels.nbytes                      # 1 KiB each
+    writer = CacheWriter(tmp_path, max_pending_bytes=2 * one)
+    accepted = []
+
+    def produce():
+        for i in range(5):
+            writer.submit(f"r{i}", "bse", _bse(16), "", {})
+            accepted.append(i)
+
+    producer = threading.Thread(target=produce, daemon=True)
+    producer.start()
+    time.sleep(0.3)
+    assert accepted == [0, 1]                         # third submit waits
+    assert writer.pending_bytes == 2 * one
+    gate.set()
+    producer.join(10)
+    writer.wait()
+    assert accepted == [0, 1, 2, 3, 4]
+    assert writer.pending_bytes == 0
+    assert all(has_payload(f"r{i}", "bse", tmp_path) for i in range(5))
+    writer.close()
+
+
+def test_a_payload_larger_than_the_bound_is_admitted_alone(tmp_path):
+    writer = CacheWriter(tmp_path, max_pending_bytes=10)
+    writer.submit("big", "bse", _bse(64), "", {})     # 16 KiB > 10 bytes
+    writer.wait()
+    assert has_payload("big", "bse", tmp_path)
+    writer.close()
+
+
+def test_submit_does_not_block_after_a_writer_error(tmp_path, monkeypatch):
+    import karak.flow.cache as cache
+
+    def failing_store(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    writer = CacheWriter(tmp_path, max_pending_bytes=1)
+    for i in range(3):
+        writer.submit(f"r{i}", "bse", _bse(16), "", {})
+    with pytest.raises(OSError):
+        writer.wait()
+    writer.close()

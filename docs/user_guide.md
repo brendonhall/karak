@@ -276,10 +276,11 @@ Between steps, outputs stay in RAM up to a budget, half of the available
 memory by default (`--ram-budget GB` to change it). An output that would
 exceed the budget is spilled: karak does not hold it, and each consumer
 reads it back from the cache. The log says so (`store: dn.cube (1.98 GB)
-spilled to cache, budget 11.0 GB`). The budget covers outputs held for
-later steps only. An output waiting for its cache write stays in RAM until
-the write finishes, outside the budget. With `--no-cache` nothing is
-written or spilled.
+spilled to cache, budget 11.0 GB`). Outputs waiting for their cache write
+have a second bound of the same size: when the queued writes would exceed
+it, the next step waits until the disk catches up. Host memory for stage
+outputs therefore stays below twice the budget (the default is half of the
+available memory). With `--no-cache` nothing is written or spilled.
 
 If a cache write fails (a full disk), the run stops before the next step
 and prints `error: cache writer: ...`. A run also deletes the partial

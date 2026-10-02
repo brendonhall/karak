@@ -322,7 +322,9 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
     writer = None
     if cache:
         sweep_stale_tmp(cache_dir)   # debris of runs that were killed
-        writer = CacheWriter(cache_dir, compression=cache_compression)
+        # queued writes are bounded by the same budget as held outputs
+        writer = CacheWriter(cache_dir, compression=cache_compression,
+                             max_pending_bytes=budget)
 
     def _drain_writer_log() -> None:
         """Emit the writer's log lines, then fail fast on a writer error."""

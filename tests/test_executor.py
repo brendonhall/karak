@@ -808,3 +808,20 @@ def test_no_cache_creates_no_writer_and_writes_nothing(tmp_path, monkeypatch):
                   work_dir=str(tmp_path / "w"), cache=False)
     assert not (tmp_path / "w" / "cache").exists()
     assert all(v["write_seconds"] == 0.0 for v in summary.values())
+
+
+def test_writer_queue_is_bounded_by_the_ram_budget(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+    real = executor.CacheWriter
+
+    class Spy(real):
+        def __init__(self, *args, **kwargs):
+            seen.update(kwargs)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(executor, "CacheWriter", Spy)
+    run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
+        work_dir=str(tmp_path / "w"), ram_budget=12345)
+    assert seen["max_pending_bytes"] == 12345

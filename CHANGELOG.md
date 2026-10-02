@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   readable.
 - A total RAM budget for outputs held between steps (`--ram-budget GB`,
   default half of the available memory) replaces the fixed 256 MB
-  per-payload spill threshold; spills are logged.
+  per-payload spill threshold; spills are logged. Writes waiting in the
+  cache writer's queue are bounded by the same amount: a step that
+  produces faster than the disk writes waits. The writer drops each
+  payload as soon as it is written.
 - A failed cache write (a full disk) stops the run at the next step with
   an `error: cache writer: ...` line; runs delete `.tmp` files left in the
   cache by killed runs.

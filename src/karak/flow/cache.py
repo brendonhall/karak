@@ -153,8 +153,27 @@ def load_summary(recipe: str, port: str, cache_dir: str | Path) -> str | None:
     return path.read_text(encoding="utf-8")
 
 
+def _host_nbytes(payload) -> int:
+    """Bytes held by a payload's top-level numpy array fields."""
+    import dataclasses
+
+    import numpy as np
+
+    if not dataclasses.is_dataclass(payload):
+        return 0
+    return sum(int(getattr(payload, f.name).nbytes)
+               for f in dataclasses.fields(payload)
+               if isinstance(getattr(payload, f.name), np.ndarray))
+
+
 class CacheWriter:
     """Writes payloads to the cache on one background thread, FIFO.
+
+    ``max_pending_bytes`` bounds the bytes of payloads queued or being
+    written: ``submit`` waits while adding a payload would exceed it, so a
+    fast producer cannot pile up gigabytes behind a slow disk. A payload
+    larger than the bound is admitted when nothing else is pending. The
+    thread drops its reference to each payload once it is written.
 
     ``submit`` enqueues a host payload; the thread calls ``store_payload``
     and ``store_summary``. ``wait_for`` and ``wait`` block on the disk state
@@ -164,9 +183,12 @@ class CacheWriter:
     hands back to the caller's thread.
     """
 
-    def __init__(self, cache_dir: str | Path, compression: str = "lzf"):
+    def __init__(self, cache_dir: str | Path, compression: str = "lzf",
+                 max_pending_bytes: int | None = None):
         self.cache_dir = Path(cache_dir)
         self.compression = compression
+        self.max_pending_bytes = max_pending_bytes
+        self.pending_bytes = 0
         self.written: set[tuple[str, str]] = set()
         self.seconds = 0.0
         self.per_label: dict[str, float] = {}   # "dn.cube" -> seconds
@@ -184,10 +206,19 @@ class CacheWriter:
                upstream: dict | None, label: str | None = None) -> None:
         if self._closed:
             raise RuntimeError("CacheWriter is closed")
+        nbytes = _host_nbytes(payload)
         with self._done:
+            # backpressure: wait for room, unless the writer has failed
+            # (it then skips its queue quickly) or nothing is pending
+            while (self.max_pending_bytes is not None
+                   and self._error is None
+                   and self.pending_bytes > 0
+                   and self.pending_bytes + nbytes > self.max_pending_bytes):
+                self._done.wait(0.1)
             self._pending.add((recipe, port))
+            self.pending_bytes += nbytes
         self._queue.put((recipe, port, payload, summary, upstream,
-                         label or f"{recipe[:8]}.{port}"))
+                         label or f"{recipe[:8]}.{port}", nbytes))
 
     def _loop(self) -> None:
         while True:
@@ -195,7 +226,7 @@ class CacheWriter:
             if item is None:
                 self._queue.task_done()
                 return
-            recipe, port, payload, summary, upstream, label = item
+            recipe, port, payload, summary, upstream, label, nbytes = item
             started = time.monotonic()
             try:
                 if self._error is None:
@@ -217,8 +248,12 @@ class CacheWriter:
                         self._log.append(
                             f"cache: {label} written in {elapsed:.1f} s")
             finally:
+                # drop the payload before signalling, so a finished write
+                # never keeps a multi-GB array alive while the thread idles
+                item = payload = None
                 with self._done:
                     self._pending.discard((recipe, port))
+                    self.pending_bytes -= nbytes
                     self._queue.task_done()
                     self._done.notify_all()
 
@@ -279,5 +314,6 @@ class CacheWriter:
             with self._done:
                 if item is not None:
                     self._pending.discard((item[0], item[1]))
+                    self.pending_bytes -= item[-1]
                 self._queue.task_done()
                 self._done.notify_all()

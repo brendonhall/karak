@@ -115,8 +115,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--ram-budget", type=_positive_gb, default=None, metavar="GB",
         help="Host memory to hold stage outputs between steps before "
              "spilling them to the cache (default: half of available "
-             "memory). Outputs waiting for their cache write are held "
-             "until the write finishes and are not counted.",
+             "memory). Writes waiting for the disk are bounded by the "
+             "same amount; a step waits when the queue is full.",
     )
     run_parser.add_argument("--no-qc", action="store_true",
                             help="Skip QC figure sinks")
