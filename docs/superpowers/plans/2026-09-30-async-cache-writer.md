@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Post-review changes (2026-10-02, PR #6):** `CacheWriter.close()` discards the queue and re-raises on a second Ctrl-C; tmp files are per-process and cleaned; writer errors become `FlowError`s at the next node; the writer queue is bounded by `max_pending_bytes` (set to the RAM budget) and drops each payload once written. See the spec's Section 1.
+
 **Goal:** Take the cache write off the executor's critical path, make the cache files cheaper to write, and keep large payloads in RAM between nodes.
 
 **Architecture:** A `CacheWriter` thread in `flow/cache.py` writes payloads FIFO through the existing tmp-then-rename `store_payload`. The executor submits a host copy of each output to the writer, puts the original in the `PayloadStore`, and drains the writer in a `finally`. `to_h5` takes a compression argument (default `lzf`). The per-payload 256 MB spill threshold becomes a total RAM budget.

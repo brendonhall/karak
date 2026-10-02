@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Post-review changes (2026-10-02, PR #7):** the device-budget fallback covers outputs held between steps only; after a fallback the executor frees CuPy's pool before the next node; an out-of-memory error at placement fails the node with a `FlowError`. `--set NODE.device` overrides `--device`. See the spec's Section 2 and Rulings.
+
 **Goal:** A chain of GPU stages moves the data to the device once and passes device-resident payloads from node to node, with normalize and pca joining denoise and hdbscan on the GPU.
 
 **Architecture:** Payload array fields may hold numpy or CuPy arrays; `payload.device` and `payload.to(device)` move them. The executor places every input on the consuming node's device (its `device` param, else `cpu`) before `apply()`, keeps outputs where the stage produced them, gives the cache writer and the summaries a host copy, and enforces a device memory budget with host fallback. GPU stages and cores pick their array module from the data (`accel.xp`).

@@ -42,8 +42,13 @@ from the cache. `_payload_nbytes` counts only numpy arrays.
 
 ## Rulings
 
-- GPU memory pressure: fall back to host RAM (and to the cache when RAM is
-  short too), log one line, continue. A run always completes.
+- GPU memory pressure: an output held between steps that would exceed the
+  device budget falls back to host RAM (and to the cache when RAM is short
+  too), with one log line, and the run continues. Narrowed on 2026-10-02
+  after review: the budget governs held outputs only. Running out of
+  device memory while moving a step's inputs to the GPU, or inside the
+  step, fails that step with a named error; there is no CPU retry, which
+  would also need the `device` param and the cache recipe to follow it.
 - Default cache compression: `lzf`, switchable from the CLI.
 - GPU paths in scope: denoise, normalize, pca, hdbscan. PCA on the GPU is
   a CuPy port of the sklearn algorithm (exact tier), not cuML PCA.
@@ -74,6 +79,14 @@ from the cache. `_payload_nbytes` counts only numpy arrays.
 - One thread suffices: the write is disk-bound and HDF5 compression runs
   in C outside the GIL, so the next node computes while the file is
   written.
+- Bounded queue (added 2026-10-02 after review): `CacheWriter` counts the
+  bytes of queued and in-progress payloads and takes
+  `max_pending_bytes`; `submit` waits while adding a payload would exceed
+  it (an oversized payload is admitted when nothing else is pending, and a
+  failed writer never blocks a submit). The executor sets the bound to the
+  RAM budget, so host memory for stage outputs stays below twice the
+  budget even when GPU stages produce faster than the disk writes. The
+  thread drops each payload as soon as it is written.
 
 ### Executor
 
@@ -90,8 +103,10 @@ from the cache. `_payload_nbytes` counts only numpy arrays.
 - A `finally` drains the writer on success, failure and Ctrl-C, so
   completed outputs reach the cache and the next invocation resumes from
   the crash point (the user guide's promise). A second Ctrl-C during the
-  drain stops it; a leftover `.h5.tmp` is ignored by `has_payload` and
-  overwritten by the next run.
+  drain stops it: `close()` discards the queued items, joins the thread
+  with a timeout and re-raises. Tmp files use a per-process name
+  (`.h5.<pid>.tmp`); a failed write deletes its own, and a run removes
+  those of dead processes at start.
 
 ### Format
 
@@ -149,7 +164,9 @@ from the cache. `_payload_nbytes` counts only numpy arrays.
   then apply. A later GPU consumer gets it moved back by placement.
 - Refcounting is unchanged. Device memory returns to the CuPy pool at
   release; the executor calls `cupy.get_default_memory_pool()
-  .free_all_blocks()` once at the end of a run that used the device.
+  .free_all_blocks()` after any node whose outputs fell back to host
+  (so cuML/RMM in the next step can use the memory) and once at the end
+  of a run that used the device.
 - The dashboard's memory line gains the device figure
   (`gpu 2.1 / 24 GB`) when the run has a CUDA node
   (`cli/memory.py` reads `memGetInfo` when cupy is importable).
