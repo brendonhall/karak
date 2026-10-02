@@ -42,7 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `joint_bilateral_total` (range weight from the summed channels) and
   `joint_bilateral_bse` (range weight from the BSE image, wired to the
   stage's new optional `bse` input port). `bilateral` is unchanged and
-  stays scikit-image on the CPU.
+  stays scikit-image on the CPU. For the new methods the colour lookup
+  table covers the differences to the zero padding, so border pixels are
+  weighted correctly, and a constant guide (a flat BSE image or a constant
+  channel sum) still applies the spatial kernel.
 - Finding: scikit-image's `denoise_bilateral` (0.19 through 0.26) applies
   an off-centre spatial kernel. `_compute_spatial_lut` builds an
   (n+1) x (n+1) table for an n x n window (`np.arange(-n // 2, ...)`) and

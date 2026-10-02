@@ -5,9 +5,12 @@ shape. With ``guide is image`` this is the classic bilateral filter; with
 another guide it is the joint (cross) bilateral filter, whose range weight
 comes from the guide. The output pixel is the weighted mean of a square
 window: weight = spatial Gaussian of the offset times a Gaussian of the
-guide difference, the latter read from a lookup table of ``bins`` entries
-over the guide's value range, as scikit-image does. Pixels outside the
-image count as 0 with full weight (scikit-image's ``mode='constant'``).
+guide difference, the latter read from a lookup table of ``bins`` entries,
+as scikit-image does. Pixels outside the image count as 0 in the image and
+the guide (scikit-image's ``mode='constant'``); for the symmetric and joint
+filters the table spans the guide's range together with that 0, so border
+weights are exact. A constant guide with ``sigma_color=None`` leaves only
+the spatial kernel over in-image neighbours.
 
 ``exact_skimage=True`` reproduces ``skimage.restoration.denoise_bilateral``
 (0.19 through 0.26) to float32 precision, including its spatial table: it
@@ -62,13 +65,24 @@ def color_lut(sigma_color: float, max_value: float, bins: int = BINS) -> np.ndar
 
 
 def _prepare(image, guide, sigma_color, sigma_spatial, exact_skimage, xp):
-    """Shared setup: (image, guide, spatial table, colour table, dist_scale)
-    or None when the guide is constant (the filter is the identity then)."""
+    """Shared setup: (image, guide, spatial table, colour table, dist_scale,
+    inside_only), or None when the classic filter sees a constant image
+    (the identity, as in scikit-image).
+
+    Out-of-image pixels count as 0 in both the image and the guide, so for
+    the symmetric and joint filters the colour table spans every difference
+    a window can see, including those to the zero padding. ``inside_only``
+    is set when the range term carries no information (a constant guide
+    with ``sigma_color=None``, whose std is 0): every in-image neighbour then
+    gets range weight 1 and the padding gets 0, so the result is the
+    normalized spatial kernel over the image.
+    """
     image = xp.ascontiguousarray(image, dtype=xp.float32)
     guide = image if guide is image else xp.ascontiguousarray(guide, dtype=xp.float32)
     gmin, gmax = float(guide.min()), float(guide.max())
-    if gmin == gmax:
+    if gmin == gmax and (guide is image or exact_skimage):
         return None
+    inside_only = False
     if exact_skimage:
         # scikit-image shifts a negative image up and does not shift the
         # result back; the LUT then spans [0, max - min).
@@ -78,13 +92,18 @@ def _prepare(image, guide, sigma_color, sigma_spatial, exact_skimage, xp):
             gmax -= gmin
         span = gmax
     else:
-        span = gmax - gmin
+        span = max(gmax, 0.0) - min(gmin, 0.0)   # include the zero padding
     if sigma_color is None:
         sigma_color = float(guide.std())
+    if sigma_color == 0.0:
+        inside_only = True
+        sigma_color = 1.0                     # unused: range weights are 0/1
+    if span == 0.0:
+        span = 1.0                            # all differences are 0
     rlut = spatial_weights(sigma_spatial, exact_skimage)
     clut = color_lut(sigma_color, span)
     dist_scale = np.float32(BINS) / np.float32(span)
-    return image, guide, rlut, clut, dist_scale
+    return image, guide, rlut, clut, dist_scale, inside_only
 
 
 def bilateral_numpy(image, guide, *, sigma_color, sigma_spatial,
@@ -94,22 +113,26 @@ def bilateral_numpy(image, guide, *, sigma_color, sigma_spatial,
     prep = _prepare(image, guide, sigma_color, sigma_spatial, exact_skimage, np)
     if prep is None:
         return np.array(image, dtype=np.float32, copy=True)
-    image, guide, rlut, clut, dist_scale = prep
+    image, guide, rlut, clut, dist_scale, inside_only = prep
     win = rlut.shape[0]
     ext = (win - 1) // 2
     H, W = image.shape
     pimg = np.pad(image, ext)
     pguide = pimg if guide is image else np.pad(guide, ext)
+    pinside = np.pad(np.ones((H, W), np.float32), ext) if inside_only else None
     total = np.zeros((H, W), np.float32)
     weight = np.zeros((H, W), np.float32)
     last = np.int64(BINS - 1)
     for kr in range(win):
         for kc in range(win):
             values = pimg[kr:kr + H, kc:kc + W]
-            gvalues = pguide[kr:kr + H, kc:kc + W]
-            dist = np.abs(guide - gvalues)
-            bins = np.minimum((dist * dist_scale).astype(np.int64), last)
-            w = rlut[kr, kc] * clut[bins]
+            if inside_only:
+                w = rlut[kr, kc] * pinside[kr:kr + H, kc:kc + W]
+            else:
+                gvalues = pguide[kr:kr + H, kc:kc + W]
+                dist = np.abs(guide - gvalues)
+                bins = np.minimum((dist * dist_scale).astype(np.int64), last)
+                w = rlut[kr, kc] * clut[bins]
             total += values * w
             weight += w
     return total / weight
@@ -127,14 +150,21 @@ for (int kr = 0; kr < win; ++kr) {
         const int cc = c + kc - ext;
         float value = 0.0f;
         float gvalue = 0.0f;
-        if (rr >= 0 && rr < H && cc >= 0 && cc < W) {
+        const bool inside = rr >= 0 && rr < H && cc >= 0 && cc < W;
+        if (inside) {
             value = image[rr * W + cc];
             gvalue = guide[rr * W + cc];
+        } else if (inside_only) {
+            continue;
         }
-        const float dist = fabsf(centre - gvalue);
-        int bin = (int)(dist * dist_scale);
-        if (bin > last) bin = last;
-        const float w = rlut[kr * win + kc] * clut[bin];
+        float range_w = 1.0f;
+        if (!inside_only) {
+            const float dist = fabsf(centre - gvalue);
+            int bin = (int)(dist * dist_scale);
+            if (bin > last) bin = last;
+            range_w = clut[bin];
+        }
+        const float w = rlut[kr * win + kc] * range_w;
         total += value * w;
         weight += w;
     }
@@ -152,13 +182,13 @@ def bilateral_cupy(image, guide, *, sigma_color, sigma_spatial,
     prep = _prepare(image, guide, sigma_color, sigma_spatial, exact_skimage, cp)
     if prep is None:
         return cp.array(image, dtype=cp.float32, copy=True)
-    image, guide, rlut, clut, dist_scale = prep
+    image, guide, rlut, clut, dist_scale, inside_only = prep
     win = rlut.shape[0]
     H, W = image.shape
     kernel = cp.ElementwiseKernel(
         "raw float32 image, raw float32 guide, raw float32 rlut, "
         "raw float32 clut, int32 H, int32 W, int32 win, int32 ext, "
-        "float32 dist_scale, int32 last",
+        "float32 dist_scale, int32 last, bool inside_only",
         "float32 out",
         _KERNEL_SOURCE,
         "karak_bilateral",
@@ -166,5 +196,5 @@ def bilateral_cupy(image, guide, *, sigma_color, sigma_spatial,
     out = cp.empty((H, W), cp.float32)
     kernel(image, guide, cp.asarray(rlut.ravel()), cp.asarray(clut),
            np.int32(H), np.int32(W), np.int32(win), np.int32((win - 1) // 2),
-           np.float32(dist_scale), np.int32(BINS - 1), out)
+           np.float32(dist_scale), np.int32(BINS - 1), bool(inside_only), out)
     return out
