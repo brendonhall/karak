@@ -32,8 +32,9 @@ def run_hdbscan(
 
     Parameters
     ----------
-    pca_features : np.ndarray
+    pca_features : np.ndarray or cupy.ndarray
         (N_mineral, n_components) PCA-transformed mineral pixel features.
+        A CuPy array is accepted only with ``device="cuda"``.
     config : HDBSCANConfig
         HDBSCAN configuration parameters.
     device : str
@@ -48,13 +49,23 @@ def run_hdbscan(
     -------
     labels : np.ndarray
         (N_mineral,) int32 cluster labels. -1 = noise/unclassified.
+        On cuda, a CuPy array.
     probabilities : np.ndarray
         (N_mineral,) float32 membership probabilities [0, 1].
+        On cuda, a CuPy array.
     clusterer : hdbscan.HDBSCAN
         Fitted HDBSCAN model (for approximate_predict if needed later).
     """
+    from karak.accel import is_device_array
+
+    if device == "cpu" and is_device_array(pca_features):
+        from karak.errors import StageError
+        raise StageError(
+            "device='cpu' received a device array; the executor places "
+            "inputs on the stage's device, so run this stage with device='cuda'"
+        )
     if device == "cuda":
-        from karak.accel import get_array_module, to_numpy
+        from karak.accel import get_array_module
 
         cp = get_array_module(device)  # raises StageError without CUDA
         from cuml.cluster import HDBSCAN as CumlHDBSCAN
@@ -66,8 +77,8 @@ def run_hdbscan(
             min_samples=min_samples,
         )
         model.fit(cp.asarray(pca_features, dtype=cp.float32))
-        labels = to_numpy(model.labels_).astype(np.int32)
-        probabilities = to_numpy(model.probabilities_).astype(np.float32)
+        labels = cp.asarray(model.labels_).astype(cp.int32)
+        probabilities = cp.asarray(model.probabilities_).astype(cp.float32)
         return labels, probabilities, model
 
     n_mineral = pca_features.shape[0]

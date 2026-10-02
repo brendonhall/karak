@@ -809,7 +809,8 @@
     "params_normalize": {
       "type": "object",
       "required": [
-        "method"
+        "method",
+        "device"
       ],
       "properties": {
         "method": {
@@ -819,6 +820,16 @@
             "zscore"
           ],
           "default": "zscore"
+        },
+        "device": {
+          "type": "string",
+          "title": "Device",
+          "description": "cpu or cuda (the executor moves the inputs; needs karak[cuda])",
+          "enum": [
+            "cpu",
+            "cuda"
+          ],
+          "default": "cpu"
         }
       },
       "additionalProperties": false
@@ -855,7 +866,8 @@
         "variance_threshold",
         "min_components",
         "subsample_fraction",
-        "random_state"
+        "random_state",
+        "device"
       ],
       "properties": {
         "n_components": {
@@ -892,6 +904,16 @@
           "type": "integer",
           "title": "Random seed",
           "default": 42
+        },
+        "device": {
+          "type": "string",
+          "title": "Device",
+          "description": "cpu or cuda (the executor moves the inputs; needs karak[cuda])",
+          "enum": [
+            "cpu",
+            "cuda"
+          ],
+          "default": "cpu"
         }
       },
       "additionalProperties": false

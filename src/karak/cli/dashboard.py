@@ -197,8 +197,17 @@ class DashboardReporter:
         info = self.info
         label = "mem" if info is None or info.workers in (None, 1) else "mem (main process)"
         if self.sampler.current is None:
-            return f"{label} peak {_gb(self.sampler.peak)}"
-        return f"{label} {_gb(self.sampler.current)} (peak {_gb(self.sampler.peak)})"
+            text = f"{label} peak {_gb(self.sampler.peak)}"
+        else:
+            text = f"{label} {_gb(self.sampler.current)} (peak {_gb(self.sampler.peak)})"
+        if info is not None and "cuda" in info.device:
+            from karak.cli import memory
+
+            gpu = memory.device_memory()
+            if gpu is not None:
+                used, total = gpu
+                text += f"   gpu {_gb(used)} / {_gb(total)}"
+        return text
 
     def _header(self) -> Table:
         grid = Table.grid(padding=(0, 3))

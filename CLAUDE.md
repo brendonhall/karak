@@ -47,6 +47,7 @@ karak run ... --workers 0                  # parallel stages on all cores (same 
 karak run ... --cache-compression gzip     # cache file filter: lzf (default), gzip, none
 karak run ... --ram-budget 8               # GB of outputs held between steps (default: half of available memory)
 karak run ... --device cuda                # GPU paths where stages support it
+karak run ... --gpu-budget GB              # device memory held between steps (default 80% free)
 karak validate (FLOW.json | --builtin NAME)          # structural validation
 karak schema                                         # stage palette as JSON
 karak bench --builtin tiled --input DIR --out BASE \

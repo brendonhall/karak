@@ -1,7 +1,8 @@
-"""Optional acceleration helpers: CPU worker resolution and CUDA access.
+"""Optional acceleration helpers: CPU worker resolution, array-type dispatch, and CUDA access.
 
-The whole GPU surface of karak lives here. CuPy is imported lazily so a
-plain install never touches it.
+The whole GPU surface of karak lives here. Array-type helpers (is_device_array, device_of, xp,
+to_host, device_memory_info, free_device_memory) enable polymorphic code over numpy and CuPy.
+CuPy is imported lazily so a plain install never touches it.
 """
 
 from __future__ import annotations
@@ -78,3 +79,40 @@ def to_numpy(arr) -> np.ndarray:
     if hasattr(arr, "get"):  # cupy
         return arr.get()
     return np.asarray(arr)
+
+
+def is_device_array(arr) -> bool:
+    """True for a CuPy array (checked by module name, so no import)."""
+    return type(arr).__module__.split(".")[0] == "cupy"
+
+
+def device_of(arr) -> str:
+    """Return 'cuda' for a device array, else 'cpu'."""
+    return "cuda" if is_device_array(arr) else "cpu"
+
+
+def xp(arr):
+    """The array module of ``arr``: cupy for a device array, else numpy."""
+    return get_array_module("cuda") if is_device_array(arr) else np
+
+
+to_host = to_numpy
+
+
+def device_memory_info() -> tuple[int, int] | None:
+    """(free, total) bytes on GPU 0, or None without a usable CUDA stack."""
+    if not cuda_available():
+        return None
+    import cupy
+
+    free, total = cupy.cuda.runtime.memGetInfo()
+    return int(free), int(total)
+
+
+def free_device_memory() -> None:
+    """Return the CuPy pool's cached blocks to the driver. No-op without CUDA."""
+    if not cuda_available():
+        return
+    import cupy
+
+    cupy.get_default_memory_pool().free_all_blocks()

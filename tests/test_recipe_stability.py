@@ -11,6 +11,8 @@ went from 0.0 ("reuse the tiled threshold", which actually took 0.92 from
 code) to an explicit 0.92, and its unused noise_reassign_k param was
 removed. Same results, new recipe, so rare and its downstream nodes (knn,
 stats, fp) carry new hashes; everything upstream is unchanged.
+2026-09-30: normalize and pca gained a `device` param, so `nrm`, `pca` and
+everything downstream carry new hashes.
 """
 
 from __future__ import annotations
@@ -28,27 +30,27 @@ _SHARED = {
     "src": "c733f2990a76f1f1650fd2fc685dede3",
     "msk": "de849a4979083e3a9d90a9ad611e1324",
     "dn": "cb5acfb9994e901758fd9e32846a090a",
-    "nrm": "2ebd4311b44fc1e4d315f4a007cf50e7",
-    "pca": "eabf6a71a719b0b7fc882f2d3646f35b",
+    "nrm": "e3dcb4d85ce5f90b92d0301d7d583bd4",
+    "pca": "45a7ea9a77dab82a9b598d1925bf9a26",
 }
 
 GOLDEN = {
     "global": {**_SHARED,
-               "hdb": "c331ea63e2ffd50aefd9a1d59fe3cc4b",
-               "knn": "6bf74f37ab251d3e87cfd122ad30df94",
-               "stats": "b46d91f8abcad42a74cd3ee79e580f70",
-               "fp": "94264ddfc490419f8a23599a0d5fda44"},
+               "hdb": "06b13f0c6949ffeaf444b1cdd52697e9",
+               "knn": "e794780fafbcb13effd4b08d2017e20a",
+               "stats": "8622d05748c5a5fb27a50e63e2f6718a",
+               "fp": "882515ae986434ccaefe2427c80ea09f"},
     "tiled": {**_SHARED,
-              "hdb": "8eefd0cddf5bcecb394283a4ba1dac82",
-              "knn": "72a8c5215a293e8ab14c912f9d4bc674",
-              "stats": "fdf32660026f532dbcaf7275807f7f99",
-              "fp": "326ef3acf9c39f1b83d4945a42401e6e"},
+              "hdb": "24e1eb7f0560456f4003e24ca4521264",
+              "knn": "500ae8c4fcac49750f506e30f372f8bf",
+              "stats": "ab30898c2404a832059079a303adc4dc",
+              "fp": "6665869557395018dffa71cf4af69f2e"},
     "tiled-rare": {**_SHARED,
-                   "hdb": "8eefd0cddf5bcecb394283a4ba1dac82",
-                   "rare": "737b1b26501f7153af9a6c22395ea328",
-                   "knn": "e07d439d307a85a42957d680a0f12141",
-                   "stats": "d3c6f7ddf04adb10b46edb9591467eb0",
-                   "fp": "e5024a65188e3da14e1ba42bca816f56"},
+                   "hdb": "24e1eb7f0560456f4003e24ca4521264",
+                   "rare": "8d2cb990caa0c7aa0414e54e576433e7",
+                   "knn": "5a9efa0aacc5250abfe02c4c3160fef9",
+                   "stats": "13d698af885e53e33d81eae0d902fddd",
+                   "fp": "d45a6316582c29c959fa60087e2d4506"},
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
                  "dn": _SHARED["dn"]},
 }

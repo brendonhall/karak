@@ -549,6 +549,7 @@ def run_tiled_hdbscan(
     phase_registry : list[PhaseEntry]
         Final phase registry.
     """
+    from karak.accel import to_numpy
     from karak.clustering.hdbscan_cluster import run_hdbscan
 
     if not skip_knn and noise_reassign_k is None:
@@ -612,6 +613,8 @@ def run_tiled_hdbscan(
         else:
             tile_labels, tile_probs, _ = run_hdbscan(tile_features, hdb_cfg,
                                                      device=device)
+            # cuML returns device arrays; the registry merge is host code.
+            tile_labels, tile_probs = to_numpy(tile_labels), to_numpy(tile_probs)
 
         n_noise = int(np.sum(tile_labels == -1))
         n_clusters = len(set(tile_labels.tolist()) - {-1})

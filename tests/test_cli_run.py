@@ -281,3 +281,83 @@ def test_ram_budget_must_be_positive(tmp_path, capsys, value):
               "--plain", "--ram-budget", value])
     assert exc.value.code == 2
     assert "--ram-budget" in capsys.readouterr().err
+
+
+def test_gpu_budget_flag_is_gigabytes(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+
+    def fake_run(graph, **kwargs):
+        seen.update(kwargs)
+        kwargs["record"].start()
+        kwargs["record"].finish("ok")
+        return {}
+
+    monkeypatch.setattr(executor, "run", fake_run)
+    out = tmp_path / "o"
+    assert main(["run", "--builtin", "stepwise", "--out", str(out), "--plain",
+                 "--gpu-budget", "2"]) == 0
+    assert seen["gpu_budget"] == 2 * 2**30
+    data = json.loads((out / "runs" / "latest" / "run.json").read_text())
+    assert data["settings"]["gpu_budget_gb"] == 2.0
+
+
+def test_gpu_budget_must_be_positive(tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"),
+              "--plain", "--gpu-budget", "0"])
+    assert exc.value.code == 2
+    assert "--gpu-budget" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(not __import__("karak.accel", fromlist=["cuda_available"]).cuda_available(),
+                    reason="no CUDA")
+def test_stepwise_on_cuda_keeps_the_cube_on_the_device(tmp_path, scene):
+    data_dir, colormap = scene
+    out = tmp_path / "out" / "run"
+    assert main(["run", "--builtin", "stepwise", "--input", str(data_dir),
+                 "--out", str(out), "--plain", "--device", "cuda",
+                 "--set", f"src.colormap={colormap}"]) == 0
+    nodes = json.loads((out / "runs" / "latest" / "run.json").read_text())["nodes"]
+    assert nodes["src"]["outputs"]["cube"]["device"] == "cpu"
+    assert nodes["dn"]["outputs"]["cube"]["device"] == "cuda"
+
+
+def test_explicit_set_device_overrides_the_device_flag(tmp_path, monkeypatch):
+    import karak.accel as accel
+    import karak.flow.executor as executor
+
+    seen = {}
+
+    def fake_run(graph, **kwargs):
+        seen.update({n.id: n.params.get("device") for n in graph.nodes})
+        kwargs["record"].start()
+        kwargs["record"].finish("ok")
+        return {}
+
+    monkeypatch.setattr(accel, "cuda_available", lambda: True)
+    monkeypatch.setattr(executor, "run", fake_run)
+    assert main(["run", "--builtin", "global", "--out", str(tmp_path / "o"),
+                 "--plain", "--device", "cuda", "--set", "hdb.device=cpu"]) == 0
+    assert seen["hdb"] == "cpu"
+    assert seen["dn"] == "cuda"
+    assert seen["nrm"] == "cuda" and seen["pca"] == "cuda"
+
+
+@pytest.mark.skipif(not __import__("karak.accel", fromlist=["cuda_available"]).cuda_available(),
+                    reason="no CUDA")
+def test_tiled_on_cuda_records_each_output_placement(tmp_path, scene):
+    data_dir, colormap = scene
+    out = tmp_path / "out" / "run"
+    assert main(["run", "--builtin", "tiled", "--input", str(data_dir),
+                 "--out", str(out), "--plain", "--no-qc", "--device", "cuda",
+                 "--set", f"src.colormap={colormap}",
+                 "--set", "hdb.min_cluster_size=50",
+                 "--set", "hdb.min_samples=10",
+                 "--set", "hdb.tile_size=32"]) == 0
+    nodes = json.loads((out / "runs" / "latest" / "run.json").read_text())["nodes"]
+    for node in ("dn", "nrm", "pca"):
+        assert all(o["device"] == "cuda" for o in nodes[node]["outputs"].values()), node
+    for node in ("knn", "stats", "fp"):
+        assert all(o["device"] == "cpu" for o in nodes[node]["outputs"].values()), node

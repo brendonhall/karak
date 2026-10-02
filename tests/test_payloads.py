@@ -276,3 +276,77 @@ def test_gzip_file_written_before_the_change_still_loads(tmp_path):
     with h5py.File(tmp_path / "old.h5", "r") as fh:
         back = payload_from_h5(fh["p"])
     np.testing.assert_array_equal(back.pixels, cube.pixels)
+
+
+import karak.accel as accel  # noqa: E402
+from karak.stages.payloads import payload_nbytes  # noqa: E402
+
+
+class _FakeDeviceArray:
+    __module__ = "cupy"
+
+    def __init__(self, host):
+        self.host = np.asarray(host)
+        self.shape, self.dtype, self.nbytes = self.host.shape, self.host.dtype, self.host.nbytes
+
+    def get(self):
+        return self.host
+
+
+class _FakeCupy:
+    """Enough of cupy for to(): asarray wraps, .get() unwraps."""
+
+    @staticmethod
+    def asarray(arr):
+        return arr if isinstance(arr, _FakeDeviceArray) else _FakeDeviceArray(arr)
+
+
+@pytest.fixture
+def fake_cuda(monkeypatch):
+    monkeypatch.setattr(accel, "cuda_available", lambda: True)
+    monkeypatch.setattr(accel, "get_array_module",
+                        lambda device: _FakeCupy if device == "cuda" else np)
+
+
+def test_host_payload_is_cpu_and_to_cpu_is_self():
+    cube = _cube()
+    assert cube.device == "cpu"
+    assert cube.to("cpu") is cube
+
+
+def test_to_cuda_moves_every_array_field_and_back(fake_cuda):
+    cube = _cube().replace(means=np.ones(4, np.float32), stds=np.ones(4, np.float32))
+    on_device = cube.to("cuda")
+    assert on_device is not cube
+    assert on_device.device == "cuda"
+    assert isinstance(on_device.pixels, _FakeDeviceArray)
+    assert isinstance(on_device.means, _FakeDeviceArray)
+    assert on_device.element_names == cube.element_names
+    assert on_device.to("cuda") is on_device
+    back = on_device.to("cpu")
+    assert back.device == "cpu"
+    np.testing.assert_array_equal(back.pixels, cube.pixels)
+    np.testing.assert_array_equal(back.means, cube.means)
+
+
+def test_to_keeps_none_fields(fake_cuda):
+    masks = MaskSet(mineral_mask=np.ones((2, 2), bool), valid_mask=None)
+    on_device = masks.to("cuda")
+    assert on_device.valid_mask is None
+    assert isinstance(on_device.mineral_mask, _FakeDeviceArray)
+    assert on_device.to("cpu").valid_mask is None
+
+
+def test_payloads_without_arrays_are_cpu(fake_cuda):
+    stats = ClusterStats(stats={"n": 1})
+    assert stats.device == "cpu"
+    assert stats.to("cuda") is stats
+
+
+def test_payload_nbytes_splits_host_and_device(fake_cuda):
+    cube = _cube()
+    host, device = payload_nbytes(cube)
+    assert (host, device) == (cube.pixels.nbytes, 0)
+    host, device = payload_nbytes(cube.to("cuda"))
+    assert (host, device) == (0, cube.pixels.nbytes)
+    assert payload_nbytes(ClusterStats(stats={})) == (0, 0)

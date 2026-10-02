@@ -274,6 +274,7 @@ Per-channel z-score normalization over mineral pixels; non-mineral pixels are se
 | name | type | default | bounds / choices | help |
 |------|------|---------|------------------|------|
 | `method` | enum | `zscore` | zscore | Method |
+| `device` | str | `cpu` | cpu \| cuda | cpu or cuda (the executor moves the inputs; needs karak[cuda]) |
 
 ## `pca` — PCA
 
@@ -301,6 +302,7 @@ Fit PCA on mineral pixels of the normalized cube and project them into reduced f
 | `min_components` | int | `5` | 1.. | Floor for auto selection |
 | `subsample_fraction` | float | `0.0` | 0.0..1.0 | Fraction of mineral pixels used for fitting; 0 = all |
 | `random_state` | int | `42` | - | Random seed |
+| `device` | str | `cpu` | cpu \| cuda | cpu or cuda (the executor moves the inputs; needs karak[cuda]) |
 
 ## `qc_cluster_summary` — QC: cluster summary
 

@@ -60,3 +60,55 @@ def test_cuda_available_is_bool():
 def test_gpu_name_none_without_gpu(monkeypatch):
     monkeypatch.setattr(accel, "cuda_available", lambda: False)
     assert accel.gpu_name() is None
+
+
+class _FakeDeviceArray:
+    """Stands in for cupy.ndarray: the module name is what accel checks."""
+
+    __module__ = "cupy"
+
+    def __init__(self, host):
+        self.host = np.asarray(host)
+        self.shape, self.dtype, self.nbytes = self.host.shape, self.host.dtype, self.host.nbytes
+
+    def get(self):
+        return self.host
+
+
+def test_is_device_array_by_module_name():
+    assert not accel.is_device_array(np.zeros(3))
+    assert accel.is_device_array(_FakeDeviceArray(np.zeros(3)))
+    assert not accel.is_device_array(None)
+    assert not accel.is_device_array([1, 2])
+
+
+def test_device_of():
+    assert accel.device_of(np.zeros(3)) == "cpu"
+    assert accel.device_of(_FakeDeviceArray(np.zeros(3))) == "cuda"
+
+
+def test_xp_is_numpy_for_host_arrays():
+    assert accel.xp(np.zeros(3)) is np
+
+
+def test_xp_for_a_device_array_uses_get_array_module(monkeypatch):
+    fake_module = object()
+    monkeypatch.setattr(accel, "get_array_module", lambda device: fake_module)
+    assert accel.xp(_FakeDeviceArray(np.zeros(3))) is fake_module
+
+
+def test_to_host_brings_a_device_array_back():
+    arr = _FakeDeviceArray(np.arange(3))
+    np.testing.assert_array_equal(accel.to_host(arr), np.arange(3))
+
+
+def test_device_memory_info_none_without_cuda(monkeypatch):
+    monkeypatch.setattr(accel, "cuda_available", lambda: False)
+    assert accel.device_memory_info() is None
+    accel.free_device_memory()   # no-op, no error
+
+
+@pytest.mark.skipif(not accel.cuda_available(), reason="no CUDA")
+def test_device_memory_info_on_a_gpu():
+    free, total = accel.device_memory_info()
+    assert 0 < free <= total

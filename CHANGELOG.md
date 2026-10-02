@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Device-resident payloads: with `--device cuda`, stage outputs stay on the
+  GPU for the next GPU step. The executor places every input on the
+  consuming step's device; CPU steps always see host arrays; the cache gets
+  a host copy. `payload.device` and `payload.to()`; `--gpu-budget GB`
+  (default 80 % of free device memory) with host fallback for outputs held
+  between steps (the freed device memory returns to the driver before the
+  next step); the run record and the dashboard show placement and device
+  memory. Running out of device memory while moving a step's inputs or
+  inside a step fails that step with a named error.
+- normalize and pca gained a `device` param and GPU paths: a CuPy z-score
+  (matches the CPU path within 1e-4 on the test scenes) and a CuPy port of sklearn's covariance PCA (features
+  within 1e-3, explained variance ratios within 1e-5). cuML HDBSCAN now
+  takes and returns device arrays. cuML HDBSCAN on the global flow at
+  NWA 4587 scale runs out of memory on a 24 GB GPU; `subsample_n` is
+  ignored on cuda. On large images the cpu and cuda normalize steps
+  differ, because the cpu path sums the mineral-pixel means and standard
+  deviations in float32 (on NWA 4587 the standard deviations differ by up
+  to 3.6 %); the difference carries into PCA and the labels. The recipe
+  hashes of `nrm`, `pca` and
+  downstream nodes changed; the shipped flows were regenerated.
+- API change for notebook callers: `denoise_cube(..., device="cuda")`,
+  `run_hdbscan(..., device="cuda")` and `fit_pca` with CuPy input now return
+  CuPy arrays.
 - Cache writes run on a background thread: the next step starts while the
   previous outputs are written; the run drains the writer before it
   returns, also on failure and Ctrl-C. Log lines report each write.
@@ -102,6 +125,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Level k inverts to exactly k/255.
 
 ### Changed
+
+- An explicit `--set NODE.device=...` now overrides `--device`: `--device
+  cuda --set hdb.device=cpu` runs HDBSCAN on the CPU and the other device
+  steps on the GPU.
 
 - **Flows are complete (format version 2).** A flow JSON lists every
   parameter of every node, and a run takes no value from code: `karak

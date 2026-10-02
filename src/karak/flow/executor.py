@@ -6,17 +6,23 @@ in RAM only while downstream consumers remain (refcount), up to a total
 ``ram_budget`` in bytes. A payload that would push the held total over the
 budget is spilled: it is not held, and each consumer reloads it from the
 cache after its background write completes.
+
+Placement: before a stage runs, each input is moved to the node's device
+(its ``device`` param, else cpu). Outputs stay where the stage made them;
+device outputs count against ``gpu_budget`` and move to host memory when
+holding them would exceed it. The cache writer and summaries only ever see
+host copies, so cache hits load host payloads and placement happens at the
+consumer.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import time
 from collections import Counter
 from pathlib import Path
 
-import numpy as np
 
+from karak import accel
 from karak.flow.cache import (
     CacheWriter,
     has_payload,
@@ -31,6 +37,7 @@ from karak.flow.graph import Graph
 from karak.flow.validate import validate
 from karak.provenance import karak_version
 from karak.stages import registry
+from karak.stages.base import StageError
 
 
 class FlowError(Exception):
@@ -49,13 +56,12 @@ def _writer_call(method, *args) -> None:
         raise CacheWriteError(f"cache writer: {exc}") from exc
 
 
-def _payload_nbytes(payload) -> int:
-    total = 0
-    for field in dataclasses.fields(payload):
-        value = getattr(payload, field.name)
-        if isinstance(value, np.ndarray):
-            total += value.nbytes
-    return total
+def _payload_nbytes(payload) -> tuple[int, int]:
+    """(host bytes, device bytes) a payload holds; the RAM budget counts
+    the first, the GPU budget the second."""
+    from karak.stages.payloads import payload_nbytes
+
+    return payload_nbytes(payload)
 
 
 class PayloadStore:
@@ -67,24 +73,48 @@ class PayloadStore:
     per consumer) when holding it would push the total above
     ``ram_budget`` bytes. ``ram_budget=None`` never spills. ``on_spill``
     is called as ``on_spill(node, port, nbytes, budget)`` once per spill.
+
+    Device payloads count against ``gpu_budget`` bytes instead. One that
+    would push the held device total over it is moved to host memory
+    first (then held or spilled like any host payload), and
+    ``on_device_fallback(node, port, nbytes, budget)`` is called once.
+    ``gpu_budget=None`` never moves a payload.
+
+    ``put`` returns the device the store keeps the payload on (``"cpu"``
+    after a fallback), or ``None`` for an output nobody consumes.
     """
 
     def __init__(self, consumers: dict, reload=None,
-                 ram_budget: int | None = None, on_spill=None):
+                 ram_budget: int | None = None, on_spill=None,
+                 gpu_budget: int | None = None, on_device_fallback=None):
         self._remaining = dict(consumers)
         self._in_ram: dict = {}
         self._sizes: dict = {}
+        self._device_sizes: dict = {}
         self._spilled: set = set()
         self._reload = reload
         self._budget = ram_budget
         self._on_spill = on_spill
+        self._gpu_budget = gpu_budget
+        self._on_device_fallback = on_device_fallback
         self.held_bytes = 0
+        self.held_device_bytes = 0
 
-    def put(self, node: str, port: str, payload) -> None:
+    def put(self, node: str, port: str, payload) -> str | None:
         key = (node, port)
         if self._remaining.get(key, 0) <= 0:
-            return  # unconsumed output: drop immediately
-        nbytes = _payload_nbytes(payload)
+            return None  # unconsumed output: drop immediately
+        nbytes, device_bytes = _payload_nbytes(payload)
+        if (
+            device_bytes
+            and self._gpu_budget is not None
+            and self.held_device_bytes + device_bytes > self._gpu_budget
+        ):
+            payload = payload.to("cpu")
+            if self._on_device_fallback is not None:
+                self._on_device_fallback(node, port, device_bytes,
+                                         self._gpu_budget)
+            nbytes, device_bytes = _payload_nbytes(payload)
         if (
             self._budget is not None
             and self._reload is not None
@@ -93,10 +123,13 @@ class PayloadStore:
             self._spilled.add(key)
             if self._on_spill is not None:
                 self._on_spill(node, port, nbytes, self._budget)
-            return
+            return payload.device
         self._in_ram[key] = payload
         self._sizes[key] = nbytes
+        self._device_sizes[key] = device_bytes
         self.held_bytes += nbytes
+        self.held_device_bytes += device_bytes
+        return payload.device
 
     def get(self, node: str, port: str):
         key = (node, port)
@@ -115,6 +148,7 @@ class PayloadStore:
         if remaining <= 0:
             if self._in_ram.pop(key, None) is not None:
                 self.held_bytes -= self._sizes.pop(key, 0)
+                self.held_device_bytes -= self._device_sizes.pop(key, 0)
             self._spilled.discard(key)
 
 
@@ -209,6 +243,7 @@ def run(
     ram_budget: int | None = None,
     record=None,
     cache_compression: str = "lzf",
+    gpu_budget: int | None = None,
 ) -> dict:
     """Execute a flow.
 
@@ -218,6 +253,10 @@ def run(
 
     ``record`` (a ``flow.record.RunRecord``) is started before validation
     and finished as ok, failed or interrupted, so every run leaves one.
+
+    ``gpu_budget`` (bytes) caps the device outputs held between steps;
+    ``None`` means 80 % of free device memory at run start. It applies only
+    when a node runs on cuda.
     """
     if record is not None:
         record.start()
@@ -227,7 +266,7 @@ def run(
             work_dir=work_dir, cache=cache, reporter=reporter,
             workers=workers, skip_types=skip_types,
             ram_budget=ram_budget, record=record,
-            cache_compression=cache_compression,
+            cache_compression=cache_compression, gpu_budget=gpu_budget,
         )
     except KeyboardInterrupt:
         if record is not None:
@@ -244,7 +283,7 @@ def run(
 
 def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
              reporter, workers, skip_types, ram_budget, record,
-             cache_compression="lzf") -> dict:
+             cache_compression="lzf", gpu_budget=None) -> dict:
     from karak.flow.budget import default_ram_budget
     from karak.stages.payloads import format_bytes
 
@@ -288,14 +327,14 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
               f"store: {node}.{port} ({format_bytes(nbytes)}) spilled to "
               f"cache, budget {format_bytes(budget)}")
 
-    if not cache:
-        budget = None
-    else:
-        budget = default_ram_budget() if ram_budget is None else ram_budget
-    store = PayloadStore(consumers, reload=_reload, ram_budget=budget,
-                         on_spill=_on_spill)
-    summary: dict = {}
-    run_started_at = time.monotonic()
+    fallbacks: list = []   # outputs moved to host by the device budget
+
+    def _on_device_fallback(node, port, nbytes, budget):
+        fallbacks.append((node, port))
+        _emit(reporter, "log", "info",
+              f"store: {node}.{port} ({format_bytes(nbytes)}) moved to host, "
+              f"gpu budget {format_bytes(budget)}")
+
     order = [n for n in _topo_order(graph) if n not in skipped]
     devices = set()
     for node_id in order:
@@ -304,6 +343,22 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
             node.params, require_complete=True)
         if "device" in coerced:
             devices.add(str(coerced["device"]))
+    uses_cuda = "cuda" in devices
+    if not uses_cuda:
+        gpu_budget = None
+    elif gpu_budget is None:
+        info = accel.device_memory_info()
+        gpu_budget = None if info is None else int(0.8 * info[0])
+
+    if not cache:
+        budget = None
+    else:
+        budget = default_ram_budget() if ram_budget is None else ram_budget
+    store = PayloadStore(consumers, reload=_reload, ram_budget=budget,
+                         on_spill=_on_spill, gpu_budget=gpu_budget,
+                         on_device_fallback=_on_device_fallback)
+    summary: dict = {}
+    run_started_at = time.monotonic()
     _emit(reporter, "run_started", RunInfo(
         flow=graph.name,
         input_path=input_path,
@@ -388,10 +443,18 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
                     for port in cls.OUTPUTS
                 }
             else:
-                inputs = {
-                    e.dst.port: store.get(e.src.node, e.src.port)
-                    for e in graph.in_edges(node_id)
-                }
+                placement = str(params.get("device", "cpu"))
+                inputs = {}
+                for e in graph.in_edges(node_id):
+                    payload = store.get(e.src.node, e.src.port)
+                    try:
+                        inputs[e.dst.port] = payload.to(placement)
+                    except Exception as exc:   # StageError, CuPy out of memory
+                        _emit(reporter, "node_failed", node_id, str(exc))
+                        if record is not None:
+                            record.node(node_id, status="failed", error=str(exc))
+                        raise FlowError(
+                            f"node {node_id!r} ({node.type}): {exc}") from exc
                 stage = cls()
                 stage.reporter = reporter
                 stage.workers = workers
@@ -404,16 +467,23 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
                     if record is not None:
                         record.node(node_id, status="failed", error=str(exc))
                     raise FlowError(f"node {node_id!r} ({node.type}): {exc}") from exc
-                summaries = {name: _summarize(p) for name, p in outputs.items()}
+                # The writer and summary() see host copies; the store keeps
+                # the outputs where the stage made them.
+                host_outputs = {name: p.to("cpu") for name, p in outputs.items()}
+                summaries = {name: _summarize(p) for name, p in host_outputs.items()}
                 if cache and not is_sink:
                     upstream = _upstream_recipes(graph, node_id, hashes)
-                    for port_name, payload in outputs.items():
+                    for port_name, payload in host_outputs.items():
                         writer.submit(node_hash, port_name, payload,
                                       summaries[port_name], upstream,
                                       label=f"{node_id}.{port_name}")
 
+            # Record where the store keeps each output (host after a
+            # fallback); an unconsumed output keeps the stage's placement.
+            placements = {}
             for port_name, payload in outputs.items():
-                store.put(node_id, port_name, payload)
+                held = store.put(node_id, port_name, payload)
+                placements[port_name] = payload.device if held is None else held
 
             elapsed = time.monotonic() - started
             if summaries:
@@ -431,10 +501,21 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
                             "file": (str(payload_path(node_hash, port, cache_dir))
                                      if cache and not is_sink else None),
                             "summary": text,
+                            "device": placements.get(port, "cpu"),
                         }
                         for port, text in summaries.items()
                     },
                 )
+            # Drop this node's references now: after a fallback the store
+            # holds a host copy, and the device array must be freed before
+            # the next node runs; the writer keeps its own host copies.
+            outputs = host_outputs = inputs = payload = None
+            if fallbacks:
+                # The fallback freed device arrays into CuPy's pool; give the
+                # blocks back to the driver so cuML/RMM in the next stage
+                # can use them.
+                accel.free_device_memory()
+                fallbacks.clear()
             _drain_writer_log()
     except BaseException as failure:
         # A stage failure or Ctrl-C is propagating: finish the queued writes
@@ -450,18 +531,22 @@ def _execute(graph: Graph, *, input_path, out_base, work_dir, cache,
                 except Exception as exc:
                     _emit(reporter, "log", "error", f"cache writer: {exc}")
         raise
-    if writer is not None:
-        try:
-            _writer_call(writer.wait)   # a writer error fails the run
-        finally:
-            writer.close()
-            for line in writer.drain_log():
-                _emit(reporter, "log", "info", line)
-        for node_id, entry in summary.items():
-            entry["write_seconds"] = sum(
-                seconds for label, seconds in writer.per_label.items()
-                if label.startswith(node_id + ".")
-            )
+    else:
+        if writer is not None:
+            try:
+                _writer_call(writer.wait)   # a writer error fails the run
+            finally:
+                writer.close()
+                for line in writer.drain_log():
+                    _emit(reporter, "log", "info", line)
+            for node_id, entry in summary.items():
+                entry["write_seconds"] = sum(
+                    seconds for label, seconds in writer.per_label.items()
+                    if label.startswith(node_id + ".")
+                )
+    finally:
+        if uses_cuda:
+            accel.free_device_memory()   # return the pool's blocks
 
     _emit(reporter, "run_finished", summary, time.monotonic() - run_started_at)
     return summary

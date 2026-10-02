@@ -47,6 +47,9 @@ class PCAStage(Stage):
               "Fraction of mineral pixels used for fitting; 0 = all",
               min=0.0, max=1.0),
         Param("random_state", "int", 42, "Random seed"),
+        Param("device", "str", "cpu", "Device",
+              "cpu or cuda (the executor moves the inputs; needs karak[cuda])",
+              choices=("cpu", "cuda")),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:

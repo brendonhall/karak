@@ -162,3 +162,18 @@ def test_stage_wires_the_optional_bse_port_to_the_joint_guide():
                     {"method": "joint_bilateral_bse"})
     assert out["cube"].space is Space.DENOISED
     assert out["cube"].pixels.shape == cube.shape
+
+
+def test_cpu_path_rejects_a_device_array_with_a_clear_error():
+    from conftest import denoise_cfg
+    from karak.preprocessing.denoise import denoise_cube
+    from karak.stages.base import StageError
+
+    class FakeDeviceArray:
+        __module__ = "cupy"
+        shape = (4, 4, 2)
+
+    cfg = denoise_cfg(method="bilateral", sigma_color=None, sigma_spatial=1.0,
+                      niter=10, kappa=50.0, gamma=0.1, option=2)
+    with pytest.raises(StageError, match="device array"):
+        denoise_cube(FakeDeviceArray(), np.ones((4, 4), bool), cfg)

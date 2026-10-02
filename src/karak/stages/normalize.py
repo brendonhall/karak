@@ -26,6 +26,9 @@ class NormalizeStage(Stage):
     ]
     PARAMS = [
         Param("method", "enum", "zscore", "Method", choices=("zscore",)),
+        Param("device", "str", "cpu", "Device",
+              "cpu or cuda (the executor moves the inputs; needs karak[cuda])",
+              choices=("cpu", "cuda")),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:

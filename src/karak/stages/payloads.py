@@ -77,8 +77,53 @@ def _dataset(group, name, data, compression=CACHE_COMPRESSION):
 
 
 class _Replaceable:
+    """``replace`` for frozen dataclasses, plus host/device placement of
+    the top-level array fields."""
+
     def replace(self, **changes):
         return dataclasses.replace(self, **changes)
+
+    def _array_fields(self):
+        from karak.accel import is_device_array
+
+        for field in dataclasses.fields(self):
+            value = getattr(self, field.name)
+            if isinstance(value, np.ndarray) or is_device_array(value):
+                yield field.name, value
+
+    @property
+    def device(self) -> str:
+        from karak.accel import is_device_array
+
+        return "cuda" if any(is_device_array(v) for _, v in self._array_fields()) else "cpu"
+
+    def to(self, device: str):
+        """This payload with every array field on ``device``; ``self`` when
+        nothing has to move."""
+        from karak.accel import get_array_module, is_device_array, to_numpy
+
+        if device not in ("cpu", "cuda"):
+            raise ValueError(f"device must be 'cpu' or 'cuda', got {device!r}")
+        changes = {}
+        for name, value in self._array_fields():
+            if device == "cuda" and not is_device_array(value):
+                changes[name] = get_array_module("cuda").asarray(value)
+            elif device == "cpu" and is_device_array(value):
+                changes[name] = to_numpy(value)
+        return dataclasses.replace(self, **changes) if changes else self
+
+
+def payload_nbytes(payload) -> tuple[int, int]:
+    """(host bytes, device bytes) held by a payload's top-level array fields."""
+    from karak.accel import is_device_array
+
+    host = device = 0
+    for _, value in payload._array_fields():
+        if is_device_array(value):
+            device += int(value.nbytes)
+        else:
+            host += int(value.nbytes)
+    return host, device
 
 
 def format_bytes(n: int) -> str:
