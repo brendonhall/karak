@@ -55,7 +55,8 @@ GOLDEN = {
                    "stats": "63c97e5b24b6c58ef69ad3f3634c418a",
                    "fp": "c164dc3e20e0de35b435816bbdbcbc14"},
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
-                 "dn": _SHARED["dn"], "nrm": _SHARED["nrm"]},
+                 "dn": _SHARED["dn"], "nrm": _SHARED["nrm"],
+                 "pca": _SHARED["pca"]},
 }
 
 

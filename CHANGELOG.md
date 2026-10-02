@@ -69,7 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the run summary. `--plain` (automatic when stdout is not a terminal)
   prints the same information as lines.
 - `stepwise` builtin flow, which grows one step at a time; it currently
-  runs the load, mask, denoise, and normalize steps.
+  runs the load, mask, denoise, normalize, and PCA steps.
+- `karak view` also opens the PCA step's features: each kept component
+  becomes a hidden `pca: PC<k>` layer (scores scattered into the image,
+  contrast limits from the 1st and 99th percentiles of the scores), and
+  the command prints the explained variance of each kept component.
 - `karak view` also opens the normalize step's cube as `nrm: <element>`
   layers, with contrast limits from the 1st and 99th percentiles of the
   mineral pixels.

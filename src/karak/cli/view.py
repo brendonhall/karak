@@ -1,18 +1,22 @@
-"""karak view: open a run's cached load, mask, denoise and normalize outputs in napari.
+"""karak view: open a run's cached load, mask, denoise, normalize and PCA
+outputs in napari.
 
 It opens the outputs listed in the run's latest record
 (``{out}/runs/latest/run.json``): the load step's ElementCube (the first
 with no upstream cube), the BseImage from the same step, the first MaskSet
 (the mask step's), the denoised ElementCube computed from that cube (the
-denoise step's), and the normalized ElementCube computed from the denoised
-one (the normalize step's). Without a record it scans the cache, which
+denoise step's), the normalized ElementCube computed from the denoised
+one (the normalize step's), and the PCAFeatures computed from the
+normalized one (the PCA step's). Without a record it scans the cache, which
 names files by recipe hash, reading each file's ``payload_type`` and
 upstream recipes to find the newest of each. Elements are image layers,
 the denoised elements ``dn: <element>`` layers, the z-scores
-``nrm: <element>`` layers with contrast limits from the data, and the
-mineral mask and the valid mask labels layers. Layers are placed in full-resolution coordinates
-(scale = downsample factor, offset = trims) so positions match the
-original exports and the napari shapes the valid mask was drawn with.
+``nrm: <element>`` layers with contrast limits from the data, each kept
+principal component scattered back into the image as a ``pca: PC<k>``
+layer, and the mineral mask and the valid mask labels layers. Layers are
+placed in full-resolution coordinates (scale = downsample factor, offset =
+trims) so positions match the original exports and the napari shapes the
+valid mask was drawn with.
 
 napari is an optional dependency: ``uv sync --extra view``.
 """
@@ -68,6 +72,7 @@ class PickedOutputs:
     masks: CacheFile | None
     denoised: CacheFile | None
     normalized: CacheFile | None
+    features: CacheFile | None
     other_cubes: list
 
 
@@ -136,8 +141,8 @@ def find_run_outputs(target: str | Path) -> list[CacheFile] | None:
 def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedOutputs:
     """The load step's ElementCube, the BseImage from the same step, the
     MaskSet and the denoised ElementCube computed from that cube, the
-    normalized ElementCube computed from the denoised one, and the other
-    cubes.
+    normalized ElementCube computed from the denoised one, the PCAFeatures
+    computed from the normalized one, and the other cubes.
 
     Cubes are told apart by their ``space`` tag (raw, denoised,
     normalized). With a run
@@ -149,7 +154,9 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
     the masks shown are the ones that denoised cube consumed (its upstream
     ``masks``), so a newer mask from an interrupted rerun is never overlaid
     on an older denoised cube; the normalized cube shown is one whose
-    upstream ``cube`` is that denoised cube. Without a denoised cube the
+    upstream ``cube`` is that denoised cube, and the PCA features shown are
+    ones whose upstream ``cube`` is that normalized cube. Without a
+    denoised cube the
     newest masks computed from the raw cube are shown. Another run's
     outputs are never overlaid.
     """
@@ -183,6 +190,13 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
             normalized_cubes = [e for e in normalized_cubes
                                 if e.upstream.get("cube") == denoised.recipe]
         normalized = (normalized_cubes or [None])[0]
+    features = None
+    if normalized is not None:
+        feature_sets = newest(e for e in entries if e.payload_type == "pca_features")
+        if newest_first:
+            feature_sets = [e for e in feature_sets
+                            if e.upstream.get("cube") == normalized.recipe]
+        features = (feature_sets or [None])[0]
     if not newest_first:
         masks = (mask_sets or [None])[0]
     elif denoised is not None:
@@ -193,7 +207,7 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
                         if e.upstream.get("cube") == cube.recipe) or [None])[0]
     shown = (cube, denoised, normalized)
     others = [e for e in cubes if all(e is not s for s in shown)]
-    return PickedOutputs(cube, bse, masks, denoised, normalized, others)
+    return PickedOutputs(cube, bse, masks, denoised, normalized, features, others)
 
 
 def _zscore_limits(channel: np.ndarray) -> tuple:
@@ -211,13 +225,35 @@ def _zscore_limits(channel: np.ndarray) -> tuple:
     return (float(lo), float(hi))
 
 
+def _feature_limits(values: np.ndarray) -> tuple:
+    """Contrast limits for one principal component: the 1st and 99th
+    percentiles of its mineral-pixel scores."""
+    if values.size == 0:
+        return (-1.0, 1.0)
+    lo, hi = np.percentile(values, [1, 99])
+    if lo == hi:
+        lo, hi = lo - 1.0, hi + 1.0
+    return (float(lo), float(hi))
+
+
+def pca_summary(features) -> str:
+    """One line: kept components, their total variance, and each one's."""
+    evr = np.asarray(features.explained_variance_ratio)
+    kept = evr[: features.n_kept]
+    parts = ", ".join(f"PC{k} {v:.1%}" for k, v in enumerate(kept, start=1))
+    return (f"pca: {features.n_kept} components kept "
+            f"({float(kept.sum()):.1%} variance): {parts}")
+
+
 def layer_specs(cube, bse, masks=None, denoised=None, normalized=None,
-                show=("Fe-K",)) -> list[LayerSpec]:
+                features=None, show=("Fe-K",)) -> list[LayerSpec]:
     """BSE, one layer per element, the denoised cube's elements as
     ``dn: <element>``, the normalized cube's as ``nrm: <element>`` (z-scores,
-    so contrast limits come from the data), then the masks as labels
-    layers, all placed in full-resolution pixels. Only ``show`` elements
-    start visible."""
+    so contrast limits come from the data), each kept principal component
+    as ``pca: PC<k>`` (scores scattered into the image, 0 elsewhere,
+    hidden), then the masks as labels layers, all placed in full-resolution
+    pixels. Only ``show`` elements start visible. PCA features whose image
+    shape differs from the cube's are skipped."""
     factor = cube.downsample_factor
     offset = (factor - 1) / 2  # a block's center, in full-resolution pixels
     translate = (
@@ -243,6 +279,14 @@ def layer_specs(cube, bse, masks=None, denoised=None, normalized=None,
             specs.append(LayerSpec(f"nrm: {name}", channel, scale, translate,
                                    name in visible,
                                    contrast_limits=_zscore_limits(channel)))
+    if features is not None and tuple(features.image_shape) == cube.pixels.shape[:2]:
+        rows, cols = features.mineral_indices[:, 0], features.mineral_indices[:, 1]
+        for k in range(features.n_kept):
+            scores = features.features[:, k]
+            image = np.zeros(cube.pixels.shape[:2], dtype=np.float32)
+            image[rows, cols] = scores
+            specs.append(LayerSpec(f"pca: PC{k + 1}", image, scale, translate,
+                                   False, contrast_limits=_feature_limits(scores)))
     if masks is not None:
         specs.append(LayerSpec("mineral mask", masks.mineral_mask.astype(np.uint8),
                                scale, translate, True, kind="labels"))
@@ -285,7 +329,7 @@ def open_viewer(specs: list[LayerSpec], shapes) -> None:
 def view_main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="karak view",
-        description="Open the cached load, mask, denoise and normalize outputs of a run in napari.",
+        description="Open the cached load, mask, denoise, normalize and PCA outputs of a run in napari.",
     )
     parser.add_argument(
         "path",
@@ -333,7 +377,13 @@ def view_main(argv: list[str]) -> int:
     masks = load(picked.masks) if picked.masks is not None else None
     denoised = load(picked.denoised) if picked.denoised is not None else None
     normalized = load(picked.normalized) if picked.normalized is not None else None
-    specs = layer_specs(cube, bse, masks, denoised, normalized,
+    features = load(picked.features) if picked.features is not None else None
+    if features is not None:
+        print(pca_summary(features))
+        if tuple(features.image_shape) != cube.pixels.shape[:2]:
+            print(f"pca: image shape {tuple(features.image_shape)} differs from "
+                  f"the cube's {cube.pixels.shape[:2]}; PCA layers skipped")
+    specs = layer_specs(cube, bse, masks, denoised, normalized, features,
                         show=tuple(args.show.split(",")))
     shapes = read_napari_shapes(args.mask) if args.mask else []
     open_viewer(specs, shapes)

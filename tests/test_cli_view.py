@@ -15,6 +15,7 @@ from karak.stages.payloads import (
     ClusterStats,
     ElementCube,
     MaskSet,
+    PCAFeatures,
     Space,
 )
 
@@ -175,9 +176,10 @@ def test_view_opens_layers_and_mask(tmp_path, monkeypatch, capsys):
     assert "ElementCube 4×5×3" in out
 
 
-def _write_record(out_base, outputs, masks=None, denoised=None):
+def _write_record(out_base, outputs, masks=None, denoised=None,
+                  normalized=None, features=None):
     """A minimal run record whose src node lists the given cache files,
-    plus a msk node for ``masks`` and a dn node for ``denoised`` when given."""
+    plus msk, dn, nrm and pca nodes for the files given."""
     import json
 
     def node(stage, files):
@@ -190,6 +192,10 @@ def _write_record(out_base, outputs, masks=None, denoised=None):
         nodes["msk"] = node("mask", {"masks": masks})
     if denoised is not None:
         nodes["dn"] = node("denoise", {"cube": denoised})
+    if normalized is not None:
+        nodes["nrm"] = node("normalize", {"cube": normalized})
+    if features is not None:
+        nodes["pca"] = node("pca", {"features": features})
     run_dir = out_base / "runs" / "2026-09-29T14-05-12Z"
     run_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(json.dumps({
@@ -483,3 +489,105 @@ def test_normalized_contrast_limits_ignore_the_zeroed_background():
     specs = layer_specs(_cube(), None, None, None, cube.replace(pixels=pixels))
     lo, hi = {s.name: s for s in specs}["nrm: Al"].contrast_limits
     assert lo < -0.1 and hi > 0.1
+
+
+def _features(n_kept=2, image_shape=(4, 5)):
+    rows, cols = np.nonzero(_masks().mineral_mask)
+    scores = np.stack([np.arange(rows.size, dtype=np.float32) + 1.0,
+                       -np.arange(rows.size, dtype=np.float32) - 1.0,
+                       np.full(rows.size, 0.5, np.float32)], axis=1)
+    scores[0, 0] = 100.0                  # one outlier on PC1
+    return PCAFeatures(
+        features=scores[:, :n_kept],
+        mineral_indices=np.stack([rows, cols], axis=1).astype(np.int32),
+        image_shape=image_shape,
+        explained_variance_ratio=np.array([0.6, 0.3, 0.1]),
+        n_kept=n_kept,
+    )
+
+
+def test_pick_pca_features_linked_to_the_normalized_cube_from_a_cache_scan(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "dn", "cube", _denoised(), 2000, upstream={"cube": "raw"})
+    _store(cache, "nrm", "cube", _normalized(), 3000, upstream={"cube": "dn"})
+    _store(cache, "pca", "features", _features(), 4000,
+           upstream={"cube": "nrm", "masks": "m"})
+    _store(cache, "other", "features", _features(), 5000,
+           upstream={"cube": "another-nrm", "masks": "m"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.normalized.recipe == "nrm"
+    assert picked.features.recipe == "pca"
+
+
+def test_pick_no_pca_features_without_a_normalized_cube(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "dn", "cube", _denoised(), 2000, upstream={"cube": "raw"})
+    _store(cache, "pca", "features", _features(), 4000, upstream={"cube": "nrm"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.normalized is None and picked.features is None
+
+
+def test_pick_pca_features_of_the_recorded_run(tmp_path):
+    from karak.cli.view import find_run_outputs
+
+    cache = tmp_path / "output" / "work" / "cache"
+    rec_cube = _store(cache, "rec", "cube", _cube(), 1000)
+    rec_dn = _store(cache, "recd", "cube", _denoised(), 1000)
+    rec_nrm = _store(cache, "recn", "cube", _normalized(), 1000)
+    rec_pca = _store(cache, "recp", "features", _features(), 1000)
+    _store(cache, "newer", "features", _features(), 5000)   # not from the run
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": rec_cube}, denoised=rec_dn,
+                  normalized=rec_nrm, features=rec_pca)
+    picked = pick_outputs(find_run_outputs(out_base), newest_first=False)
+    assert picked.features.recipe == "recp"
+
+
+def test_pca_layers_scatter_the_kept_components_into_the_image():
+    cube = _cube(factor=2, trim=3)
+    features = _features(n_kept=2)
+    specs = layer_specs(cube, None, _masks(), None, _normalized(), features)
+    by_name = {s.name: s for s in specs}
+    names = [s.name for s in specs]
+    assert names[names.index("pca: PC1"):] == [
+        "pca: PC1", "pca: PC2", "mineral mask", "valid mask"]
+    pc2 = by_name["pca: PC2"]
+    rows, cols = features.mineral_indices.T
+    np.testing.assert_array_equal(pc2.data[rows, cols], features.features[:, 1])
+    outside = ~_masks().mineral_mask
+    assert (pc2.data[outside] == 0).all()
+    assert pc2.data.shape == (4, 5) and pc2.data.dtype == np.float32
+    assert not pc2.visible
+    assert (pc2.scale, pc2.translate) == (by_name["Al"].scale, by_name["Al"].translate)
+    lo, hi = by_name["pca: PC1"].contrast_limits
+    assert 1.0 <= lo < hi < 100.0         # the outlier does not set the range
+
+
+def test_pca_layers_skipped_when_the_image_shape_differs():
+    specs = layer_specs(_cube(), None, None, None, None,
+                        _features(image_shape=(8, 10)))
+    assert not any(s.name.startswith("pca:") for s in specs)
+
+
+def test_pca_summary_lists_the_kept_variance():
+    from karak.cli.view import pca_summary
+
+    assert pca_summary(_features(n_kept=2)) == (
+        "pca: 2 components kept (90.0% variance): PC1 60.0%, PC2 30.0%")
+
+
+def test_view_main_prints_the_pca_summary(tmp_path, monkeypatch, capsys):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "dn", "cube", _denoised(), 2000, upstream={"cube": "raw"})
+    _store(cache, "nrm", "cube", _normalized(), 3000, upstream={"cube": "dn"})
+    _store(cache, "pca", "features", _features(), 4000, upstream={"cube": "nrm"})
+    opened = {}
+    monkeypatch.setattr(view, "_napari_available", lambda: True)
+    monkeypatch.setattr(view, "open_viewer",
+                        lambda specs, shapes: opened.update(specs=specs))
+    assert view_main([str(cache)]) == 0
+    assert "pca: 2 components kept (90.0% variance)" in capsys.readouterr().out
+    assert [s.name for s in opened["specs"]][-2:] == ["pca: PC1", "pca: PC2"]
