@@ -34,6 +34,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prints the same information as lines.
 - `stepwise` builtin flow, which grows one step at a time; it currently
   runs the load, mask, and denoise steps.
+- Bilateral filter core (`karak.preprocessing.bilateral`): a numpy
+  reference and a CuPy kernel for the bilateral and the joint (guided)
+  bilateral filter. `--device cuda` on the denoise step now runs this
+  kernel for every bilateral method (cuCIM is no longer used there).
+- Denoise `method` choices `bilateral_sym` (symmetric Gaussian kernel),
+  `joint_bilateral_total` (range weight from the summed channels) and
+  `joint_bilateral_bse` (range weight from the BSE image, wired to the
+  stage's new optional `bse` input port). `bilateral` is unchanged and
+  stays scikit-image on the CPU. For the new methods the colour lookup
+  table covers the differences to the zero padding, so border pixels are
+  weighted correctly, and a constant guide (a flat BSE image or a constant
+  channel sum) still applies the spatial kernel.
+- Finding: scikit-image's `denoise_bilateral` (0.19 through 0.26) applies
+  an off-centre spatial kernel. `_compute_spatial_lut` builds an
+  (n+1) x (n+1) table for an n x n window (`np.arange(-n // 2, ...)`) and
+  the Cython loop reads it with stride n, so for the default 7 x 7 window
+  the unit weight sits at offset (+2, -2) and the top row has zero weight.
+  karak keeps that behaviour under `bilateral` because the published
+  baseline used it; the CUDA `bilateral` reproduces it to 1e-5.
 - The denoise step reports progress per element channel to the dashboard,
   also with `--workers` (channels complete in any order) and on CUDA;
   `denoise_cube` and the per-method functions take an `on_channel` callback.
@@ -111,11 +130,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `--device cuda` on the denoise step raises a clear `StageError` instead
-  of an `ImportError`: cucim (25.6 through 26.8) ships no
-  `denoise_bilateral`, so the GPU bilateral path has never run. A CuPy
-  bilateral filter is a follow-up; the GPU parity test is marked xfail
-  until then.
+- The GPU bilateral path never ran: cucim (25.6 through 26.8) ships no
+  `denoise_bilateral`. `--device cuda` on the denoise step now uses
+  karak's own CuPy kernel (see Added).
 - `load_valid_mask` failed with a string path (every flow run with
   `mask.valid_mask_path` set) after the shapes-CSV refactor.
 - The mask step no longer triggers scikit-image's `min_size` deprecation

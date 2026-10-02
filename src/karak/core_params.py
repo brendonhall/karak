@@ -34,7 +34,7 @@ class LoaderConfig:
 
 @dataclass(frozen=True, kw_only=True)
 class DenoiseConfig:
-    method: str                    # "bilateral" | "anisotropic_diffusion"
+    method: str                    # bilateral | bilateral_sym | joint_bilateral_total | joint_bilateral_bse | anisotropic_diffusion
     sigma_color: float | None      # None = derive from the data range
     sigma_spatial: float
     niter: int

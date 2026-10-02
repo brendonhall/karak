@@ -1,13 +1,16 @@
-"""Edge-aware denoising for CLR-transformed compositional cubes.
+"""Edge-aware denoising for raw [0, 1] element cubes.
 
-Implements bilateral filtering (scikit-image) and Perona-Malik anisotropic
-diffusion (medpy) as channel-by-channel denoisers.  Both methods handle the
+Channel-by-channel denoisers: the bilateral filter (scikit-image for
+``bilateral``, karak's own numpy reference and CuPy kernel in
+``karak.preprocessing.bilateral`` for ``bilateral_sym`` and the joint
+methods) and Perona-Malik anisotropic diffusion (medpy). All handle the
 mineral mask boundary by filling masked pixels with the mineral-pixel mean
-before denoising, then re-applying the mask after (see RESEARCH.md Pitfall 3).
+before denoising, then re-applying the mask after (see RESEARCH.md Pitfall
+3).
 
 The ``compare_denoisers`` function produces a multi-panel diagnostic figure
 and quantitative metrics (RMSE, edge preservation) for choosing between the
-two methods.
+methods.
 """
 
 from __future__ import annotations
@@ -25,19 +28,53 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+BILATERAL_METHODS = ("bilateral", "bilateral_sym",
+                     "joint_bilateral_total", "joint_bilateral_bse")
+JOINT_METHODS = ("joint_bilateral_total", "joint_bilateral_bse")
+
 
 # ---------------------------------------------------------------------------
 # Core denoisers
 # ---------------------------------------------------------------------------
 
 
-def _bilateral_channel(channel, mask, sigma_color, sigma_spatial):
-    """One channel of bilateral_denoise_cube. Pool-safe."""
+def _bilateral_channel(channel, mask, sigma_color, sigma_spatial,
+                       method="bilateral", guide=None):
+    """One channel of bilateral_denoise_cube. Pool-safe.
+
+    ``bilateral`` is scikit-image's filter (the published baseline); the
+    other methods use karak's reference implementation, with ``guide``
+    (already mask-filled) as the range image for the joint methods.
+    """
     channel = channel.copy()
     channel[~mask] = np.nanmean(channel[mask])
-    return denoise_bilateral(
-        channel, sigma_color=sigma_color, sigma_spatial=sigma_spatial,
+    if method == "bilateral":
+        return denoise_bilateral(
+            channel, sigma_color=sigma_color, sigma_spatial=sigma_spatial,
+        )
+    from karak.preprocessing.bilateral import bilateral_numpy
+
+    return bilateral_numpy(
+        channel, channel if guide is None else guide,
+        sigma_color=sigma_color, sigma_spatial=sigma_spatial,
     )
+
+
+def _joint_guide(cube, mask, method, guide):
+    """The mask-filled guide image for a joint method, or None."""
+    if method not in JOINT_METHODS:
+        return None
+    if method == "joint_bilateral_total":
+        guide = cube.sum(axis=-1)
+    elif guide is None:
+        from karak.errors import StageError
+        raise StageError(
+            "method='joint_bilateral_bse' needs the BSE image: connect the "
+            "edge src.bse -> dn.bse (the denoise stage's optional 'bse' port)"
+        )
+    guide = np.ascontiguousarray(guide, dtype=np.float32).copy()
+    guide[~mask] = guide[mask].mean()
+    return guide
 
 
 def _anisotropic_channel(channel, mask, niter, kappa, gamma, option):
@@ -95,77 +132,81 @@ def bilateral_denoise_cube(
     workers: int = 1,
     device: str = "cpu",
     on_channel: Callable[[int, int, int], None] | None = None,
+    method: str = "bilateral",
+    guide: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Apply bilateral filter independently to each channel.
+    """Apply a bilateral filter independently to each channel.
 
-    Before denoising each channel, masked (non-mineral) pixels are filled
-    with the mean of mineral pixels to prevent mask-boundary artifacts.
-    After denoising, the mask is re-applied (masked pixels set to 0).
+    Masked (non-mineral) pixels are filled with the channel's mineral mean
+    before filtering and zeroed after, so the epoxy zeros do not darken
+    grain boundaries.
 
     Parameters
     ----------
     cube : np.ndarray
-        (H, W, C) CLR-transformed compositional cube.
+        (H, W, C) raw [0, 1] element cube.
     mask : np.ndarray
         (H, W) boolean mask, True = mineral pixel.
     sigma_color : float or None
-        Radiometric similarity sigma.  ``None`` lets scikit-image
-        auto-calculate from the image standard deviation.
+        Range sigma; None = the standard deviation of the filtered channel
+        (single-image methods) or of the guide (joint methods).
     sigma_spatial : float
-        Spatial distance sigma (default 1.0).
+        Spatial sigma in pixels; the window is ``max(5, 2*ceil(3*sigma)+1)``.
     workers : int
         Number of parallel workers (default 1).
     device : str
-        Device to use: "cpu" or "cuda" (default "cpu").
+        "cpu" or "cuda". On CUDA every method runs karak's CuPy kernel;
+        ``bilateral`` reproduces scikit-image to float32 precision.
     on_channel : callable, optional
         Called as ``on_channel(done, total, index)`` after each channel
         completes; with ``workers > 1`` in completion order.
+    method : str
+        ``bilateral`` (scikit-image, including its off-centre spatial
+        table; see ``karak.preprocessing.bilateral``), ``bilateral_sym``
+        (symmetric kernel), ``joint_bilateral_total`` (range weight from
+        the sum of the channels) or ``joint_bilateral_bse`` (range weight
+        from ``guide``).
+    guide : np.ndarray, optional
+        (H, W) BSE image for ``joint_bilateral_bse``.
 
     Returns
     -------
     denoised : np.ndarray
         (H, W, C) denoised cube with masked pixels set to 0.
     """
+    if method not in BILATERAL_METHODS:
+        raise ValueError(f"unknown bilateral method {method!r}")
+    guide = _joint_guide(cube, mask, method, guide)
+    H, W, C = cube.shape
+
     if device == "cuda":
         from karak.accel import get_array_module, to_numpy
+        from karak.preprocessing.bilateral import bilateral_cupy
 
         cp = get_array_module(device)  # raises StageError without CUDA
-        try:
-            from cucim.skimage.restoration import denoise_bilateral as gpu_bilateral
-        except ImportError as exc:
-            from karak.errors import StageError
-            raise StageError(
-                "device='cuda' bilateral denoise needs "
-                "cucim.skimage.restoration.denoise_bilateral, which the "
-                "installed cucim does not provide; use device=cpu "
-                "(a CuPy bilateral filter is planned)"
-            ) from exc
-
         gpu_cube = cp.asarray(cube)
         gpu_mask = cp.asarray(mask)
-        H, W, C = gpu_cube.shape
+        gpu_guide = None if guide is None else cp.asarray(guide)
         out = cp.zeros_like(gpu_cube)
         for i in range(C):
             channel = gpu_cube[:, :, i].copy()
             channel[~gpu_mask] = cp.nanmean(channel[gpu_mask])
-            out[:, :, i] = gpu_bilateral(
-                channel, sigma_color=sigma_color, sigma_spatial=sigma_spatial,
+            out[:, :, i] = bilateral_cupy(
+                channel, channel if gpu_guide is None else gpu_guide,
+                sigma_color=sigma_color, sigma_spatial=sigma_spatial,
+                exact_skimage=(method == "bilateral"),
             )
             if on_channel is not None:
                 on_channel(i + 1, C, i)
         out[~gpu_mask] = 0.0
         logger.info(
-            "Bilateral denoise complete (GPU): shape %s, sigma_color=%s, sigma_spatial=%s",
-            out.shape,
-            sigma_color,
-            sigma_spatial,
+            "Bilateral denoise complete (GPU, %s): shape %s, sigma_color=%s, "
+            "sigma_spatial=%s", method, out.shape, sigma_color, sigma_spatial,
         )
         return to_numpy(out).astype(cube.dtype)
 
-    H, W, C = cube.shape
     denoised = np.zeros_like(cube)
-
-    args = [(cube[:, :, i].copy(), mask, sigma_color, sigma_spatial)
+    args = [(cube[:, :, i].copy(), mask, sigma_color, sigma_spatial, method, guide)
             for i in range(C)]
     channels = _run_channels(_bilateral_channel, args, workers, on_channel)
     for i, ch in enumerate(channels):
@@ -176,10 +217,8 @@ def bilateral_denoise_cube(
     denoised[~mask] = 0.0
 
     logger.info(
-        "Bilateral denoise complete: shape %s, sigma_color=%s, sigma_spatial=%s",
-        denoised.shape,
-        sigma_color,
-        sigma_spatial,
+        "Bilateral denoise complete (%s): shape %s, sigma_color=%s, sigma_spatial=%s",
+        method, denoised.shape, sigma_color, sigma_spatial,
     )
     return denoised
 
@@ -204,7 +243,7 @@ def anisotropic_denoise_cube(
     Parameters
     ----------
     cube : np.ndarray
-        (H, W, C) CLR-transformed compositional cube.
+        (H, W, C) raw [0, 1] element cube.
     mask : np.ndarray
         (H, W) boolean mask, True = mineral pixel.
     niter : int
@@ -268,7 +307,7 @@ def compare_denoisers(
     Parameters
     ----------
     clr_cube : np.ndarray
-        (H, W, C) CLR-transformed compositional cube.
+        (H, W, C) raw [0, 1] element cube.
     mask : np.ndarray
         (H, W) boolean mineral mask.
     bse : np.ndarray
@@ -447,13 +486,14 @@ def denoise_cube(
     workers: int = 1,
     device: str = "cpu",
     on_channel: Callable[[int, int, int], None] | None = None,
+    guide: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Dispatch to bilateral or anisotropic denoiser based on config.
+    """Dispatch to a bilateral or the anisotropic denoiser based on config.
 
     Parameters
     ----------
     cube : np.ndarray
-        (H, W, C) CLR-transformed compositional cube.
+        (H, W, C) raw [0, 1] element cube.
     mask : np.ndarray
         (H, W) boolean mineral mask.
     config : DenoiseConfig
@@ -465,6 +505,8 @@ def denoise_cube(
     on_channel : callable, optional
         Called as ``on_channel(done, total, index)`` after each channel
         completes; with ``workers > 1`` in completion order.
+    guide : np.ndarray, optional
+        (H, W) BSE image, required by ``method="joint_bilateral_bse"``.
 
     Returns
     -------
@@ -478,7 +520,7 @@ def denoise_cube(
             "anisotropic diffusion has no GPU path"
         )
 
-    if config.method == "bilateral":
+    if config.method in BILATERAL_METHODS:
         return bilateral_denoise_cube(
             cube,
             mask,
@@ -487,6 +529,8 @@ def denoise_cube(
             workers=workers,
             device=device,
             on_channel=on_channel,
+            method=config.method,
+            guide=guide,
         )
     elif config.method == "anisotropic_diffusion":
         return anisotropic_denoise_cube(
@@ -502,5 +546,5 @@ def denoise_cube(
     else:
         raise ValueError(
             f"Unknown denoise method: {config.method!r}. "
-            "Use 'bilateral' or 'anisotropic_diffusion'."
+            f"Use one of {BILATERAL_METHODS} or 'anisotropic_diffusion'."
         )
