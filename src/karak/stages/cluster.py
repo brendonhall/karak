@@ -25,8 +25,8 @@ _HDBSCAN_PARAMS = [
     Param("random_state", "int", 42, "Random seed"),
     Param("device", "str", "cpu", "Device",
           "cpu (hdbscan package, exact baseline) or cuda (cuML; needs "
-          "karak[cuda]). cuda results differ from cpu and ignore "
-          "subsample_n.",
+          "karak[cuda]). cuda results differ from cpu; with subsample_n "
+          "both fit the same subsample.",
           choices=("cpu", "cuda")),
 ]
 

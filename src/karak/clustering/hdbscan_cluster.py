@@ -17,6 +17,94 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# approximate_predict on cuML holds about min_samples * 16 bytes per
+# predicted point; batches take this fraction of the free device memory
+_PREDICT_MEMORY_FRACTION = 0.25
+
+
+def subsample_indices(n: int, subsample_n: int | None,
+                      random_state: int) -> np.ndarray | None:
+    """Indices of the pixels HDBSCAN is fitted on, or None to fit on all.
+
+    One host RNG draw, so the cpu and cuda paths fit the same subsample.
+    """
+    if subsample_n is None or subsample_n >= n:
+        return None
+    rng = np.random.default_rng(random_state)
+    return rng.choice(n, size=subsample_n, replace=False)
+
+
+def predict_batch_rows(min_samples: int, free_bytes: int) -> int:
+    """Rows per cuML approximate_predict call that fit the memory budget."""
+    per_row = max(1, min_samples) * 16
+    return max(1024, int(free_bytes * _PREDICT_MEMORY_FRACTION) // per_row)
+
+
+def _cuml_predict(model, features, batch_rows: int):
+    """approximate_predict over ``features`` in batches; labels and
+    probabilities as CuPy arrays (int32, float32). Results do not depend
+    on the batch size."""
+    import cupy as cp
+    from cuml.cluster.hdbscan import approximate_predict
+
+    labels, probabilities = [], []
+    for start in range(0, features.shape[0], batch_rows):
+        lab, prob = approximate_predict(model, features[start:start + batch_rows])
+        labels.append(cp.asarray(lab).astype(cp.int32))
+        probabilities.append(cp.asarray(prob).astype(cp.float32))
+    return cp.concatenate(labels), cp.concatenate(probabilities)
+
+
+def _run_cuml(pca_features, config, min_samples: int):
+    """cuML HDBSCAN: fit on all points, or on the same subsample as the cpu
+    path and then approximate_predict every point in batches."""
+    from karak.accel import get_array_module
+    from karak.errors import StageError
+
+    cp = get_array_module("cuda")  # raises StageError without CUDA
+    from cuml.cluster import HDBSCAN as CumlHDBSCAN
+
+    features = cp.asarray(pca_features, dtype=cp.float32)
+    n = features.shape[0]
+    fit_idx = subsample_indices(n, config.subsample_n, config.random_state)
+    model = CumlHDBSCAN(
+        min_cluster_size=config.min_cluster_size,
+        min_samples=min_samples,
+        prediction_data=fit_idx is not None,
+    )
+    try:
+        if fit_idx is None:
+            logger.info("Fitting cuML HDBSCAN on all %d mineral pixels "
+                        "(min_cluster_size=%d, min_samples=%d)",
+                        n, config.min_cluster_size, min_samples)
+            model.fit(features)
+            return (cp.asarray(model.labels_).astype(cp.int32),
+                    cp.asarray(model.probabilities_).astype(cp.float32), model)
+        logger.info("Fitting cuML HDBSCAN on %d/%d subsampled pixels "
+                    "(min_cluster_size=%d, min_samples=%d)",
+                    fit_idx.size, n, config.min_cluster_size, min_samples)
+        model.fit(features[cp.asarray(fit_idx)])
+        free, _ = cp.cuda.Device().mem_info
+        batch_rows = predict_batch_rows(min_samples, free)
+        labels, probabilities = _cuml_predict(model, features, batch_rows)
+        return labels, probabilities, model
+    except (MemoryError, cp.cuda.memory.OutOfMemoryError) as exc:
+        raise StageError(_cuml_memory_hint(n, config, min_samples, exc)) from exc
+    except RuntimeError as exc:   # RMM reports std::bad_alloc this way
+        if "bad_alloc" not in str(exc) and "out of memory" not in str(exc).lower():
+            raise
+        raise StageError(_cuml_memory_hint(n, config, min_samples, exc)) from exc
+
+
+def _cuml_memory_hint(n: int, config, min_samples: int, exc) -> str:
+    fitted = config.subsample_n if config.subsample_n and config.subsample_n < n else n
+    return (
+        f"cuML HDBSCAN ran out of device memory fitting {fitted:,} of {n:,} "
+        f"pixels with min_samples={min_samples} ({exc}). Memory grows with "
+        "the fitted pixel count times min_samples: lower subsample_n, or "
+        "run this node on the cpu (--set NODE.device=cpu)."
+    )
+
 
 def run_hdbscan(
     pca_features: np.ndarray,
@@ -27,8 +115,10 @@ def run_hdbscan(
     """Run HDBSCAN on PCA-reduced mineral pixel features.
 
     If config.subsample_n is set and fewer than the total number of pixels,
-    HDBSCAN is fitted on a random subsample and the remaining pixels are
-    assigned via approximate_predict.
+    HDBSCAN is fitted on a random subsample and every pixel is then
+    assigned via approximate_predict. Both devices fit the same subsample
+    (``subsample_indices``); on cuda the prediction runs in batches sized
+    from the free device memory.
 
     Parameters
     ----------
@@ -65,35 +155,22 @@ def run_hdbscan(
             "inputs on the stage's device, so run this stage with device='cuda'"
         )
     if device == "cuda":
-        from karak.accel import get_array_module
-
-        cp = get_array_module(device)  # raises StageError without CUDA
-        from cuml.cluster import HDBSCAN as CumlHDBSCAN
-
         min_samples = (config.min_samples if config.min_samples is not None
                        else config.min_cluster_size)
-        model = CumlHDBSCAN(
-            min_cluster_size=config.min_cluster_size,
-            min_samples=min_samples,
-        )
-        model.fit(cp.asarray(pca_features, dtype=cp.float32))
-        labels = cp.asarray(model.labels_).astype(cp.int32)
-        probabilities = cp.asarray(model.probabilities_).astype(cp.float32)
-        return labels, probabilities, model
+        return _run_cuml(pca_features, config, min_samples)
 
     n_mineral = pca_features.shape[0]
     min_samples = config.min_samples if config.min_samples is not None else config.min_cluster_size
 
-    rng = np.random.default_rng(config.random_state)
+    fit_idx = subsample_indices(n_mineral, config.subsample_n, config.random_state)
 
     hdbscan_kwargs: dict = {}
     if core_dist_n_jobs is not None:
         hdbscan_kwargs["core_dist_n_jobs"] = core_dist_n_jobs
 
-    if config.subsample_n is not None and config.subsample_n < n_mineral:
+    if fit_idx is not None:
         # Subsample fitting
-        n_fit = config.subsample_n
-        fit_idx = rng.choice(n_mineral, size=n_fit, replace=False)
+        n_fit = fit_idx.size
         fit_features = pca_features[fit_idx]
 
         logger.info(

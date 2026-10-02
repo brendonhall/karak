@@ -177,6 +177,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `hdbscan_global` and `hdbscan_tiled` on `device: cuda` ignored
+  `subsample_n` and fitted cuML HDBSCAN on every pixel, which does not fit
+  in GPU memory at NWA 4587 scale. cuda now fits the same random subsample
+  as the cpu path (one shared seeded draw) and assigns every pixel with
+  cuML `approximate_predict`, in batches sized from the free device memory.
+  A cuML out-of-memory error is now a stage error that names `subsample_n`.
+  No recipe hashes change.
 - The normalize step summed the mineral-pixel means and standard deviations
   in float32 along a 12.5 M-row axis, row by row. On the NWA 4587 denoised
   cube the means were off by up to 0.013 (0.13 z-units) and the standard

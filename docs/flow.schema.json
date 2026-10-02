@@ -436,7 +436,7 @@
         "device": {
           "type": "string",
           "title": "Device",
-          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu and ignore subsample_n.",
+          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample.",
           "enum": [
             "cpu",
             "cuda"
@@ -514,7 +514,7 @@
         "device": {
           "type": "string",
           "title": "Device",
-          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu and ignore subsample_n.",
+          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample.",
           "enum": [
             "cpu",
             "cuda"
