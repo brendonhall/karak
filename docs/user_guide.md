@@ -264,6 +264,28 @@ karak run --builtin global --set refine.target_phase=3 ... # only refine + downs
 karak run ... --no-cache                                   # force a clean run
 ```
 
+Cache files are written on a background thread, so the next step starts
+while the previous step's outputs are still being written. A run waits for
+the writer before it returns, also after a failure or Ctrl-C, so completed
+outputs always land. Files use the HDF5 `lzf` filter by default
+(`--cache-compression gzip` for smaller files, `none` for the fastest
+writes and reads). Readers accept any of the three. Each finished write
+appears in the log lines as `cache: dn.cube written in 10.8 s`.
+
+Between steps, outputs stay in RAM up to a budget, half of the available
+memory by default (`--ram-budget GB` to change it). An output that would
+exceed the budget is spilled: karak does not hold it, and each consumer
+reads it back from the cache. The log says so (`store: dn.cube (1.98 GB)
+spilled to cache, budget 11.0 GB`). Outputs waiting for their cache write
+have a second bound of the same size: when the queued writes would exceed
+it, the next step waits until the disk catches up. Host memory for stage
+outputs therefore stays below twice the budget (the default is half of the
+available memory). With `--no-cache` nothing is written or spilled.
+
+If a cache write fails (a full disk), the run stops before the next step
+and prints `error: cache writer: ...`. A run also deletes the partial
+`.tmp` files that killed runs left in the cache directory.
+
 An interrupted run resumes the same way: completed stage outputs are
 already in the cache, so the next invocation continues from the crash
 point. To start from scratch, delete the work directory
@@ -276,6 +298,7 @@ karak flow init --builtin NAME -o FLOW.json [--force]
 karak flow complete FLOW.json [-o OUT]
 karak run (FLOW.json | --builtin global|tiled|tiled-rare|stepwise)
           --input DIR --out BASE [--work DIR] [--no-cache] [--no-qc]
+          [--cache-compression lzf|gzip|none] [--ram-budget GB]
           [--set NODE.PARAM=VALUE ...] [--device cpu|cuda] [--workers N] [--plain]
 karak validate (FLOW.json | --builtin NAME)
 karak schema

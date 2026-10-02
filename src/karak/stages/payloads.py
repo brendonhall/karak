@@ -48,6 +48,34 @@ def payload_from_h5(group):
     return _PAYLOAD_TYPES[kind].from_h5(group)
 
 
+CACHE_COMPRESSION = "lzf"
+COMPRESSIONS = ("lzf", "gzip", "none")
+
+
+def _dataset(group, name, data, compression=CACHE_COMPRESSION):
+    """Create a chunked, optionally compressed dataset.
+
+    Arrays with two or more axes get (512, 512) chunks over the first two
+    axes (the image axes) and whole chunks along the rest. 1-D arrays get
+    chunks of up to 2**20 elements. 0-d and empty arrays stay unchunked.
+    """
+    data = np.asarray(data)
+    if compression is None:
+        compression = "none"
+    if compression not in COMPRESSIONS:
+        raise ValueError(
+            f"compression must be one of {COMPRESSIONS}, got {compression!r}"
+        )
+    if data.ndim == 0 or data.size == 0:
+        return group.create_dataset(name, data=data)
+    if data.ndim == 1:
+        chunks = (min(2**20, data.shape[0]),)
+    else:
+        chunks = tuple(min(512, n) for n in data.shape[:2]) + tuple(data.shape[2:])
+    kwargs = {} if compression == "none" else {"compression": compression}
+    return group.create_dataset(name, data=data, chunks=chunks, **kwargs)
+
+
 class _Replaceable:
     def replace(self, **changes):
         return dataclasses.replace(self, **changes)
@@ -90,14 +118,14 @@ class ElementCube(_Replaceable):
             f"{format_bytes(self.pixels.nbytes)} space={self.space.value}"
         )
 
-    def to_h5(self, group) -> None:
+    def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["element_names"] = list(self.element_names)
         group.attrs["space"] = self.space.value
         group.attrs["downsample_factor"] = self.downsample_factor
         group.attrs["header_trim_px"] = self.header_trim_px
         group.attrs["left_trim_px"] = self.left_trim_px
-        group.create_dataset("pixels", data=self.pixels, compression="gzip")
+        _dataset(group, "pixels", self.pixels, compression)
         if self.means is not None:
             group.create_dataset("means", data=self.means)
         if self.stds is not None:
@@ -132,9 +160,9 @@ class BseImage(_Replaceable):
             f"{format_bytes(self.pixels.nbytes)}"
         )
 
-    def to_h5(self, group) -> None:
+    def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type
-        group.create_dataset("pixels", data=self.pixels, compression="gzip")
+        _dataset(group, "pixels", self.pixels, compression)
 
     @classmethod
     def from_h5(cls, group) -> "BseImage":
@@ -158,16 +186,12 @@ class MaskSet(_Replaceable):
             text += f" · valid {100 * self.valid_mask.mean():.1f}%"
         return text
 
-    def to_h5(self, group) -> None:
+    def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["stats"] = json.dumps(self.stats)
-        group.create_dataset(
-            "mineral_mask", data=self.mineral_mask, compression="gzip"
-        )
+        _dataset(group, "mineral_mask", self.mineral_mask, compression)
         if self.valid_mask is not None:
-            group.create_dataset(
-                "valid_mask", data=self.valid_mask, compression="gzip"
-            )
+            _dataset(group, "valid_mask", self.valid_mask, compression)
 
     @classmethod
     def from_h5(cls, group) -> "MaskSet":
@@ -201,14 +225,12 @@ class PCAFeatures(_Replaceable):
             f"components ({kept:.1%} variance)"
         )
 
-    def to_h5(self, group) -> None:
+    def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["image_shape"] = list(self.image_shape)
         group.attrs["n_kept"] = self.n_kept
-        group.create_dataset("features", data=self.features, compression="gzip")
-        group.create_dataset(
-            "mineral_indices", data=self.mineral_indices, compression="gzip"
-        )
+        _dataset(group, "features", self.features, compression)
+        _dataset(group, "mineral_indices", self.mineral_indices, compression)
         group.create_dataset(
             "explained_variance_ratio", data=self.explained_variance_ratio
         )
@@ -246,18 +268,14 @@ class Labels(_Replaceable):
             text += f" · {noise:,} noise"
         return text + f" · state={self.state.value}"
 
-    def to_h5(self, group) -> None:
+    def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["image_shape"] = list(self.image_shape)
         group.attrs["state"] = self.state.value
-        group.create_dataset("labels", data=self.labels, compression="gzip")
-        group.create_dataset(
-            "mineral_indices", data=self.mineral_indices, compression="gzip"
-        )
+        _dataset(group, "labels", self.labels, compression)
+        _dataset(group, "mineral_indices", self.mineral_indices, compression)
         if self.probabilities is not None:
-            group.create_dataset(
-                "probabilities", data=self.probabilities, compression="gzip"
-            )
+            _dataset(group, "probabilities", self.probabilities, compression)
 
     @classmethod
     def from_h5(cls, group) -> "Labels":
@@ -289,7 +307,7 @@ class TiledArtifacts(_Replaceable):
             f"{len(self.phase_registry)} phases · tile_size={self.tile_size}"
         )
 
-    def to_h5(self, group) -> None:
+    def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["tile_size"] = self.tile_size
         tiles = group.create_group("tiles")
@@ -303,9 +321,7 @@ class TiledArtifacts(_Replaceable):
                 {str(k): int(v) for k, v in tr.merge_map.items()}
             )
             sub.attrs["new_phases"] = [int(p) for p in tr.new_phases]
-            sub.create_dataset(
-                "local_labels", data=tr.local_labels, compression="gzip"
-            )
+            _dataset(sub, "local_labels", tr.local_labels, compression)
         registry = group.create_group("registry")
         for i, entry in enumerate(self.phase_registry):
             sub = registry.create_group(str(i))
@@ -383,7 +399,7 @@ class ClusterStats(_Replaceable):
     def summary(self) -> str:
         return f"ClusterStats {len(self.stats)} entries"
 
-    def to_h5(self, group) -> None:
+    def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["stats"] = json.dumps(_jsonable(self.stats))
 
@@ -408,7 +424,7 @@ class Fingerprints(_Replaceable):
             f"{len(self.similar_pairs)} similar pairs"
         )
 
-    def to_h5(self, group) -> None:
+    def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["data"] = json.dumps(_jsonable(self.data))
         group.attrs["similar_pairs"] = json.dumps(_jsonable(self.similar_pairs))

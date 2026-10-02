@@ -12,6 +12,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import queue
+import threading
+import time
 from pathlib import Path
 
 import h5py
@@ -43,21 +46,59 @@ def payload_path(recipe: str, port: str, cache_dir: str | Path) -> Path:
 
 def store_payload(
     recipe: str, port: str, payload, cache_dir: str | Path,
-    upstream: dict | None = None,
+    upstream: dict | None = None, compression: str = "lzf",
 ) -> Path:
     """Write a payload to the cache. ``upstream`` maps the producing
     node's input ports to the recipe hashes they consumed; it is stored
-    as an attribute so a cache scan can tell which outputs belong together."""
+    as an attribute so a cache scan can tell which outputs belong together.
+    ``compression`` is the HDF5 filter: "lzf" (default), "gzip" or "none"."""
     path = payload_path(recipe, port, cache_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".h5.tmp")
-    with h5py.File(tmp, "w") as fh:
-        group = fh.create_group("payload")
-        payload.to_h5(group)
-        if upstream:
-            group.attrs["upstream"] = json.dumps(dict(sorted(upstream.items())))
-    os.replace(tmp, path)
+    tmp = _tmp_path(path)
+    try:
+        with h5py.File(tmp, "w") as fh:
+            group = fh.create_group("payload")
+            payload.to_h5(group, compression=compression)
+            if upstream:
+                group.attrs["upstream"] = json.dumps(dict(sorted(upstream.items())))
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)   # a full disk must not leave debris
+        raise
     return path
+
+
+def _tmp_path(path: Path) -> Path:
+    """A tmp name unique to this process, so two runs that race on the same
+    entry never write the same file."""
+    return path.with_name(f"{path.name}.{os.getpid()}.tmp")
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True   # another user's live process
+    return True
+
+
+def sweep_stale_tmp(cache_dir: str | Path) -> None:
+    """Remove tmp files (``<name>.<pid>.tmp``) left by dead processes.
+
+    A killed run can leave one; its pid never comes back to finish it.
+    Files of live processes and names without a pid are kept.
+    """
+    cache_dir = Path(cache_dir)
+    if not cache_dir.is_dir():
+        return
+    for tmp in cache_dir.glob("*.tmp"):
+        pid_text = tmp.name[:-len(".tmp")].rpartition(".")[2]
+        if not pid_text.isdigit() or int(pid_text) <= 0:
+            continue
+        if not _pid_alive(int(pid_text)):
+            tmp.unlink(missing_ok=True)
 
 
 def load_upstream(path: str | Path) -> dict:
@@ -95,7 +136,13 @@ def store_summary(
     """
     path = _summary_path(recipe, port, cache_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    tmp = _tmp_path(path)
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def load_summary(recipe: str, port: str, cache_dir: str | Path) -> str | None:
@@ -104,3 +151,169 @@ def load_summary(recipe: str, port: str, cache_dir: str | Path) -> str | None:
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")
+
+
+def _host_nbytes(payload) -> int:
+    """Bytes held by a payload's top-level numpy array fields."""
+    import dataclasses
+
+    import numpy as np
+
+    if not dataclasses.is_dataclass(payload):
+        return 0
+    return sum(int(getattr(payload, f.name).nbytes)
+               for f in dataclasses.fields(payload)
+               if isinstance(getattr(payload, f.name), np.ndarray))
+
+
+class CacheWriter:
+    """Writes payloads to the cache on one background thread, FIFO.
+
+    ``max_pending_bytes`` bounds the bytes of payloads queued or being
+    written: ``submit`` waits while adding a payload would exceed it, so a
+    fast producer cannot pile up gigabytes behind a slow disk. A payload
+    larger than the bound is admitted when nothing else is pending. The
+    thread drops its reference to each payload once it is written.
+
+    ``submit`` enqueues a host payload; the thread calls ``store_payload``
+    and ``store_summary``. ``wait_for`` and ``wait`` block on the disk state
+    and re-raise the first error the thread hit; ``check`` re-raises it
+    without blocking. ``close`` raises only a second Ctrl-C. The
+    thread never talks to a reporter: it appends log lines that ``drain_log``
+    hands back to the caller's thread.
+    """
+
+    def __init__(self, cache_dir: str | Path, compression: str = "lzf",
+                 max_pending_bytes: int | None = None):
+        self.cache_dir = Path(cache_dir)
+        self.compression = compression
+        self.max_pending_bytes = max_pending_bytes
+        self.pending_bytes = 0
+        self.written: set[tuple[str, str]] = set()
+        self.seconds = 0.0
+        self.per_label: dict[str, float] = {}   # "dn.cube" -> seconds
+        self._queue: queue.Queue = queue.Queue()
+        self._done = threading.Condition()
+        self._error: BaseException | None = None
+        self._pending: set[tuple[str, str]] = set()   # submitted, not yet done
+        self._log: list[str] = []
+        self._closed = False
+        self._thread = threading.Thread(
+            target=self._loop, name="karak-cache-writer", daemon=True)
+        self._thread.start()
+
+    def submit(self, recipe: str, port: str, payload, summary: str,
+               upstream: dict | None, label: str | None = None) -> None:
+        if self._closed:
+            raise RuntimeError("CacheWriter is closed")
+        nbytes = _host_nbytes(payload)
+        with self._done:
+            # backpressure: wait for room, unless the writer has failed
+            # (it then skips its queue quickly) or nothing is pending
+            while (self.max_pending_bytes is not None
+                   and self._error is None
+                   and self.pending_bytes > 0
+                   and self.pending_bytes + nbytes > self.max_pending_bytes):
+                self._done.wait(0.1)
+            self._pending.add((recipe, port))
+            self.pending_bytes += nbytes
+        self._queue.put((recipe, port, payload, summary, upstream,
+                         label or f"{recipe[:8]}.{port}", nbytes))
+
+    def _loop(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                self._queue.task_done()
+                return
+            recipe, port, payload, summary, upstream, label, nbytes = item
+            started = time.monotonic()
+            try:
+                if self._error is None:
+                    store_payload(recipe, port, payload, self.cache_dir,
+                                  upstream=upstream,
+                                  compression=self.compression)
+                    store_summary(recipe, port, summary, self.cache_dir)
+            except BaseException as exc:   # surfaces at the next wait
+                with self._done:
+                    self._error = exc
+            else:
+                if self._error is None:
+                    elapsed = time.monotonic() - started
+                    with self._done:
+                        self.seconds += elapsed
+                        self.written.add((recipe, port))
+                        self.per_label[label] = (
+                            self.per_label.get(label, 0.0) + elapsed)
+                        self._log.append(
+                            f"cache: {label} written in {elapsed:.1f} s")
+            finally:
+                # drop the payload before signalling, so a finished write
+                # never keeps a multi-GB array alive while the thread idles
+                item = payload = None
+                with self._done:
+                    self._pending.discard((recipe, port))
+                    self.pending_bytes -= nbytes
+                    self._queue.task_done()
+                    self._done.notify_all()
+
+    def _raise_if_failed(self) -> None:
+        if self._error is not None:
+            raise self._error
+
+    def check(self) -> None:
+        """Raise the first error the thread hit, if any; never blocks."""
+        self._raise_if_failed()
+
+    def wait_for(self, recipe: str, port: str) -> None:
+        """Block until (recipe, port), if submitted, is on disk.
+
+        Returns at once for a key never submitted. Raises a writer error.
+        """
+        with self._done:
+            while (recipe, port) in self._pending and self._error is None:
+                self._done.wait(0.05)
+        self._raise_if_failed()
+
+    def wait(self) -> None:
+        if self._thread.is_alive():
+            self._queue.join()
+        self._raise_if_failed()
+
+    def drain_log(self) -> list[str]:
+        with self._done:
+            lines, self._log = self._log, []
+        return lines
+
+    def close(self) -> None:
+        """Drain the queue and stop the thread. Idempotent.
+
+        Raises nothing, except a ``KeyboardInterrupt`` during the drain:
+        then the queued writes are discarded, the entry in flight gets
+        5 s to finish, and the interrupt propagates.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._queue.join()
+        except KeyboardInterrupt:
+            self._discard_queued()
+            self._queue.put(None)
+            self._thread.join(5)
+            raise
+        self._queue.put(None)
+        self._thread.join()
+
+    def _discard_queued(self) -> None:
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            with self._done:
+                if item is not None:
+                    self._pending.discard((item[0], item[1]))
+                    self.pending_bytes -= item[-1]
+                self._queue.task_done()
+                self._done.notify_all()

@@ -18,6 +18,17 @@ QC_STAGE_TYPES = frozenset({
 })
 
 
+def _positive_gb(text: str) -> float:
+    """argparse type for --ram-budget: a number of GB above zero."""
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {text!r}") from None
+    if not value > 0:
+        raise argparse.ArgumentTypeError(f"must be above 0 GB, got {text}")
+    return value
+
+
 def _load_graph(args) -> Graph:
     if args.builtin:
         return builtin_flow(args.builtin)
@@ -95,6 +106,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Work/cache directory (default: <out dir>/work)",
     )
     run_parser.add_argument("--no-cache", action="store_true")
+    run_parser.add_argument(
+        "--cache-compression", choices=["lzf", "gzip", "none"], default="lzf",
+        help="HDF5 filter for cache files (lzf: fast; gzip: small; none: "
+             "fastest, largest). Reads accept any.",
+    )
+    run_parser.add_argument(
+        "--ram-budget", type=_positive_gb, default=None, metavar="GB",
+        help="Host memory to hold stage outputs between steps before "
+             "spilling them to the cache (default: half of available "
+             "memory). Writes waiting for the disk are bounded by the "
+             "same amount; a step waits when the queue is full.",
+    )
     run_parser.add_argument("--no-qc", action="store_true",
                             help="Skip QC figure sinks")
     run_parser.add_argument(
@@ -202,7 +225,9 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         source=args.flow or f"builtin:{args.builtin}",
         tokens={"input": args.input, "out": args.out, "work": work_dir},
         settings={"workers": args.workers, "cache": not args.no_cache,
-                  "no_qc": args.no_qc, "device": args.device},
+                  "no_qc": args.no_qc, "device": args.device,
+                  "cache_compression": args.cache_compression,
+                  "ram_budget_gb": args.ram_budget},
         overrides=overrides,
     )
     summary = run_flow(
@@ -211,6 +236,9 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
         out_base=args.out,
         work_dir=work_dir,
         cache=not args.no_cache,
+        cache_compression=args.cache_compression,
+        ram_budget=(None if args.ram_budget is None
+                    else int(args.ram_budget * 2**30)),
         reporter=reporter,
         workers=args.workers,
         skip_types=QC_STAGE_TYPES if args.no_qc else frozenset(),

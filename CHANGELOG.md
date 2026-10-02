@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Cache writes run on a background thread: the next step starts while the
+  previous outputs are written; the run drains the writer before it
+  returns, also on failure and Ctrl-C. Log lines report each write.
+- Cache files default to the HDF5 `lzf` filter (NWA 4587 denoise output:
+  written in 8.8 s and 972 MB, against about 35 s and 842 MB for the
+  previous gzip file); `karak run --cache-compression {lzf,gzip,none}`.
+  Datasets are chunked (512, 512). Existing gzip cache files stay
+  readable.
+- A total RAM budget for outputs held between steps (`--ram-budget GB`,
+  default half of the available memory) replaces the fixed 256 MB
+  per-payload spill threshold; spills are logged. Writes waiting in the
+  cache writer's queue are bounded by the same amount: a step that
+  produces faster than the disk writes waits. The writer drops each
+  payload as soon as it is written.
+- A failed cache write (a full disk) stops the run at the next step with
+  an `error: cache writer: ...` line; runs delete `.tmp` files left in the
+  cache by killed runs.
 - `karak flow init --builtin NAME -o FILE` writes a builtin flow with every
   parameter listed; `karak flow complete FILE [-o OUT]` fills missing
   parameters from the stage templates, prints what it added, and upgrades

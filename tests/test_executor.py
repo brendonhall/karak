@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import threading
+import time
+
+import numpy as np
 import pytest
 
 from conftest import complete
@@ -10,7 +14,7 @@ from karak.flow.executor import FlowError, PayloadStore, run
 from karak.flow.graph import Edge, Endpoint, Graph, Node
 from karak.stages import registry
 from karak.stages.base import Param, Port, Stage
-from karak.stages.payloads import ClusterStats
+from karak.stages.payloads import BseImage, ClusterStats
 
 
 RECORD: list = []
@@ -175,24 +179,42 @@ def test_payload_store_refcount_eviction():
     assert ("a", "num") not in store._in_ram  # dropped after last consumer
 
 
-def test_payload_store_spills_large_payloads():
+def test_payload_store_spills_only_when_the_total_exceeds_the_budget():
     import numpy as np
 
     from karak.stages.payloads import BseImage
 
-    big = BseImage(pixels=np.zeros((64, 64), dtype=np.float32))
-    reloads = []
+    one_kb = BseImage(pixels=np.zeros((16, 16), dtype=np.float32))   # 1024 bytes
+    reloads, spills = [], []
 
     def reload(node, port):
         reloads.append((node, port))
-        return big
+        return one_kb
 
-    store = PayloadStore({("a", "bse"): 2}, reload=reload, spill_threshold=1)
+    store = PayloadStore({("a", "bse"): 1, ("b", "bse"): 1, ("c", "bse"): 2},
+                         reload=reload, ram_budget=2048,
+                         on_spill=lambda *args: spills.append(args))
+    store.put("a", "bse", one_kb)
+    store.put("b", "bse", one_kb)
+    assert store.held_bytes == 2048
+    store.put("c", "bse", one_kb)            # would make 3072 > 2048: spilled
+    assert ("c", "bse") not in store._in_ram
+    assert spills == [("c", "bse", 1024, 2048)]
+    assert store.get("a", "bse") is one_kb   # released: 1024 held
+    assert store.held_bytes == 1024
+    assert store.get("c", "bse") is one_kb and store.get("c", "bse") is one_kb
+    assert len(reloads) == 2                 # once per consumer of the spilled one
+
+
+def test_payload_store_without_a_budget_never_spills():
+    import numpy as np
+
+    from karak.stages.payloads import BseImage
+
+    big = BseImage(pixels=np.zeros((256, 256), dtype=np.float32))
+    store = PayloadStore({("a", "bse"): 1}, reload=lambda n, p: None, ram_budget=None)
     store.put("a", "bse", big)
-    assert ("a", "bse") not in store._in_ram  # never held in RAM
-    assert store.get("a", "bse") is big
-    assert store.get("a", "bse") is big
-    assert len(reloads) == 2  # reloaded once per consumer
+    assert ("a", "bse") in store._in_ram
 
 
 def test_branching_graph_both_consumers_get_payload(tmp_path):
@@ -433,3 +455,373 @@ def test_executor_rejects_a_flow_with_missing_params(tmp_path):
     with pytest.raises(FlowError, match="missing param"):
         run(graph, work_dir=str(tmp_path))
     assert RECORD == []
+
+
+# --- the background cache writer ----------------------------------------
+
+
+def _chain(n=3):
+    """src -> add1 -> add2 (-> ...) with a sink, all fake stages."""
+    nodes = [Node(id="src", type="fake_source", params={"value": 1, "path": "{input}"})]
+    edges = []
+    prev = "src"
+    for i in range(1, n):
+        nodes.append(Node(id=f"add{i}", type="fake_add", params={"add": i}))
+        edges.append(Edge(id=f"e{i}", src=Endpoint(prev, "num"), dst=Endpoint(f"add{i}", "num")))
+        prev = f"add{i}"
+    nodes.append(Node(id="out", type="fake_sink", params={"out": "{out}"}))
+    edges.append(Edge(id="es", src=Endpoint(prev, "num"), dst=Endpoint("out", "num")))
+    return complete(Graph(name="chain", nodes=tuple(nodes), edges=tuple(edges)))
+
+
+class _Timeline:
+    """A reporter that records node starts, log lines and run_finished."""
+
+    def __init__(self):
+        self.events = []
+
+    def node_started(self, node_id, label):
+        self.events.append(("start", node_id, time.monotonic()))
+
+    def log(self, level, msg):
+        self.events.append(("log", msg, time.monotonic(), level))
+
+    def run_finished(self, summary, seconds):
+        self.events.append(("finished", {k: dict(v) for k, v in summary.items()},
+                            seconds))
+
+    def __getattr__(self, name):
+        return lambda *a, **k: None
+
+
+def _slow_store(monkeypatch, delay, finished=None):
+    from karak.flow import cache
+
+    real = cache.store_payload
+
+    def slow_store(recipe, port, *args, **kwargs):
+        time.sleep(delay)
+        path = real(recipe, port, *args, **kwargs)
+        if finished is not None:
+            finished[(recipe, port)] = time.monotonic()
+        return path
+
+    monkeypatch.setattr(cache, "store_payload", slow_store)
+
+
+def test_next_node_starts_before_the_previous_output_is_written(tmp_path, monkeypatch):
+    finished = {}
+    _slow_store(monkeypatch, 0.3, finished)
+    reporter = _Timeline()
+    summary = run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
+                  work_dir=str(tmp_path / "w"), reporter=reporter)
+    starts = {e[1]: e[2] for e in reporter.events if e[0] == "start"}
+    src_written = min(finished.values())
+    assert starts["add1"] < src_written          # add1 ran while src's file was pending
+    assert all(v["write_seconds"] >= 0 for v in summary.values())
+    assert summary["src"]["write_seconds"] >= 0.3
+    assert summary["out"]["write_seconds"] == 0.0
+    logs = [e[1] for e in reporter.events if e[0] == "log"]
+    assert any(line.startswith("cache: src.num written in") for line in logs)
+    # and every file exists once run() returns
+    assert len(list((tmp_path / "w" / "cache").glob("*__num.h5"))) == 3
+
+
+def test_run_finished_comes_after_the_writer_drains(tmp_path, monkeypatch):
+    _slow_store(monkeypatch, 0.3)
+    reporter = _Timeline()
+    run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
+        work_dir=str(tmp_path / "w"), reporter=reporter)
+    assert reporter.events[-1][0] == "finished"
+    _, final, seconds = reporter.events[-1]
+    assert final["src"]["write_seconds"] >= 0.3
+    assert seconds >= 0.9                        # three serial 0.3 s writes
+    logs = [e for e in reporter.events if e[0] == "log"]
+    assert len(logs) == 3                        # every line drained before the end
+
+
+def test_cache_hits_and_skipped_nodes_have_zero_write_seconds(tmp_path):
+    graph = _chain()
+    run(graph, input_path="x", out_base="o", work_dir=str(tmp_path))
+    summary = run(graph, input_path="x", out_base="o", work_dir=str(tmp_path),
+                  skip_types={"fake_sink"})
+    assert summary["src"]["cached"] is True
+    assert summary["out"]["skipped"] is True
+    assert all(v["write_seconds"] == 0.0 for v in summary.values())
+
+
+class FakeImageSource(Stage):
+    id = "fake_image_source"
+    label = "Fake image source"
+    OUTPUTS = [Port("bse")]
+    PARAMS = [Param("value", "float", 1.0)]
+
+    def apply(self, inputs, params):
+        return {"bse": BseImage(pixels=np.full((8, 8), params["value"],
+                                               dtype=np.float32))}
+
+
+class FakeImageAdd(Stage):
+    id = "fake_image_add"
+    label = "Fake image add"
+    INPUTS = [Port("bse")]
+    OUTPUTS = [Port("bse")]
+    PARAMS = [Param("add", "float", 0.0)]
+
+    def apply(self, inputs, params):
+        return {"bse": BseImage(pixels=inputs["bse"].pixels + params["add"])}
+
+
+class FakeImageSink(Stage):
+    id = "fake_image_sink"
+    label = "Fake image sink"
+    INPUTS = [Port("bse")]
+    OUTPUTS: list = []
+
+    def apply(self, inputs, params):
+        RECORD.append(("fake_image_sink", inputs["bse"].pixels.copy()))
+        return {}
+
+
+@pytest.fixture
+def _image_stages():
+    classes = (FakeImageSource, FakeImageAdd, FakeImageSink)
+    for cls in classes:
+        registry.register(cls)
+    yield
+    for cls in classes:
+        registry._REGISTRY.pop(cls.id, None)
+
+
+def test_spilled_reload_waits_for_the_pending_write(tmp_path, monkeypatch,
+                                                    _image_stages):
+    _slow_store(monkeypatch, 0.3)
+    graph = complete(Graph(name="images", nodes=(
+        Node("src", "fake_image_source", {"value": 1.0}),
+        Node("add1", "fake_image_add", {"add": 1.0}),
+        Node("add2", "fake_image_add", {"add": 2.0}),
+        Node("out", "fake_image_sink"),
+    ), edges=(
+        Edge("e1", Endpoint("src", "bse"), Endpoint("add1", "bse")),
+        Edge("e2", Endpoint("add1", "bse"), Endpoint("add2", "bse")),
+        Edge("e3", Endpoint("add2", "bse"), Endpoint("out", "bse")),
+    )))
+    # a zero budget spills every payload, so each consumer reloads its
+    # input from a file the writer may not have finished yet
+    summary = run(graph, input_path="x", out_base=str(tmp_path / "o"),
+                  work_dir=str(tmp_path / "w"), ram_budget=0)
+    assert summary["add2"]["cached"] is False
+    name, pixels = RECORD[-1]
+    assert name == "fake_image_sink"
+    np.testing.assert_array_equal(pixels, np.full((8, 8), 4.0, np.float32))
+
+
+def test_run_passes_the_ram_budget_and_logs_spills(tmp_path, _image_stages):
+    class Logger:
+        def __init__(self):
+            self.lines = []
+
+        def log(self, level, msg):
+            self.lines.append(msg)
+
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+
+    graph = complete(Graph(name="images", nodes=(
+        Node("src", "fake_image_source", {"value": 1.0}),
+        Node("add", "fake_image_add", {"add": 1.0}),
+        Node("out", "fake_image_sink"),
+    ), edges=(
+        Edge("e1", Endpoint("src", "bse"), Endpoint("add", "bse")),
+        Edge("e2", Endpoint("add", "bse"), Endpoint("out", "bse")),
+    )))
+    reporter = Logger()
+    run(graph, input_path="x", out_base=str(tmp_path / "o"),
+        work_dir=str(tmp_path / "w"), reporter=reporter, ram_budget=0)
+    assert any(line.startswith("store: src.bse (") and "spilled to cache" in line
+               for line in reporter.lines)
+
+
+def test_writer_failure_fails_the_run(tmp_path, monkeypatch):
+    from karak.flow import cache
+
+    def failing_store(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    reporter = _Timeline()
+    with pytest.raises(FlowError, match="cache writer: disk full"):
+        run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
+            work_dir=str(tmp_path / "w"), reporter=reporter)
+    # the FlowError carries the message; the executor does not log it too
+    assert not [e for e in reporter.events if e[0] == "log" and e[3] == "error"]
+
+
+_WRITE_FAILED = threading.Event()
+
+
+class WaitAdd(Stage):
+    """Adds like FakeAdd, but only once the writer has failed."""
+
+    id = "fake_wait_add"
+    label = "Wait add"
+    INPUTS = [Port("num")]
+    OUTPUTS = [Port("num")]
+    PARAMS: list = []
+
+    def apply(self, inputs, params):
+        assert _WRITE_FAILED.wait(5)
+        RECORD.append(("fake_wait_add",))
+        return {"num": ClusterStats(stats={"value": inputs["num"].stats["value"]})}
+
+
+def test_writer_error_stops_the_run_at_the_next_node(tmp_path, monkeypatch):
+    from karak.flow import cache
+
+    _WRITE_FAILED.clear()
+
+    def failing_store(*args, **kwargs):
+        try:
+            raise OSError("disk full")
+        finally:
+            _WRITE_FAILED.set()
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    registry.register(WaitAdd)
+    try:
+        graph = complete(Graph(name="stop", nodes=(
+            Node("src", "fake_source", {"value": 1, "path": "x"}),
+            Node("mid", "fake_wait_add", {}),
+            Node("out", "fake_sink"),
+        ), edges=(
+            Edge("e1", Endpoint("src", "num"), Endpoint("mid", "num")),
+            Edge("e2", Endpoint("mid", "num"), Endpoint("out", "num")),
+        )))
+        with pytest.raises(FlowError, match="cache writer: disk full"):
+            run(graph, input_path="x", out_base=str(tmp_path / "o"),
+                work_dir=str(tmp_path / "w"))
+    finally:
+        registry._REGISTRY.pop(WaitAdd.id, None)
+    assert [r[0] for r in RECORD] == ["fake_source", "fake_wait_add"]
+
+
+def test_run_start_sweeps_stale_tmp_files(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    cache_dir = tmp_path / "w" / "cache"
+    cache_dir.mkdir(parents=True)
+    dead = cache_dir / f"abc__num.h5.{proc.pid}.tmp"
+    live = cache_dir / f"def__num.h5.{os.getpid()}.tmp"
+    dead.write_bytes(b"x")
+    live.write_bytes(b"x")
+    run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
+        work_dir=str(tmp_path / "w"))
+    assert not dead.exists()
+    assert live.exists()
+
+
+class Boom(Stage):
+    id = "fake_boom"
+    label = "Boom"
+    INPUTS = [Port("num")]
+    OUTPUTS = [Port("num")]
+    PARAMS: list = []
+
+    def apply(self, inputs, params):
+        raise RuntimeError("boom")
+
+
+class Interrupt(Stage):
+    id = "fake_interrupt"
+    label = "Interrupt"
+    INPUTS = [Port("num")]
+    OUTPUTS = [Port("num")]
+    PARAMS: list = []
+
+    def apply(self, inputs, params):
+        raise KeyboardInterrupt
+
+
+@pytest.fixture
+def _failing_stages():
+    for cls in (Boom, Interrupt):
+        registry.register(cls)
+    yield
+    for cls in (Boom, Interrupt):
+        registry._REGISTRY.pop(cls.id, None)
+
+
+def _src_then(node_type):
+    return complete(Graph(name="fail", nodes=(
+        Node(id="src", type="fake_source", params={"value": 1, "path": "x"}),
+        Node(id="b", type=node_type, params={}),
+    ), edges=(Edge(id="e", src=Endpoint("src", "num"), dst=Endpoint("b", "num")),)))
+
+
+def test_failing_node_still_gets_earlier_outputs_written(tmp_path, monkeypatch,
+                                                        _failing_stages):
+    _slow_store(monkeypatch, 0.2)
+    with pytest.raises(FlowError, match="boom"):
+        run(_src_then("fake_boom"), input_path="x", out_base=str(tmp_path / "o"),
+            work_dir=str(tmp_path / "w"))
+    assert list((tmp_path / "w" / "cache").glob("*__num.h5"))   # src landed
+
+
+def test_interrupt_drains_the_writer(tmp_path, monkeypatch, _failing_stages):
+    _slow_store(monkeypatch, 0.2)
+    with pytest.raises(KeyboardInterrupt):
+        run(_src_then("fake_interrupt"), input_path="x",
+            out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"))
+    assert list((tmp_path / "w" / "cache").glob("*__num.h5"))
+
+
+def test_writer_error_during_a_failure_is_logged_not_raised(
+        tmp_path, monkeypatch, _failing_stages):
+    from karak.flow import cache
+
+    def failing_store(*args, **kwargs):
+        time.sleep(0.1)
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    reporter = _Timeline()
+    with pytest.raises(FlowError, match="boom"):     # the original error wins
+        run(_src_then("fake_boom"), input_path="x",
+            out_base=str(tmp_path / "o"), work_dir=str(tmp_path / "w"),
+            reporter=reporter)
+    errors = [e[1] for e in reporter.events if e[0] == "log" and e[3] == "error"]
+    assert errors == ["cache writer: disk full"]
+
+
+def test_no_cache_creates_no_writer_and_writes_nothing(tmp_path, monkeypatch):
+    from karak.flow import cache
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("store_payload must not be called with cache=False")
+
+    monkeypatch.setattr(cache, "store_payload", forbidden)
+    summary = run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
+                  work_dir=str(tmp_path / "w"), cache=False)
+    assert not (tmp_path / "w" / "cache").exists()
+    assert all(v["write_seconds"] == 0.0 for v in summary.values())
+
+
+def test_writer_queue_is_bounded_by_the_ram_budget(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+    real = executor.CacheWriter
+
+    class Spy(real):
+        def __init__(self, *args, **kwargs):
+            seen.update(kwargs)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(executor, "CacheWriter", Spy)
+    run(_chain(), input_path="x", out_base=str(tmp_path / "o"),
+        work_dir=str(tmp_path / "w"), ram_budget=12345)
+    assert seen["max_pending_bytes"] == 12345

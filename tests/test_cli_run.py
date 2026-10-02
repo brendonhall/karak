@@ -181,3 +181,103 @@ def test_unexpected_error_closes_reporter_as_failed(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"), "--plain"])
     assert closed[0] == "failed"
+
+
+def test_cache_compression_flag_reaches_the_executor_and_the_record(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+
+    def fake_run(graph, **kwargs):
+        seen.update(kwargs)
+        kwargs["record"].start()
+        kwargs["record"].finish("ok")
+        return {}
+
+    monkeypatch.setattr(executor, "run", fake_run)
+    out = tmp_path / "o"
+    assert main(["run", "--builtin", "stepwise", "--out", str(out), "--plain",
+                 "--cache-compression", "none"]) == 0
+    assert seen["cache_compression"] == "none"
+    data = json.loads((out / "runs" / "latest" / "run.json").read_text())
+    assert data["settings"]["cache_compression"] == "none"
+
+
+def test_cache_compression_defaults_to_lzf(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+
+    def fake_run(graph, **kwargs):
+        seen.update(kwargs)
+        kwargs["record"].start()
+        kwargs["record"].finish("ok")
+        return {}
+
+    monkeypatch.setattr(executor, "run", fake_run)
+    assert main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"), "--plain"]) == 0
+    assert seen["cache_compression"] == "lzf"
+
+
+def test_ram_budget_flag_is_gigabytes(tmp_path, monkeypatch):
+    import karak.flow.executor as executor
+
+    seen = {}
+
+    def fake_run(graph, **kwargs):
+        seen.update(kwargs)
+        kwargs["record"].start()
+        kwargs["record"].finish("ok")
+        return {}
+
+    monkeypatch.setattr(executor, "run", fake_run)
+    out = tmp_path / "o"
+    assert main(["run", "--builtin", "stepwise", "--out", str(out), "--plain",
+                 "--ram-budget", "1.5"]) == 0
+    assert seen["ram_budget"] == int(1.5 * 2**30)
+    data = json.loads((out / "runs" / "latest" / "run.json").read_text())
+    assert data["settings"]["ram_budget_gb"] == 1.5
+
+
+class _CliSource(Stage):
+    id = "cli_test_source"
+    label = "Source"
+    OUTPUTS = [Port("num")]
+
+    def apply(self, inputs, params):
+        from karak.stages.payloads import ClusterStats
+
+        return {"num": ClusterStats(stats={"value": 1})}
+
+
+def test_cache_writer_failure_exits_1_with_an_error_line(tmp_path, monkeypatch, capsys):
+    import karak.flow.cache as cache
+
+    def failing_store(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cache, "store_payload", failing_store)
+    registry.register(_CliSource)
+    try:
+        flow = tmp_path / "flow.json"
+        flow.write_text(json.dumps({
+            "version": 2, "name": "writer",
+            "nodes": [{"id": "src", "type": "cli_test_source", "params": {}}],
+            "edges": [],
+        }))
+        rc = main(["run", str(flow), "--out", str(tmp_path / "o"), "--plain"])
+    finally:
+        registry._REGISTRY.pop(_CliSource.id, None)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error: cache writer: disk full" in err
+    assert "Traceback" not in err
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_ram_budget_must_be_positive(tmp_path, capsys, value):
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--builtin", "stepwise", "--out", str(tmp_path / "o"),
+              "--plain", "--ram-budget", value])
+    assert exc.value.code == 2
+    assert "--ram-budget" in capsys.readouterr().err
