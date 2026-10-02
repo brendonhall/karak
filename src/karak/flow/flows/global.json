@@ -91,7 +91,8 @@
       "id": "fp",
       "type": "fingerprints",
       "params": {
-        "similarity_threshold": 0.95
+        "similarity_threshold": 0.95,
+        "accumulate": "float64"
       }
     },
     {

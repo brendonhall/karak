@@ -358,7 +358,8 @@
     "params_fingerprints": {
       "type": "object",
       "required": [
-        "similarity_threshold"
+        "similarity_threshold",
+        "accumulate"
       ],
       "properties": {
         "similarity_threshold": {
@@ -368,6 +369,16 @@
           "minimum": 0.0,
           "maximum": 1.0,
           "default": 0.95
+        },
+        "accumulate": {
+          "type": "string",
+          "title": "Accumulate",
+          "description": "Precision of the mean/std sums: float64 is accurate; float32 reproduces the published baseline (drifts by a few percent on clusters of millions of pixels)",
+          "enum": [
+            "float64",
+            "float32"
+          ],
+          "default": "float64"
         }
       },
       "additionalProperties": false
