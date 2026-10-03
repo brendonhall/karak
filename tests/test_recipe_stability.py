@@ -16,6 +16,9 @@ everything downstream carry new hashes.
 2026-10-01: normalize gained `accumulate` (float64 by default; float32
 reproduces the published baseline), so `nrm` and everything downstream carry
 new hashes again.
+2026-10-02: fingerprints gained `accumulate` (float64 by default; float32
+reproduces the published baseline), so `fp` carries a new hash; `fp` is a
+leaf, so no other hash changes.
 """
 
 from __future__ import annotations
@@ -42,18 +45,18 @@ GOLDEN = {
                "hdb": "001dae34839b919b681ba865cb8fecaa",
                "knn": "55c4edbf5108a643da343f5ba63a3b71",
                "stats": "f2849f33b4e6ffb8fd0a020ae7df6cc6",
-               "fp": "093c99a813eff869fca680cbfb39f7b6"},
+               "fp": "d875afd1d808c2dda900bb8d7f8ee63d"},
     "tiled": {**_SHARED,
               "hdb": "8a54033635797cd25cc20df0f519cc4b",
               "knn": "96746eab5e102fe965164e94487dc2c1",
               "stats": "c34b782bbe67198799fe5f5b0e708561",
-              "fp": "e3fde16555a4bf5792436c77556d206b"},
+              "fp": "7d8ba87b840ea0f2355ff10fed93faba"},
     "tiled-rare": {**_SHARED,
                    "hdb": "8a54033635797cd25cc20df0f519cc4b",
                    "rare": "34d2726979907355c0f8ae7c827b885d",
                    "knn": "2940e567c669b482ee9b2bbffe0cc1be",
                    "stats": "63c97e5b24b6c58ef69ad3f3634c418a",
-                   "fp": "c164dc3e20e0de35b435816bbdbcbc14"},
+                   "fp": "d6cf5ae3037a09045e5f3668a3f3480e"},
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
                  "dn": _SHARED["dn"], "nrm": _SHARED["nrm"],
                  "pca": _SHARED["pca"]},

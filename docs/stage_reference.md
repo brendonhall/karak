@@ -116,6 +116,7 @@ Per-cluster mean/std element intensities from the denoised cube, with cosine-sim
 | name | type | default | bounds / choices | help |
 |------|------|---------|------------------|------|
 | `similarity_threshold` | float | `0.95` | 0.0..1.0 | Cosine similarity above which cluster pairs are flagged |
+| `accumulate` | enum | `float64` | float64 \| float32 | Precision of the mean/std sums: float64 is accurate; float32 reproduces the published baseline (drifts by a few percent on clusters of millions of pixels) |
 
 ## `hdbscan_global` — HDBSCAN (global)
 

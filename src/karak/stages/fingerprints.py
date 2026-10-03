@@ -32,6 +32,11 @@ class FingerprintsStage(Stage):
         Param("similarity_threshold", "float", 0.95, "Similarity threshold",
               "Cosine similarity above which cluster pairs are flagged",
               min=0.0, max=1.0),
+        Param("accumulate", "enum", "float64", "Accumulate",
+              "Precision of the mean/std sums: float64 is accurate; float32 "
+              "reproduces the published baseline (drifts by a few percent "
+              "on clusters of millions of pixels)",
+              choices=("float64", "float32")),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
@@ -41,6 +46,7 @@ class FingerprintsStage(Stage):
             labels.labels,
             labels.mineral_indices,
             list(cube.element_names),
+            accumulate=params["accumulate"],
         )
         pairs = flag_similar_clusters(
             data, threshold=params["similarity_threshold"]
