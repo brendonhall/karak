@@ -363,7 +363,7 @@ def test_tiled_on_cuda_records_each_output_placement(tmp_path, scene):
                  "--set", "hdb.min_samples=10",
                  "--set", "hdb.tile_size=32"]) == 0
     nodes = json.loads((out / "runs" / "latest" / "run.json").read_text())["nodes"]
-    for node in ("dn", "nrm", "pca"):
+    for node in ("dn", "nrm", "pca", "knn"):
         assert all(o["device"] == "cuda" for o in nodes[node]["outputs"].values()), node
-    for node in ("knn", "stats", "fp"):
+    for node in ("stats", "fp"):
         assert all(o["device"] == "cpu" for o in nodes[node]["outputs"].values()), node

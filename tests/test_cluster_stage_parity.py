@@ -291,7 +291,7 @@ def test_rare_phase_parity(features_payload, denoised_cube, chain):
 # ---------------------------------------------------------------------------
 
 def test_noise_assign_parity(features_payload, raw_labels_payload, chain):
-    expected = assign_noise_pixels(chain["features"], chain["labels"], k=5)
+    expected = assign_noise_pixels(chain["features"], chain["labels"], k=5, device="cpu")
 
     out = get("noise_assign")().run(
         {"labels": raw_labels_payload, "features": features_payload}, {"k": 5}
@@ -308,7 +308,7 @@ def test_noise_assign_parity(features_payload, raw_labels_payload, chain):
 def test_knn_implementations_agree(chain):
     """assign_noise_pixels must reproduce final_knn_assign so one stage
     serves both the global and tiled strategies."""
-    ours = assign_noise_pixels(chain["features"], chain["labels"], k=5)
+    ours = assign_noise_pixels(chain["features"], chain["labels"], k=5, device="cpu")
     tiled = final_knn_assign(chain["features"], chain["labels"], 5)
     np.testing.assert_array_equal(ours, tiled)
 
@@ -318,7 +318,7 @@ def test_knn_implementations_agree(chain):
 # ---------------------------------------------------------------------------
 
 def test_refine_parity(denoised_cube, chain):
-    cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5)
+    cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5, device="cpu")
     target = int(np.bincount(cleaned).argmax())
     base = refinement_cfg(target_phase=target)
     config = replace(
@@ -356,7 +356,7 @@ def test_refine_parity(denoised_cube, chain):
 # ---------------------------------------------------------------------------
 
 def test_cluster_stats_parity(features_payload, raw_labels_payload, chain):
-    cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5)
+    cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5, device="cpu")
     expected = compute_cluster_stats(cleaned, chain["probabilities"])
 
     cleaned_payload = Labels(
@@ -369,7 +369,7 @@ def test_cluster_stats_parity(features_payload, raw_labels_payload, chain):
 
 
 def test_fingerprints_parity(denoised_cube, chain):
-    cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5)
+    cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5, device="cpu")
     expected = compute_fingerprints(
         chain["denoised"], cleaned, chain["mineral_indices"], ["A", "B", "C"],
         accumulate="float64",

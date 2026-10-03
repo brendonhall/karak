@@ -19,6 +19,8 @@ new hashes again.
 2026-10-02: fingerprints gained `accumulate` (float64 by default; float32
 reproduces the published baseline), so `fp` carries a new hash; `fp` is a
 leaf, so no other hash changes.
+2026-10-03: noise_assign gained a `device` param, so `knn` and everything
+downstream (`stats`, `fp`) carry new hashes.
 """
 
 from __future__ import annotations
@@ -43,20 +45,20 @@ _SHARED = {
 GOLDEN = {
     "global": {**_SHARED,
                "hdb": "001dae34839b919b681ba865cb8fecaa",
-               "knn": "55c4edbf5108a643da343f5ba63a3b71",
-               "stats": "f2849f33b4e6ffb8fd0a020ae7df6cc6",
-               "fp": "d875afd1d808c2dda900bb8d7f8ee63d"},
+               "knn": "0998c21ffbc4bc42ae9116ab1c4d9327",
+               "stats": "544faeef7033052a4950593773201b02",
+               "fp": "368ab0228a129897bd986bfcd137ab87"},
     "tiled": {**_SHARED,
               "hdb": "8a54033635797cd25cc20df0f519cc4b",
-              "knn": "96746eab5e102fe965164e94487dc2c1",
-              "stats": "c34b782bbe67198799fe5f5b0e708561",
-              "fp": "7d8ba87b840ea0f2355ff10fed93faba"},
+              "knn": "5f0978cc4e043fbfcf6bea5c190d6758",
+              "stats": "31c803d804ea99e837df8241c1010415",
+              "fp": "885b7b0f838c52d97f4d92d2f1f3c511"},
     "tiled-rare": {**_SHARED,
                    "hdb": "8a54033635797cd25cc20df0f519cc4b",
                    "rare": "34d2726979907355c0f8ae7c827b885d",
-                   "knn": "2940e567c669b482ee9b2bbffe0cc1be",
-                   "stats": "63c97e5b24b6c58ef69ad3f3634c418a",
-                   "fp": "d6cf5ae3037a09045e5f3668a3f3480e"},
+                   "knn": "9c40ec9e4eb21cf95b302fe80ca7d281",
+                   "stats": "2c44d018a769817a8d9ae27365ca3445",
+                   "fp": "f4229c209a91147a8b21b6d3ccc4f5e7"},
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
                  "dn": _SHARED["dn"], "nrm": _SHARED["nrm"],
                  "pca": _SHARED["pca"]},
