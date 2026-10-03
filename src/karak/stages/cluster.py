@@ -74,10 +74,17 @@ class HdbscanGlobalStage(Stage):
         return _cuda_subsample_revision(params)
 
     def apply(self, inputs: dict, params: dict) -> dict:
+        from karak.accel import resolve_workers
+
         features = inputs["features"]
+        # --workers N: N core-distance jobs and N prediction processes on
+        # cpu (same labels); serial keeps hdbscan's default of 4 jobs.
+        workers = resolve_workers(self.workers)
         labels, probabilities, _ = run_hdbscan(
             features.features, hdbscan_config(params),
-            device=params["device"]
+            device=params["device"],
+            core_dist_n_jobs=workers if workers > 1 else None,
+            predict_workers=workers,
         )
         return {
             "labels": Labels(
