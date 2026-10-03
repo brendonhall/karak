@@ -130,16 +130,26 @@ def compute_tile_grid(
     rows = mineral_indices[:, 0]
     cols = mineral_indices[:, 1]
 
+    # One stable sort by row-major tile number instead of one mask over all
+    # pixels per tile: each tile's pixels are a contiguous run of `order`,
+    # in their original (ascending) order.
+    n_tile_cols = -(-W // tile_size)
+    n_tile_rows = -(-H // tile_size)
+    tile_of = (rows // tile_size).astype(np.int64) * n_tile_cols + cols // tile_size
+    order = np.argsort(tile_of, kind="stable")
+    bounds = np.searchsorted(tile_of[order],
+                             np.arange(n_tile_rows * n_tile_cols + 1))
+
     tiles: list[TileSpec] = []
     tile_id = 0
 
-    for r0 in range(0, H, tile_size):
+    for ti, r0 in enumerate(range(0, H, tile_size)):
         r1 = min(r0 + tile_size, H)
-        for c0 in range(0, W, tile_size):
+        for tj, c0 in enumerate(range(0, W, tile_size)):
             c1 = min(c0 + tile_size, W)
 
-            mask = (rows >= r0) & (rows < r1) & (cols >= c0) & (cols < c1)
-            idx = np.where(mask)[0]
+            k = ti * n_tile_cols + tj
+            idx = order[bounds[k]:bounds[k + 1]]
 
             if len(idx) < min_tile_pixels:
                 continue

@@ -129,6 +129,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `compute_tile_grid` (the tiled flows and the tile QC figure) finds each
+  tile's pixels with one stable sort by tile number instead of one mask over
+  all mineral pixels per tile. On NWA 4587 it takes 0.16 s instead of 3.05 s
+  at `tile_size` 512 (12.05 s at 256), with identical tiles; recipe hashes
+  do not change.
 - An explicit `--set NODE.device=...` now overrides `--device`: `--device
   cuda --set hdb.device=cpu` runs HDBSCAN on the CPU and the other device
   steps on the GPU.
