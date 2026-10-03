@@ -252,6 +252,7 @@ Assign every remaining -1 pixel to its nearest phase by distance-weighted k-NN v
 | name | type | default | bounds / choices | help |
 |------|------|---------|------------------|------|
 | `k` | int | `5` | 1.. | Neighbors |
+| `device` | str | `cpu` | cpu \| cuda | cpu (sklearn KD-tree) or cuda (CuPy brute-force search, same vote; labels match cpu unless distances tie within float32; needs karak[cuda]) |
 
 ## `normalize` — Normalize
 

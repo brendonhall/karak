@@ -94,7 +94,8 @@
       "id": "knn",
       "type": "noise_assign",
       "params": {
-        "k": 5
+        "k": 5,
+        "device": "cpu"
       }
     },
     {

@@ -780,7 +780,8 @@
     "params_noise_assign": {
       "type": "object",
       "required": [
-        "k"
+        "k",
+        "device"
       ],
       "properties": {
         "k": {
@@ -788,6 +789,16 @@
           "title": "Neighbors",
           "minimum": 1,
           "default": 5
+        },
+        "device": {
+          "type": "string",
+          "title": "Device",
+          "description": "cpu (sklearn KD-tree) or cuda (CuPy brute-force search, same vote; labels match cpu unless distances tie within float32; needs karak[cuda])",
+          "enum": [
+            "cpu",
+            "cuda"
+          ],
+          "default": "cpu"
         }
       },
       "additionalProperties": false

@@ -27,12 +27,18 @@ class NoiseAssignStage(Stage):
     ]
     PARAMS = [
         Param("k", "int", 5, "Neighbors", min=1),
+        Param("device", "str", "cpu", "Device",
+              "cpu (sklearn KD-tree) or cuda (CuPy brute-force search, same "
+              "vote; labels match cpu unless distances tie within float32; "
+              "needs karak[cuda])",
+              choices=("cpu", "cuda")),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
         labels = inputs["labels"]
         cleaned = assign_noise_pixels(
-            inputs["features"].features, labels.labels, k=params["k"]
+            inputs["features"].features, labels.labels, k=params["k"],
+            device=params["device"],
         )
         return {
             "labels": labels.replace(labels=cleaned, state=LabelState.CLEANED)

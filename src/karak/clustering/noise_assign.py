@@ -19,8 +19,16 @@ def assign_noise_pixels(
     pca_features: np.ndarray,
     labels: np.ndarray,
     k: int,
+    *,
+    device: str,
 ) -> np.ndarray:
     """Reassign noise pixels to nearest cluster via kNN.
+
+    On ``device="cpu"`` sklearn's KNeighborsClassifier (KD-tree, float64
+    distances) votes; on ``"cuda"`` a CuPy brute-force search with the same
+    distance-weighted vote does (``karak.clustering.knn_gpu``). Both give
+    the same labels unless two neighbor distances tie within float32
+    precision.
 
     Parameters
     ----------
@@ -30,6 +38,9 @@ def assign_noise_pixels(
         (N_mineral,) int32 HDBSCAN labels (-1 = noise).
     k : int
         Number of neighbors for kNN voting.
+    device : str
+        "cpu" or "cuda". On cuda the inputs may be CuPy arrays and the
+        result is a CuPy array.
 
     Returns
     -------
@@ -37,12 +48,40 @@ def assign_noise_pixels(
         (N_mineral,) int32 cleaned labels with no -1 values.
         Non-noise pixels retain their original labels.
     """
+    from karak.accel import get_array_module, is_device_array
+    from karak.errors import StageError
+
+    if device == "cpu" and (is_device_array(pca_features) or is_device_array(labels)):
+        raise StageError(
+            "device='cpu' received a device array; the executor places "
+            "inputs on the stage's device, so run this stage with device='cuda'"
+        )
+    xp = get_array_module(device)   # raises StageError without CUDA
+    if device == "cuda":
+        pca_features, labels = xp.asarray(pca_features), xp.asarray(labels)
+
     noise_mask = labels == -1
-    n_noise = int(np.sum(noise_mask))
+    n_noise = int(noise_mask.sum())
 
     if n_noise == 0:
         logger.info("No noise pixels to reassign")
         return labels.copy()
+
+    if device == "cuda":
+        from karak.clustering.knn_gpu import knn_vote_cuda
+
+        clean_mask = ~noise_mask
+        cleaned = labels.astype(xp.int32)   # a copy
+        cleaned[noise_mask] = knn_vote_cuda(
+            pca_features[clean_mask], labels[clean_mask],
+            pca_features[noise_mask], k,
+        )
+        logger.info(
+            "Reassigned %d noise pixels via %d-NN on the device "
+            "(%.1f%% of mineral pixels)",
+            n_noise, k, 100.0 * n_noise / len(labels),
+        )
+        return cleaned
 
     # Train kNN on non-noise pixels
     clean_mask = ~noise_mask

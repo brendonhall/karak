@@ -45,7 +45,7 @@ def test_smoke_two_phase_recovery(synthetic_scene):
     n_clusters = len(set(labels[labels >= 0]))
     assert n_clusters == 2, f"expected 2 phases, found {n_clusters}"
 
-    cleaned = assign_noise_pixels(features, labels, k=5)
+    cleaned = assign_noise_pixels(features, labels, k=5, device="cpu")
     assert np.all(cleaned >= 0), "noise pixels remain after kNN reassignment"
 
     # Map back to image space and check spatial coherence
