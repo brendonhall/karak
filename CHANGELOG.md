@@ -177,6 +177,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `hdbscan_global` and `hdbscan_tiled` on `device: cuda` ignored
+  `subsample_n` and fitted cuML HDBSCAN on every pixel, which does not fit
+  in GPU memory at NWA 4587 scale. cuda now fits the same random subsample
+  as the cpu path (one shared seeded draw) and assigns every pixel with
+  cuML `approximate_predict`, in batches sized from the free device memory.
+  A cuML out-of-memory error is now a stage error that names `subsample_n`.
+  The `hdb` recipe hash (and its downstream hashes) changes only for cuda
+  nodes with `subsample_n` set, so a cached full fit from the old code is
+  not reused; cpu and full-fit cuda recipes do not change.
 - `karak bench` applied `--set` before each config's `device`, so an
   explicit `--set NODE.device=...` was lost when a config set `device`.
   Bench now uses the same order as `karak run` (device first, then

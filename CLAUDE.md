@@ -105,7 +105,10 @@ Three layers; each depends only on the one below it.
   `.replace()`; never mutate inputs (the cache depends on this).
 - **Caching replaces checkpoints**: stage outputs live in
   `{work}/cache/<recipe-hash>__<port>.h5`; the provenance HDF5 is written by
-  the `export_h5` sink, not used as runtime state.
+  the `export_h5` sink, not used as runtime state. When a core change
+  alters results under unchanged params, return a tag from the stage's
+  `recipe_revision(params)` for the affected params only, so old cache
+  entries are not reused and every other recipe stays the same.
 - **Rich stays in the CLI**: stages report progress through the duck-typed
   `Reporter` (`flow/events.py`); matplotlib uses the Agg backend.
 - **Adding a stage**: drop a `@register`ed `Stage` subclass into

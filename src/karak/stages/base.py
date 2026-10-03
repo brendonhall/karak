@@ -160,6 +160,17 @@ class Stage:
         return None
 
     @classmethod
+    def recipe_revision(cls, params: dict) -> str | None:
+        """Revision tag for recipes whose results changed under unchanged
+        params (a fix in the core), so an old cache entry is not reused.
+
+        Return a tag only for the affected params; None (the default)
+        leaves the recipe hash exactly as it was. Bump the tag on each
+        later change to the same results.
+        """
+        return None
+
+    @classmethod
     def template(cls) -> dict:
         """Every param with its template value: the starting point for a
         new flow node. Flows must spell out every param; these values are

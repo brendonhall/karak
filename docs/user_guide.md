@@ -423,10 +423,15 @@ Tested on an AMD Ryzen AI 5 340 with 32 GB RAM (Linux).
   a laptop.
 - No GPU is required. With the `cuda` extra and `--device cuda`, denoise,
   normalize, PCA and HDBSCAN run on the GPU.
-- cuML HDBSCAN needs device memory in proportion to the pixel count (it
-  builds a `min_samples`-neighbour graph). The `global` flow at full NWA
-  4587 scale (12.5 M pixels, `min_samples` 1000) does not fit on a 24 GB
-  GPU, and `subsample_n` does not apply on cuda. To run HDBSCAN on the
+- cuML HDBSCAN needs device memory in proportion to the fitted pixel count
+  times `min_samples` (it builds a `min_samples`-neighbour graph). The
+  `global` flow at full NWA 4587 scale (12.5 M pixels, `min_samples` 1000)
+  does not fit on a 24 GB GPU without `subsample_n`. With `subsample_n`,
+  cuda fits the same random subsample as the cpu and then assigns every
+  pixel with `approximate_predict`, in batches sized from the free device
+  memory: `--set hdb.subsample_n=50000` clusters NWA 4587 in about a minute
+  on an RTX 4090, and 200000 runs out of memory in the cuML fit. Labels
+  agree with the cpu but are not identical. To run HDBSCAN on the
   CPU after GPU earlier steps, use `--device cuda --set hdb.device=cpu`.
   `--device` sets every node that has a `device` param, and an explicit
   `--set NODE.device=...` then overrides it for that node.
