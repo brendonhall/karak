@@ -6,12 +6,15 @@ by 1/distance (a query with zero-distance neighbors counts only those), and
 the lowest label wins a tied vote.
 
 A brute-force CuPy kernel keeps each query's ``k + extra`` nearest candidates
-in registers while the reference set streams through shared memory. The
-candidates' distances are then recomputed in float64, as sklearn's tree
-does, re-ranked, and the top ``k`` vote. The extra candidates absorb rank
-swaps between the float32 search and the float64 distances. Large ``k`` or
-many features fall back to cuML's brute-force NearestNeighbors for the
-search, with the same re-rank and vote.
+while the reference set streams through shared memory. It computes each
+distance from direct differences, so an exact match stays at distance 0 far
+from the origin; the expanded form (|x|^2 - 2 x.y + |y|^2) that cuML's
+brute-force search uses cancels there in float32 and can drop a true
+nearest neighbor from the shortlist. The candidates' distances are then
+recomputed in float64, as sklearn's tree does, re-ranked, and the top ``k``
+vote. The extra candidates absorb rank swaps between the float32 search and
+the float64 distances. Any ``k`` and feature count compile to their own
+kernel; large ones spill to local memory and run slower, not wrong.
 
 CuPy is imported lazily: this module loads without the cuda extra.
 """
@@ -23,10 +26,11 @@ from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
-# Register and shared-memory limits of the kernel; beyond them, use cuML.
-MAX_KERNEL_CANDIDATES = 32
-MAX_KERNEL_FEATURES = 48
+# Candidate lists longer than this are refused (local memory per thread).
+MAX_CANDIDATES = 1024
 _THREADS = 256
+# Shared-memory floats for the reference tile (48 KB).
+_TILE_FLOATS = 12 * 1024
 # Batches of queries take this fraction of the free device memory.
 _MEMORY_FRACTION = 0.5
 
@@ -36,7 +40,7 @@ extern "C" __global__ void knn_candidates(
     const float* __restrict__ query, const int n_query,
     float* __restrict__ out_dist, int* __restrict__ out_idx)
 {
-    const int D = %(D)d, K = %(K)d, T = %(T)d;
+    const int D = %(D)d, K = %(K)d, T = %(T)d;   // T: reference rows per tile
     __shared__ float tile[T * D];
     const int q = blockIdx.x * blockDim.x + threadIdx.x;
     float x[D];
@@ -85,12 +89,9 @@ def n_candidates(k: int, n_ref: int) -> int:
 def _kernel(n_features: int, n_cand: int):
     import cupy as cp
 
-    source = _KERNEL % {"D": n_features, "K": n_cand, "T": _THREADS}
+    rows = max(1, min(_THREADS, _TILE_FLOATS // n_features))
+    source = _KERNEL % {"D": n_features, "K": n_cand, "T": rows}
     return cp.RawKernel(source, "knn_candidates")
-
-
-def _uses_kernel(n_features: int, n_cand: int) -> bool:
-    return n_cand <= MAX_KERNEL_CANDIDATES and n_features <= MAX_KERNEL_FEATURES
 
 
 def batch_rows(n_features: int, n_cand: int, n_classes: int, free_bytes: int) -> int:
@@ -99,14 +100,11 @@ def batch_rows(n_features: int, n_cand: int, n_classes: int, free_bytes: int) ->
     return max(1024, int(free_bytes * _MEMORY_FRACTION) // per_query)
 
 
-def _candidates(ref, queries, n_cand: int, nn=None):
+def _candidates(ref, queries, n_cand: int):
     """(n_query, n_cand) candidate indices into ``ref``, nearest first."""
     import cupy as cp
 
     n_query, n_features = queries.shape
-    if nn is not None:
-        _, idx = nn.kneighbors(queries)
-        return cp.asarray(idx).astype(cp.int32)
     dist = cp.empty((n_query, n_cand), cp.float32)
     idx = cp.empty((n_query, n_cand), cp.int32)
     _kernel(n_features, n_cand)(
@@ -152,20 +150,20 @@ def knn_vote_cuda(ref_features, ref_labels, query_features, k: int):
     k = min(k, n_ref)
     n_cand = n_candidates(k, n_ref)
 
-    nn = None
-    if not _uses_kernel(n_features, n_cand):
-        from cuml.neighbors import NearestNeighbors
+    if n_cand > MAX_CANDIDATES:
+        from karak.errors import StageError
 
-        logger.info("k-NN on the device: cuML brute force (%d candidates, "
-                    "%d features)", n_cand, n_features)
-        nn = NearestNeighbors(n_neighbors=n_cand, algorithm="brute").fit(ref)
+        raise StageError(
+            f"k={k} needs {n_cand} candidates per pixel on the device; the "
+            f"limit is {MAX_CANDIDATES}. Use a smaller k or device='cpu'."
+        )
 
     free, _ = cp.cuda.Device().mem_info
     rows = batch_rows(n_features, n_cand, classes.size, free)
     out = cp.empty(queries.shape[0], cp.int32)
     for start in range(0, queries.shape[0], rows):
         q = queries[start:start + rows]
-        idx = _candidates(ref, q, n_cand, nn)
+        idx = _candidates(ref, q, n_cand)
         # float64 distances of the candidates, then the k nearest of them
         diff = ref[idx].astype(cp.float64) - q[:, None, :].astype(cp.float64)
         dist = cp.sqrt((diff * diff).sum(axis=2))

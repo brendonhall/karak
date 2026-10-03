@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `noise_assign` runs on the GPU with `device: cuda` (new param; `--device
   cuda` sets it). A CuPy kernel finds each noise pixel's nearest labelled
-  pixels by brute force, recomputes their distances in float64 and votes
-  as sklearn's `KNeighborsClassifier(weights="distance")` does; large `k`
-  or more than 48 features use cuML's brute-force search instead. On NWA
+  pixels by brute force from direct differences (so exact matches survive
+  far from the origin), recomputes their distances in float64 and votes
+  as sklearn's `KNeighborsClassifier(weights="distance")` does, for any
+  `k` up to about 680 and any feature count. On NWA
   4587 (2.4 M noise pixels, 10.1 M labelled) it takes 24 s instead of
   281 s, with identical labels. The recipe hashes of `knn` and its
   downstream nodes (`stats`, `fp`) changed.

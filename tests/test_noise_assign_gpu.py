@@ -74,16 +74,39 @@ def test_cuda_labels_match_the_cpu(d, k, n_classes):
 
 
 @needs_cuda
-def test_cuda_large_k_falls_back_to_cuml_and_matches_the_cpu():
+@pytest.mark.parametrize("d,k", [(9, 40), (49, 5), (200, 5)])
+def test_cuda_large_k_or_many_features_match_the_cpu(d, k):
     import cupy as cp
-    from karak.clustering import knn_gpu
 
-    features, labels = _scene(n=8000)
-    k = 40
-    assert not knn_gpu._uses_kernel(9, knn_gpu.n_candidates(k, 8000))
+    features, labels = _scene(n=8000, d=d)
     cpu = assign_noise_pixels(features, labels, k, device="cpu")
     gpu = assign_noise_pixels(features, labels, k, device="cuda")
     np.testing.assert_array_equal(cp.asnumpy(gpu), cpu)
+
+
+@needs_cuda
+@pytest.mark.parametrize("d,k", [(9, 40), (49, 5)])
+def test_cuda_keeps_an_exact_match_far_from_the_origin(d, k):
+    # review regression: 500 class-0 points within ~0.001 of a query at 5.0
+    # and one class-1 point equal to it. A float32 search in the expanded
+    # form |x|^2 - 2x.y + |y|^2 cancels here and loses the exact match.
+    import cupy as cp
+
+    rng = np.random.default_rng(15)
+    q = np.full((1, d), 5, np.float32)
+    x = np.vstack([(q + rng.normal(0, 0.001, (500, d))).astype(np.float32), q, q])
+    y = np.zeros(502, np.int32)
+    y[-2:] = [1, -1]
+    cpu = assign_noise_pixels(x, y, k, device="cpu")
+    gpu = cp.asnumpy(assign_noise_pixels(x, y, k, device="cuda"))
+    assert cpu[-1] == gpu[-1] == 1
+
+
+@needs_cuda
+def test_cuda_refuses_too_many_candidates():
+    features, labels = _scene(n=3000)
+    with pytest.raises(StageError, match="candidates"):
+        assign_noise_pixels(features, labels, 2000, device="cuda")
 
 
 @needs_cuda
