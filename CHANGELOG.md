@@ -142,6 +142,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `hdbscan_global` on the cpu uses `--workers`: N jobs for the core
+  distances and N processes for `approximate_predict` after a
+  `subsample_n` fit, with identical labels. The prediction also runs in
+  memory-bounded chunks (2 GB for all workers together) instead of one
+  query of `2 * min_samples` neighbors for every pixel, which needed about
+  25 GB for 782 k pixels. On NWA 4587 at `downsample_factor` 8 with 16
+  workers, the prediction takes 35 s instead of 360 s and the full fit
+  117 s instead of 238 s. Without `--workers` the stage keeps hdbscan's
+  default of 4 core-distance jobs. Recipe hashes do not change.
 - `compute_tile_grid` (the tiled flows and the tile QC figure) finds each
   tile's pixels with one stable sort by tile number instead of one mask over
   all mineral pixels per tile. On NWA 4587 it takes 0.16 s instead of 3.05 s

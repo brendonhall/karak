@@ -106,11 +106,67 @@ def _cuml_memory_hint(n: int, config, min_samples: int, exc) -> str:
     )
 
 
+# approximate_predict queries 2 * min_samples neighbors per point at once
+# (an 8-byte distance and an 8-byte index each); chunks keep all workers'
+# queries together under this many bytes.
+_PREDICT_MEMORY_BYTES = 2 << 30
+# Fewer rows than this per worker: predict serially (pool start-up costs more)
+_MIN_ROWS_PER_PREDICT_WORKER = 20_000
+
+_pool_clusterer = None   # set in each prediction pool worker
+
+
+def _init_predict_worker(clusterer) -> None:
+    global _pool_clusterer
+    _pool_clusterer = clusterer
+
+
+def _predict_chunk(points: np.ndarray):
+    return hdbscan.approximate_predict(_pool_clusterer, points)
+
+
+def predict_chunk_rows(min_samples: int, workers: int) -> int:
+    """Rows per approximate_predict call so that ``workers`` concurrent
+    calls stay within the memory budget."""
+    per_row = 2 * max(1, min_samples) * 16
+    return max(1000, _PREDICT_MEMORY_BYTES // max(1, workers) // per_row)
+
+
+def approximate_predict_parallel(clusterer, points: np.ndarray, workers: int):
+    """``hdbscan.approximate_predict`` over ``points`` in memory-bounded
+    chunks, in ``workers`` processes. Each point's label and probability
+    depend only on the fitted model and that point, so the result equals
+    one serial call exactly, without its (n, 2 * min_samples) query arrays
+    (about 25 GB for 782 k points at min_samples 1000)."""
+    min_samples = clusterer.min_samples or clusterer.min_cluster_size
+    if workers > 1 and len(points) >= 2 * _MIN_ROWS_PER_PREDICT_WORKER:
+        workers = min(workers, len(points) // _MIN_ROWS_PER_PREDICT_WORKER)
+    else:
+        workers = 1
+    rows = predict_chunk_rows(min_samples, workers)
+    chunks = [points[i:i + rows] for i in range(0, len(points), rows)]
+    if workers == 1:
+        parts = [hdbscan.approximate_predict(clusterer, c) for c in chunks]
+    else:
+        import multiprocessing
+        from concurrent.futures import ProcessPoolExecutor
+
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            mp_context=multiprocessing.get_context("forkserver"),
+            initializer=_init_predict_worker, initargs=(clusterer,),
+        ) as pool:
+            parts = list(pool.map(_predict_chunk, chunks))
+    return (np.concatenate([labels for labels, _ in parts]),
+            np.concatenate([probs for _, probs in parts]))
+
+
 def run_hdbscan(
     pca_features: np.ndarray,
     config: HDBSCANConfig,
     device: str = "cpu",
     core_dist_n_jobs: int | None = None,
+    predict_workers: int = 1,
 ) -> tuple[np.ndarray, np.ndarray, hdbscan.HDBSCAN]:
     """Run HDBSCAN on PCA-reduced mineral pixel features.
 
@@ -134,6 +190,10 @@ def run_hdbscan(
         core-distance parallelism (e.g. when called from a worker pool
         where each process should stay single-threaded internally). None
         leaves hdbscan's own default (4 jobs) untouched.
+    predict_workers : int
+        Processes for the cpu ``approximate_predict`` after a subsample fit
+        (``approximate_predict_parallel``, memory-bounded chunks). 1 =
+        serial. Results are identical for any count.
 
     Returns
     -------
@@ -189,7 +249,8 @@ def run_hdbscan(
 
         # Assign all pixels (including fitted ones) via approximate_predict
         # for consistency
-        labels_all, probs_all = hdbscan.approximate_predict(clusterer, pca_features)
+        labels_all, probs_all = approximate_predict_parallel(
+            clusterer, pca_features, predict_workers)
         labels = labels_all.astype(np.int32)
         probabilities = probs_all.astype(np.float32)
 

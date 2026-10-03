@@ -427,6 +427,14 @@ Tested on an AMD Ryzen AI 5 340 with 32 GB RAM (Linux).
 - For large images, bound memory with `hdb.subsample_n` (e.g. 500000) or
   the `tiled` flow, which keeps per-tile memory
   constant regardless of image size.
+- `--workers N` (0 = all cores) runs the load, denoise and tiled HDBSCAN
+  steps in N processes, and on the cpu `hdbscan_global` uses N jobs for
+  the core distances and N processes for `approximate_predict` after a
+  `subsample_n` fit. Results are identical for any N. On NWA 4587 at
+  `downsample_factor` 8 (782 k pixels, `min_samples` 1000) with 16 workers,
+  the prediction takes 35 s instead of 360 s and a full fit 117 s instead
+  of 238 s. The prediction runs in chunks of at most 2 GB together; a full
+  fit (no `subsample_n`) still holds about 25 GB at that size.
 - A run with `--set src.downsample_factor=4 --set
   src.include_elements=Fe-K,Ca,Mg,Si` checks an installation in minutes on
   a laptop.
