@@ -97,3 +97,55 @@ def test_compare_malformed_json_exits(tmp_path):
     good.write_text(json.dumps({"meta": {}, "configs": []}))
     with pytest.raises(SystemExit):
         bench_main(["--compare", str(bad), str(good)])
+
+
+def _bench_devices(tmp_path, monkeypatch, argv, cuda=True):
+    """Run bench_main on the global builtin with a fake executor; the device
+    of every node in each benched graph."""
+    import karak.accel as accel
+    import karak.flow.executor as executor
+
+    seen = []
+
+    def fake_run(graph, **kwargs):
+        seen.append({n.id: n.params.get("device") for n in graph.nodes})
+        return {}
+
+    monkeypatch.setattr(accel, "cuda_available", lambda: cuda)
+    monkeypatch.setattr(accel, "gpu_name", lambda: None)   # no CuPy in CI
+    monkeypatch.setattr(executor, "run", fake_run)
+    out = str(tmp_path / "o")
+    assert bench_main(["--builtin", "global", "--input", "", "--out", out,
+                       "--repeats", "1", *argv]) == 0
+    return seen
+
+
+def test_explicit_set_device_overrides_the_config_device(tmp_path, monkeypatch):
+    seen = _bench_devices(tmp_path, monkeypatch,
+                          ["--config", "device=cuda", "--set", "hdb.device=cpu"])
+    assert len(seen) == 1
+    assert seen[0]["hdb"] == "cpu"
+    assert seen[0]["dn"] == "cuda" and seen[0]["pca"] == "cuda"
+
+
+def test_set_device_applies_to_every_config(tmp_path, monkeypatch):
+    seen = _bench_devices(tmp_path, monkeypatch,
+                          ["--config", "baseline", "--config", "device=cuda",
+                           "--set", "hdb.device=cpu"])
+    assert [s["hdb"] for s in seen] == ["cpu", "cpu"]
+    assert [s["dn"] for s in seen] == ["cpu", "cuda"]
+
+
+def test_bench_set_unknown_node_exits_with_a_message(tmp_path):
+    with pytest.raises(SystemExit, match="--set"):
+        bench_main(["--builtin", "global", "--input", "", "--out",
+                    str(tmp_path / "o"), "--set", "ghost.x=1"])
+
+
+def test_bench_set_cuda_without_a_gpu_exits(tmp_path, monkeypatch):
+    import karak.accel as accel
+
+    monkeypatch.setattr(accel, "cuda_available", lambda: False)
+    with pytest.raises(SystemExit, match="cuda"):
+        bench_main(["--builtin", "global", "--input", "", "--out",
+                    str(tmp_path / "o"), "--set", "dn.device=cuda"])

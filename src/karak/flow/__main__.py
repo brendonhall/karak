@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from karak.flow.builtins import apply_device, builtin_flow, builtin_names, override_params
+from karak.flow.builtins import apply_overrides, builtin_flow, builtin_names
 from karak.flow.complete import canonicalize, complete_graph
 from karak.flow.graph import Graph
 from karak.flow.validate import validate
@@ -209,11 +209,7 @@ def main(argv: list[str] | None = None, reporter=None) -> int:
 
     overrides = _parse_set(args.set) if args.set else {}
     try:
-        # --device first, so an explicit --set NODE.device=... wins
-        if args.device:
-            graph = apply_device(graph, args.device)
-        if overrides:
-            graph = override_params(graph, overrides)
+        graph = apply_overrides(graph, device=args.device, overrides=overrides)
     except (KeyError, ValueError) as exc:
         raise SystemExit(f"error: --set/--device: {exc}") from None
     graph = canonicalize(graph)

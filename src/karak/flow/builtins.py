@@ -79,3 +79,15 @@ def apply_device(graph: Graph, device: str) -> Graph:
         if any(p.name == "device" for p in registry.get(node.type).PARAMS)
     }
     return override_params(graph, overrides) if overrides else graph
+
+
+def apply_overrides(graph: Graph, *, device: str | None = None,
+                    overrides: dict | None = None) -> Graph:
+    """``apply_device`` then ``override_params``, so an explicit
+    ``NODE.device`` override wins over ``device``. ``karak run`` and
+    ``karak bench`` share this order."""
+    if device:
+        graph = apply_device(graph, device)
+    if overrides:
+        graph = override_params(graph, overrides)
+    return graph
