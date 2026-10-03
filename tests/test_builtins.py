@@ -167,3 +167,19 @@ def test_stepwise_runs_load_mask_denoise_normalize_then_pca():
         ("nrm", "cube", "pca", "cube"),
         ("msk", "masks", "pca", "masks"),
     ]
+
+
+def test_apply_overrides_applies_the_device_before_the_set_values():
+    from karak.flow.builtins import apply_overrides
+
+    graph = apply_overrides(builtin_flow("global"), device="cuda",
+                            overrides={"hdb.device": "cpu"})
+    assert graph.node("hdb").params["device"] == "cpu"
+    assert graph.node("dn").params["device"] == "cuda"
+
+
+def test_apply_overrides_without_overrides_is_identity():
+    from karak.flow.builtins import apply_overrides
+
+    graph = builtin_flow("global")
+    assert apply_overrides(graph) is graph

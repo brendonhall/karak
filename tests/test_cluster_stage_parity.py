@@ -371,7 +371,8 @@ def test_cluster_stats_parity(features_payload, raw_labels_payload, chain):
 def test_fingerprints_parity(denoised_cube, chain):
     cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5)
     expected = compute_fingerprints(
-        chain["denoised"], cleaned, chain["mineral_indices"], ["A", "B", "C"]
+        chain["denoised"], cleaned, chain["mineral_indices"], ["A", "B", "C"],
+        accumulate="float64",
     )
     expected_pairs = flag_similar_clusters(expected, threshold=0.95)
 
@@ -382,7 +383,7 @@ def test_fingerprints_parity(denoised_cube, chain):
     )
     out = get("fingerprints")().run(
         {"labels": cleaned_payload, "cube": denoised_cube},
-        {"similarity_threshold": 0.95},
+        {"similarity_threshold": 0.95, "accumulate": "float64"},
     )
 
     fp = out["fingerprints"]

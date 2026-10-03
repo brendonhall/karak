@@ -17,11 +17,16 @@ from scipy.spatial.distance import cosine
 logger = logging.getLogger(__name__)
 
 
+ACCUMULATE = ("float64", "float32")
+
+
 def compute_fingerprints(
     denoised_cube: np.ndarray,
     cleaned_labels: np.ndarray,
     mineral_indices: np.ndarray,
     element_names: list[str],
+    *,
+    accumulate: str,
 ) -> dict:
     """Compute per-cluster chemical fingerprints from the denoised element cube.
 
@@ -40,6 +45,12 @@ def compute_fingerprints(
         (N_mineral, 2) int32 (row, col) coordinates of mineral pixels.
     element_names : list[str]
         Ordered element names matching the C channels.
+    accumulate : str
+        Precision of the mean and standard-deviation sums. ``"float64"``
+        is accurate. ``"float32"`` reproduces the published baseline: numpy
+        sums a float32 (N, C) array along axis 0 row by row in float32, and
+        on a cluster of a few million pixels the means and standard
+        deviations drift by up to a few percent.
 
     Returns
     -------
@@ -56,6 +67,8 @@ def compute_fingerprints(
         - ``"n_clusters"`` : int
         - ``"n_mineral_pixels"`` : int
     """
+    if accumulate not in ACCUMULATE:
+        raise ValueError(f"accumulate must be one of {ACCUMULATE}, got {accumulate!r}")
     rows = mineral_indices[:, 0]
     cols = mineral_indices[:, 1]
     pixel_spectra = denoised_cube[rows, cols, :]  # (N_mineral, C)
@@ -77,8 +90,9 @@ def compute_fingerprints(
         mask = cleaned_labels == label
         cluster_pixels = pixel_spectra[mask]
         n_pixels = int(cluster_pixels.shape[0])
-        mean_vec = np.mean(cluster_pixels, axis=0)
-        std_vec = np.std(cluster_pixels, axis=0)
+        # float32 output either way; only the sums run at the requested precision
+        mean_vec = cluster_pixels.mean(axis=0, dtype=accumulate).astype(np.float32)
+        std_vec = cluster_pixels.std(axis=0, dtype=accumulate).astype(np.float32)
 
         fingerprints[int(label)] = {
             "mean": mean_vec,

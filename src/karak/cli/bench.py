@@ -80,15 +80,17 @@ def run_bench(
     configs: list[BenchConfig],
     repeats: int,
     include_qc: bool,
+    overrides: dict | None = None,
 ) -> dict:
     from karak.flow.__main__ import QC_STAGE_TYPES
-    from karak.flow.builtins import apply_device
+    from karak.flow.builtins import apply_overrides
     from karak.flow.executor import run as run_flow
 
     skip = frozenset() if include_qc else QC_STAGE_TYPES
     results = []
     for cfg in configs:
-        run_graph = apply_device(graph, cfg.device) if cfg.device else graph
+        # --set applies after the config's device, as in karak run
+        run_graph = apply_overrides(graph, device=cfg.device, overrides=overrides)
         best: dict[str, float] = {}
         for _ in range(repeats):
             summary = run_flow(
@@ -181,20 +183,25 @@ def bench_main(argv: list[str] | None = None) -> int:
         return 0
 
     from karak.flow.__main__ import _load_graph, _parse_set
-    from karak.flow.builtins import override_params
+    from karak.flow.builtins import apply_overrides
 
     graph = _load_graph(args)
-    if args.set:
-        graph = override_params(graph, _parse_set(args.set))
+    overrides = _parse_set(args.set) if args.set else {}
     configs = [parse_config(s) for s in (args.config or ["baseline"])]
+    try:
+        resolved = [apply_overrides(graph, device=c.device, overrides=overrides)
+                    for c in configs]
+    except (KeyError, ValueError) as exc:
+        raise SystemExit(f"error: --set/--config device: {exc}") from None
 
-    if any(c.device == "cuda" for c in configs):
+    if any(n.params.get("device") == "cuda" for g in resolved for n in g.nodes):
         from karak import accel
 
         if not accel.cuda_available():
             raise SystemExit(
-                "error: a config requests device=cuda but no usable GPU "
-                "stack was found. Install with: pip install 'karak[cuda]'"
+                "error: device=cuda requested (a config or --set) but no "
+                "usable GPU stack was found. Install with: "
+                "pip install 'karak[cuda]'"
             )
 
     work_dir = args.work or str(Path(args.out).parent / "work")
@@ -206,6 +213,7 @@ def bench_main(argv: list[str] | None = None) -> int:
         configs=configs,
         repeats=args.repeats,
         include_qc=args.qc,
+        overrides=overrides,
     )
     json_path = Path(f"{args.out}_bench.json")
     json_path.parent.mkdir(parents=True, exist_ok=True)

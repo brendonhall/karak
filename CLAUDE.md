@@ -79,7 +79,8 @@ Three layers; each depends only on the one below it.
    `executor.py` (topo-sort, `{input}`/`{out}`/`{work}`/`{flow}` token
    resolution, content-addressed per-node caching, refcounted payload
    eviction with spill-to-cache for >256 MB arrays), `builtins.py` (the
-   loads the shipped flows + `override_params`/`apply_device`),
+   loads the shipped flows + `override_params`/`apply_device`, combined
+   in `apply_overrides` for run and bench: device first, then `--set`),
    `complete.py` (fill missing params from stage templates, v1 → v2),
    `record.py` (per-run `{out}/runs/<time>/flow.json` + `run.json`),
    `schema.py` (JSON Schema for flow files → `docs/flow.schema.json`,

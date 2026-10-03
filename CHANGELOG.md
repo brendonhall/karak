@@ -183,7 +183,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the cpu path (one shared seeded draw) and assigns every pixel with
   cuML `approximate_predict`, in batches sized from the free device memory.
   A cuML out-of-memory error is now a stage error that names `subsample_n`.
-  No recipe hashes change.
+  The `hdb` recipe hash (and its downstream hashes) changes only for cuda
+  nodes with `subsample_n` set, so a cached full fit from the old code is
+  not reused; cpu and full-fit cuda recipes do not change.
+- `karak bench` applied `--set` before each config's `device`, so an
+  explicit `--set NODE.device=...` was lost when a config set `device`.
+  Bench now uses the same order as `karak run` (device first, then
+  `--set`) through the shared `apply_overrides`. A `--set` that names an
+  unknown node or param now exits with a message, and the CUDA check also
+  covers a `--set NODE.device=cuda`.
+- The fingerprints step summed each cluster's means and standard deviations
+  in float32 along axis 0, row by row, the same error the normalize step
+  had. On the NWA 4587 denoised cube, groups of about 3.4 M pixels came out
+  with means up to 1.8 % off and standard deviations up to 1.1 % off. The
+  sums now run in float64 (new fingerprints param `accumulate`, default
+  `float64`). `accumulate: float32` reproduces the published baseline
+  exactly. Only the `fp` recipe hash changes.
 - The normalize step summed the mineral-pixel means and standard deviations
   in float32 along a 12.5 M-row axis, row by row. On the NWA 4587 denoised
   cube the means were off by up to 0.013 (0.13 z-units) and the standard

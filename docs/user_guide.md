@@ -100,7 +100,7 @@ the registry; `karak schema` prints the same contract as JSON.
 | `noise_assign` | `labels:raw`, `features` → `labels:cleaned` | Distance-weighted k-NN reassignment of every remaining unlabeled pixel. |
 | `refine` | `labels:cleaned`, `cube:denoised`, `bse` → `labels:cleaned` | Composite-phase splitting: threshold-based olivine extraction, then a GMM split of the target phase. |
 | `cluster_stats` | `labels:cleaned` → `stats` | Cluster counts, sizes, and noise fraction. |
-| `fingerprints` | `labels:cleaned`, `cube:denoised` → `fingerprints` | Per-cluster mean/std element intensities from the denoised cube, with cosine-similar pairs flagged. |
+| `fingerprints` | `labels:cleaned`, `cube:denoised` → `fingerprints` | Per-cluster mean/std element intensities from the denoised cube, with cosine-similar pairs flagged. `accumulate` sets the precision of the mean and standard-deviation sums: `float64` (default) is accurate; `float32` reproduces the published baseline, which drifts by a few percent on clusters of millions of pixels. |
 | `export_h5` | ten optional inputs → sink | Writes the provenance HDF5 file; only connected groups are written (see [HDF5 output layout](#hdf5-output-layout)). |
 | `qc_mask` | `bse`, `masks` (+`cube:raw`) → sink | Mask coverage overlay with optional TIMA reference panel. |
 | `qc_denoise` | `cube:raw`, `cube:denoised`, `bse`, `masks` → sink | Before/after denoising comparison panels. |
