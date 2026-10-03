@@ -123,7 +123,9 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     data_dir, colormap = scene
     argv = ["run", "--builtin", "stepwise", "--input", str(data_dir),
             "--out", str(tmp_path / "out" / "run"), "--plain",
-            "--set", f"src.colormap={colormap}"]
+            "--set", f"src.colormap={colormap}",
+            # a 32x32 scene: the builtin's 1000-pixel clusters cannot form
+            "--set", "hdb.min_cluster_size=50", "--set", "hdb.min_samples=10"]
     assert main(argv) == 0
     out = capsys.readouterr().out
     for expected in [
@@ -133,7 +135,8 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
         "dn.cube -> ElementCube 32×32×3 float32", "space=denoised",
         "nrm.cube -> ElementCube 32×32×3 float32", "space=normalized",
         "pca.features -> PCAFeatures",
-        "run finished in", "(5 ran, 0 cached)", "Found 4 matching files",
+        "hdb.labels -> Labels", "state=raw",
+        "run finished in", "(6 ran, 0 cached)", "Found 4 matching files",
     ]:
         assert expected in out, expected
     assert "nodes:" not in out
@@ -146,7 +149,8 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     assert "dn: cached (" in out
     assert "nrm: cached (" in out
     assert "pca: cached (" in out
-    assert "(0 ran, 5 cached)" in out
+    assert "hdb: cached (" in out
+    assert "(0 ran, 6 cached)" in out
 
 
 def test_run_links_cached_outputs_to_their_upstream_recipes(tmp_path, scene):
@@ -158,13 +162,19 @@ def test_run_links_cached_outputs_to_their_upstream_recipes(tmp_path, scene):
     out = tmp_path / "out" / "run"
     assert main(["run", "--builtin", "stepwise", "--input", str(data_dir),
                  "--out", str(out), "--plain",
-                 "--set", f"src.colormap={colormap}"]) == 0
+                 "--set", f"src.colormap={colormap}",
+                 "--set", "hdb.min_cluster_size=50",
+                 "--set", "hdb.min_samples=10"]) == 0
     nodes = json.loads((out / "runs" / "latest" / "run.json").read_text())["nodes"]
     src_cube = nodes["src"]["outputs"]["cube"]["file"]
     masks = nodes["msk"]["outputs"]["masks"]["file"]
     src_recipe = Path(src_cube).name.split("__")[0]
     assert load_upstream(Path(masks)) == {"cube": src_recipe}
     assert load_upstream(Path(src_cube)) == {}
+    features = nodes["pca"]["outputs"]["features"]["file"]
+    labels = nodes["hdb"]["outputs"]["labels"]["file"]
+    assert load_upstream(Path(labels)) == {
+        "features": Path(features).name.split("__")[0]}
 
 
 def test_unexpected_error_closes_reporter_as_failed(tmp_path, monkeypatch):
@@ -322,12 +332,15 @@ def test_stepwise_on_cuda_keeps_the_cube_on_the_device(tmp_path, scene):
     out = tmp_path / "out" / "run"
     assert main(["run", "--builtin", "stepwise", "--input", str(data_dir),
                  "--out", str(out), "--plain", "--device", "cuda",
-                 "--set", f"src.colormap={colormap}"]) == 0
+                 "--set", f"src.colormap={colormap}",
+                 "--set", "hdb.min_cluster_size=50",
+                 "--set", "hdb.min_samples=10"]) == 0
     nodes = json.loads((out / "runs" / "latest" / "run.json").read_text())["nodes"]
     assert nodes["src"]["outputs"]["cube"]["device"] == "cpu"
     assert nodes["dn"]["outputs"]["cube"]["device"] == "cuda"
     assert nodes["nrm"]["outputs"]["cube"]["device"] == "cuda"
     assert nodes["pca"]["outputs"]["features"]["device"] == "cuda"
+    assert nodes["hdb"]["outputs"]["labels"]["device"] == "cuda"
 
 
 def test_explicit_set_device_overrides_the_device_flag(tmp_path, monkeypatch):

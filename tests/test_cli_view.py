@@ -14,6 +14,8 @@ from karak.stages.payloads import (
     BseImage,
     ClusterStats,
     ElementCube,
+    Labels,
+    LabelState,
     MaskSet,
     PCAFeatures,
     Space,
@@ -177,9 +179,9 @@ def test_view_opens_layers_and_mask(tmp_path, monkeypatch, capsys):
 
 
 def _write_record(out_base, outputs, masks=None, denoised=None,
-                  normalized=None, features=None):
+                  normalized=None, features=None, labels=None):
     """A minimal run record whose src node lists the given cache files,
-    plus msk, dn, nrm and pca nodes for the files given."""
+    plus msk, dn, nrm, pca and hdb nodes for the files given."""
     import json
 
     def node(stage, files):
@@ -196,6 +198,8 @@ def _write_record(out_base, outputs, masks=None, denoised=None,
         nodes["nrm"] = node("normalize", {"cube": normalized})
     if features is not None:
         nodes["pca"] = node("pca", {"features": features})
+    if labels is not None:
+        nodes["hdb"] = node("hdbscan_global", {"labels": labels})
     run_dir = out_base / "runs" / "2026-09-29T14-05-12Z"
     run_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(json.dumps({
@@ -591,3 +595,114 @@ def test_view_main_prints_the_pca_summary(tmp_path, monkeypatch, capsys):
     assert view_main([str(cache)]) == 0
     assert "pca: 2 components kept (90.0% variance)" in capsys.readouterr().out
     assert [s.name for s in opened["specs"]][-2:] == ["pca: PC1", "pca: PC2"]
+
+
+def _labels(state=LabelState.RAW, image_shape=(4, 5)):
+    """Raw HDBSCAN labels on the six mineral pixels of _masks(): phases 0
+    and 1, with two noise pixels."""
+    rows, cols = np.nonzero(_masks().mineral_mask)
+    return Labels(
+        labels=np.array([0, 0, -1, 1, 1, -1], np.int32),
+        probabilities=np.array([0.9, 0.8, 0.0, 0.7, 0.6, 0.0], np.float32),
+        mineral_indices=np.stack([rows, cols], axis=1).astype(np.int32),
+        image_shape=image_shape,
+        state=state,
+    )
+
+
+def _store_chain(cache):
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "dn", "cube", _denoised(), 2000, upstream={"cube": "raw"})
+    _store(cache, "nrm", "cube", _normalized(), 3000, upstream={"cube": "dn"})
+    _store(cache, "pca", "features", _features(), 4000, upstream={"cube": "nrm"})
+
+
+def test_pick_raw_labels_linked_to_the_pca_features_from_a_cache_scan(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store_chain(cache)
+    _store(cache, "hdb", "labels", _labels(), 5000, upstream={"features": "pca"})
+    _store(cache, "other", "labels", _labels(), 6000,
+           upstream={"features": "another-pca"})
+    _store(cache, "knn", "labels", _labels(LabelState.CLEANED), 7000,
+           upstream={"features": "pca", "labels": "hdb"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.features.recipe == "pca"
+    assert picked.labels.recipe == "hdb"
+
+
+def test_pick_no_labels_without_pca_features(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store(cache, "raw", "cube", _cube(), 1000)
+    _store(cache, "dn", "cube", _denoised(), 2000, upstream={"cube": "raw"})
+    _store(cache, "hdb", "labels", _labels(), 5000, upstream={"features": "pca"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.features is None and picked.labels is None
+
+
+def test_pick_labels_of_the_recorded_run(tmp_path):
+    from karak.cli.view import find_run_outputs
+
+    cache = tmp_path / "output" / "work" / "cache"
+    rec = {name: _store(cache, f"rec{name}", port, payload, 1000)
+           for name, port, payload in [
+               ("c", "cube", _cube()), ("d", "cube", _denoised()),
+               ("n", "cube", _normalized()), ("p", "features", _features()),
+               ("h", "labels", _labels())]}
+    _store(cache, "newer", "labels", _labels(), 5000)   # not from the run
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": rec["c"]}, denoised=rec["d"],
+                  normalized=rec["n"], features=rec["p"], labels=rec["h"])
+    picked = pick_outputs(find_run_outputs(out_base), newest_first=False)
+    assert picked.labels.recipe == "rech"
+
+
+def test_hdb_layers_show_phases_noise_and_probability():
+    cube = _cube(factor=2, trim=3)
+    labels = _labels()
+    specs = layer_specs(cube, None, _masks(), None, None, None, labels)
+    by_name = {s.name: s for s in specs}
+    names = [s.name for s in specs]
+    assert names[names.index("hdb: phases"):] == [
+        "hdb: phases", "hdb: noise", "hdb: probability",
+        "mineral mask", "valid mask"]
+    rows, cols = labels.mineral_indices.T
+    phases = by_name["hdb: phases"]
+    assert phases.kind == "labels" and phases.visible
+    np.testing.assert_array_equal(phases.data[rows, cols], [1, 1, 0, 2, 2, 0])
+    assert (phases.data[~_masks().mineral_mask] == 0).all()
+    noise = by_name["hdb: noise"]
+    assert noise.kind == "labels" and not noise.visible
+    np.testing.assert_array_equal(noise.data[rows, cols], [0, 0, 1, 0, 0, 1])
+    prob = by_name["hdb: probability"]
+    assert prob.kind == "image" and not prob.visible
+    assert prob.contrast_limits == (0.0, 1.0)
+    np.testing.assert_allclose(prob.data[rows, cols], labels.probabilities)
+    assert (phases.scale, phases.translate) == (by_name["Al"].scale,
+                                                by_name["Al"].translate)
+
+
+def test_hdb_layers_skipped_when_the_image_shape_differs():
+    specs = layer_specs(_cube(), None, None, None, None, None,
+                        _labels(image_shape=(8, 10)))
+    assert not any(s.name.startswith("hdb:") for s in specs)
+
+
+def test_hdb_summary_counts_phases_and_noise():
+    from karak.cli.view import hdb_summary
+
+    assert hdb_summary(_labels()) == (
+        "hdb: 2 phases, 2 noise (33.3%); pixels per phase: 0 2, 1 2")
+
+
+def test_view_main_prints_the_hdb_summary(tmp_path, monkeypatch, capsys):
+    cache = tmp_path / "work" / "cache"
+    _store_chain(cache)
+    _store(cache, "hdb", "labels", _labels(), 5000, upstream={"features": "pca"})
+    opened = {}
+    monkeypatch.setattr(view, "_napari_available", lambda: True)
+    monkeypatch.setattr(view, "open_viewer",
+                        lambda specs, shapes: opened.update(specs=specs))
+    assert view_main([str(cache)]) == 0
+    assert "hdb: 2 phases, 2 noise (33.3%)" in capsys.readouterr().out
+    assert [s.name for s in opened["specs"]][-3:] == [
+        "hdb: phases", "hdb: noise", "hdb: probability"]

@@ -150,13 +150,17 @@ by `edges` (output port to input port). Four builtins ship with karak:
 | `global` | `hdbscan_global → noise_assign` |
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
-| `stepwise` | none yet: load, mask, denoise, normalize, and PCA steps only |
+| `stepwise` | `hdbscan_global` (no noise reassignment yet) |
 
 `stepwise` grows one step at a time as steps join the dashboard work;
 today it runs the load step (`src`), the mask step (`msk`), the denoise
 step (`dn`, bilateral with the `global` values), the normalize step
-(`nrm`, z-scores with float64 sums), and the PCA step (`pca`, components
-kept up to 95% of the variance, at least 5). The
+(`nrm`, z-scores with float64 sums), the PCA step (`pca`, components
+kept up to 95% of the variance, at least 5), and the HDBSCAN step (`hdb`,
+`hdbscan_global` with the `global` values). With those values (no
+`subsample_n`, cpu) HDBSCAN fits every mineral pixel on the CPU, which
+takes hours at full NWA 4587 scale; on a GPU use `--device cuda --set
+hdb.subsample_n=50000` (about 1 minute), or downsample for a CPU check. The
 builtin leaves `msk.valid_mask_path` at `null` (no polygon); set it in your
 own copy (`karak flow init --builtin stepwise -o FILE`), for example to
 `"{input}/mask/Valid_mask.csv"`.
@@ -346,7 +350,7 @@ log), the same information prints as plain lines.
 `karak run` exits with 1 when a step fails and with 130 on Ctrl-C;
 completed steps stay cached.
 
-To inspect the load, mask, denoise, normalize, and PCA steps' outputs, open them in
+To inspect the outputs of the load through HDBSCAN steps, open them in
 napari (install the extra once with `uv sync --extra view`):
 
 ```
@@ -358,11 +362,12 @@ cached `.h5` file copied from another machine. Given an `--out` value, the
 command opens the outputs listed in the latest run record
 (`{out}/runs/latest/run.json`): the load step's element cube, the BSE
 image from the same step, the mask step's masks, the denoise step's cube,
-the normalize step's cube, and the PCA step's features. Without a record
+the normalize step's cube, the PCA step's features, and the HDBSCAN step's
+labels. Without a record
 (or if its cache files are gone) it opens the newest cached load cube, and
 the newest cached masks and denoised cube computed from it, the normalized
-cube computed from that, and the PCA features computed from the
-normalized cube, instead (each cached output records the recipes it consumed;
+cube computed from that, the PCA features computed from the normalized
+cube, and the raw labels computed from those features, instead (each cached output records the recipes it consumed;
 outputs from another run or cube are never overlaid; the masks shown
 with a denoised cube are the ones it consumed, and a cached file without
 these recipes is only opened through its run record). It shows one gray
@@ -372,14 +377,18 @@ as `dn: <element>` layers and the z-scores as `nrm: <element>` layers
 contrast limits from the 1st and 99th percentiles of the mineral pixels),
 one `pca: PC<k>` layer per kept principal component (hidden; the
 component's scores at the mineral pixels and 0 elsewhere, with contrast
-limits from the 1st and 99th percentiles of the scores), then
-the mineral mask as a labels layer (visible) and, when the flow set
+limits from the 1st and 99th percentiles of the scores), the HDBSCAN
+phases as the `hdb: phases` labels layer (visible; phase k drawn as k + 1,
+noise and non-mineral pixels transparent), the noise pixels as `hdb: noise`
+(hidden), and the membership probabilities as `hdb: probability` (hidden),
+then the mineral mask as a labels layer (visible) and, when the flow set
 `msk.valid_mask_path`, the valid mask as a second labels layer (hidden).
 Toggle an element and its `dn:` layer to compare raw and denoised. With
 the denoised and normalized cubes the viewer holds three cubes in memory
 (about 6 GB for NWA 4587), plus one image per kept component (9
 components, about 0.9 GB for NWA 4587). The command prints the explained
-variance of each kept component. Every layer is placed in full-resolution
+variance of each kept component, and the HDBSCAN phase count, noise share
+and pixels per phase. Every layer is placed in full-resolution
 coordinates, so the cursor position matches the original exports and a
 napari shapes CSV such as the valid-area mask lines up. It loads the whole
 cube into memory (about 2 GB for NWA 4587).

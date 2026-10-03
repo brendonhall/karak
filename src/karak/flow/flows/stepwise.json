@@ -63,6 +63,17 @@
         "random_state": 42,
         "device": "cpu"
       }
+    },
+    {
+      "id": "hdb",
+      "type": "hdbscan_global",
+      "params": {
+        "min_cluster_size": 1000,
+        "min_samples": 0,
+        "subsample_n": 0,
+        "random_state": 42,
+        "device": "cpu"
+      }
     }
   ],
   "edges": [
@@ -141,6 +152,17 @@
       "to": {
         "node": "pca",
         "port": "masks"
+      }
+    },
+    {
+      "id": "e8",
+      "from": {
+        "node": "pca",
+        "port": "features"
+      },
+      "to": {
+        "node": "hdb",
+        "port": "features"
       }
     }
   ]
