@@ -431,7 +431,12 @@ Tested on an AMD Ryzen AI 5 340 with 32 GB RAM (Linux).
   pixel with `approximate_predict`, in batches sized from the free device
   memory: `--set hdb.subsample_n=50000` clusters NWA 4587 in about a minute
   on an RTX 4090, and 200000 runs out of memory in the cuML fit. Labels
-  agree with the cpu but are not identical. To run HDBSCAN on the
+  agree with the cpu but are not identical.
+- The tiled flows on cuda fit cuML once per tile, so the same limit applies
+  per tile. A full 512 px tile (up to 262 k pixels) runs out of memory with
+  `min_samples` 1000 even on an empty 24 GB GPU. Set `hdb.subsample_n`
+  (50000 runs `hdb` in about 105 s on NWA 4587) or a smaller
+  `hdb.tile_size` (one full 256 px tile, 65 k pixels, fits in 1 s). To run HDBSCAN on the
   CPU after GPU earlier steps, use `--device cuda --set hdb.device=cpu`.
   `--device` sets every node that has a `device` param, and an explicit
   `--set NODE.device=...` then overrides it for that node.
