@@ -31,6 +31,14 @@ _HDBSCAN_PARAMS = [
 ]
 
 
+def _cuda_subsample_revision(params: dict) -> str | None:
+    """cuda with subsample_n fitted every pixel before 2026-10-02 and now
+    fits the subsample, under the same params: revise those recipes."""
+    if params["device"] == "cuda" and params["subsample_n"]:
+        return "cuda-subsample-1"
+    return None
+
+
 def hdbscan_config(params: dict) -> HDBSCANConfig:
     return HDBSCANConfig(
         min_cluster_size=params["min_cluster_size"],
@@ -60,6 +68,10 @@ class HdbscanGlobalStage(Stage):
              help="per-pixel phase labels; -1 = HDBSCAN noise"),
     ]
     PARAMS = _HDBSCAN_PARAMS
+
+    @classmethod
+    def recipe_revision(cls, params: dict) -> str | None:
+        return _cuda_subsample_revision(params)
 
     def apply(self, inputs: dict, params: dict) -> dict:
         features = inputs["features"]
@@ -108,6 +120,10 @@ class HdbscanTiledStage(Stage):
         Param("min_clusters_per_tile", "int", 3, "Min clusters per tile",
               "Tiles with fewer clusters defer to the k-NN pass", min=0),
     ]
+
+    @classmethod
+    def recipe_revision(cls, params: dict) -> str | None:
+        return _cuda_subsample_revision(params)
 
     def apply(self, inputs: dict, params: dict) -> dict:
         from karak.accel import resolve_workers

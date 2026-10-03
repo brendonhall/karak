@@ -201,7 +201,11 @@ def _node_recipe(graph: Graph, node_id: str, params: dict, hashes: dict) -> str:
     """Recipe hash of one node, given the hashes of its upstream outputs."""
     node = graph.node(node_id)
     upstream = _upstream_recipes(graph, node_id, hashes)
-    source_sig = registry.get(node.type).source_signature(params)
+    cls = registry.get(node.type)
+    source_sig = cls.source_signature(params)
+    revision = cls.recipe_revision(params)
+    if revision is not None:   # None keeps every existing recipe unchanged
+        source_sig = f"{source_sig or ''}|revision:{revision}"
     return recipe_hash(node.type, params, upstream, source_sig)
 
 
