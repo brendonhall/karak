@@ -41,10 +41,10 @@ _SHARED = {
     "nrm": "e22f6388e1c0d49a47ba28742638754f",
     "pca": "700ce0030be91ee0d4d2e06cea32ef2c",
 }
+_GLOBAL_HDB = "001dae34839b919b681ba865cb8fecaa"
 
 GOLDEN = {
-    "global": {**_SHARED,
-               "hdb": "001dae34839b919b681ba865cb8fecaa",
+    "global": {**_SHARED, "hdb": _GLOBAL_HDB,
                "knn": "0998c21ffbc4bc42ae9116ab1c4d9327",
                "stats": "544faeef7033052a4950593773201b02",
                "fp": "368ab0228a129897bd986bfcd137ab87"},
@@ -61,7 +61,7 @@ GOLDEN = {
                    "fp": "f4229c209a91147a8b21b6d3ccc4f5e7"},
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
                  "dn": _SHARED["dn"], "nrm": _SHARED["nrm"],
-                 "pca": _SHARED["pca"]},
+                 "pca": _SHARED["pca"], "hdb": _GLOBAL_HDB},
 }
 
 

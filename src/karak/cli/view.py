@@ -1,19 +1,21 @@
-"""karak view: open a run's cached load, mask, denoise, normalize and PCA
-outputs in napari.
+"""karak view: open a run's cached load, mask, denoise, normalize, PCA and
+HDBSCAN outputs in napari.
 
 It opens the outputs listed in the run's latest record
 (``{out}/runs/latest/run.json``): the load step's ElementCube (the first
 with no upstream cube), the BseImage from the same step, the first MaskSet
 (the mask step's), the denoised ElementCube computed from that cube (the
 denoise step's), the normalized ElementCube computed from the denoised
-one (the normalize step's), and the PCAFeatures computed from the
-normalized one (the PCA step's). Without a record it scans the cache, which
+one (the normalize step's), the PCAFeatures computed from the normalized
+one (the PCA step's), and the raw Labels computed from those features (the
+HDBSCAN step's). Without a record it scans the cache, which
 names files by recipe hash, reading each file's ``payload_type`` and
 upstream recipes to find the newest of each. Elements are image layers,
 the denoised elements ``dn: <element>`` layers, the z-scores
 ``nrm: <element>`` layers with contrast limits from the data, each kept
 principal component scattered back into the image as a ``pca: PC<k>``
-layer, and the mineral mask and the valid mask labels layers. Layers are
+layer, the HDBSCAN phases, noise and membership probabilities as ``hdb:``
+layers, and the mineral mask and the valid mask labels layers. Layers are
 placed in full-resolution coordinates (scale = downsample factor, offset =
 trims) so positions match the original exports and the napari shapes the
 valid mask was drawn with.
@@ -49,6 +51,7 @@ class CacheFile:
     mtime: float
     upstream: dict = field(default_factory=dict)  # input port -> recipe
     space: str | None = None   # ElementCube space tag: raw | denoised | normalized
+    state: str | None = None   # Labels state tag: raw | cleaned
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,7 @@ class PickedOutputs:
     denoised: CacheFile | None
     normalized: CacheFile | None
     features: CacheFile | None
+    labels: CacheFile | None
     other_cubes: list
 
 
@@ -94,11 +98,13 @@ def _read_entry(path: Path) -> CacheFile | None:
             payload_type = str(attrs["payload_type"])
             raw = attrs.get("upstream")
             space = attrs.get("space")
+            state = attrs.get("state")
     except (OSError, KeyError):
         return None
     upstream = json.loads(str(raw)) if raw is not None else {}
     return CacheFile(path, recipe, port, payload_type, path.stat().st_mtime,
-                     upstream, None if space is None else str(space))
+                     upstream, None if space is None else str(space),
+                     None if state is None else str(state))
 
 
 def find_cache_files(target: str | Path) -> list[CacheFile]:
@@ -155,8 +161,9 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
     ``masks``), so a newer mask from an interrupted rerun is never overlaid
     on an older denoised cube; the normalized cube shown is one whose
     upstream ``cube`` is that denoised cube, and the PCA features shown are
-    ones whose upstream ``cube`` is that normalized cube. Without a
-    denoised cube the
+    ones whose upstream ``cube`` is that normalized cube; the raw labels
+    shown are ones whose upstream ``features`` are those PCA features.
+    Without a denoised cube the
     newest masks computed from the raw cube are shown. Another run's
     outputs are never overlaid.
     """
@@ -197,6 +204,14 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
             feature_sets = [e for e in feature_sets
                             if e.upstream.get("cube") == normalized.recipe]
         features = (feature_sets or [None])[0]
+    labels = None
+    if features is not None:
+        label_sets = newest(e for e in entries
+                            if e.payload_type == "labels" and e.state == "raw")
+        if newest_first:
+            label_sets = [e for e in label_sets
+                          if e.upstream.get("features") == features.recipe]
+        labels = (label_sets or [None])[0]
     if not newest_first:
         masks = (mask_sets or [None])[0]
     elif denoised is not None:
@@ -207,7 +222,8 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
                         if e.upstream.get("cube") == cube.recipe) or [None])[0]
     shown = (cube, denoised, normalized)
     others = [e for e in cubes if all(e is not s for s in shown)]
-    return PickedOutputs(cube, bse, masks, denoised, normalized, features, others)
+    return PickedOutputs(cube, bse, masks, denoised, normalized, features,
+                         labels, others)
 
 
 def _zscore_limits(channel: np.ndarray) -> tuple:
@@ -245,15 +261,48 @@ def pca_summary(features) -> str:
             f"({float(kept.sum()):.1%} variance): {parts}")
 
 
+def _count(n: int) -> str:
+    return f"{n / 1e6:.1f}M" if n >= 1_000_000 else f"{n:,}"
+
+
+def hdb_summary(labels) -> str:
+    """One line: phase count, noise share, and pixels per phase."""
+    values = np.asarray(labels.labels)
+    n_noise = int((values == -1).sum())
+    phases, counts = np.unique(values[values >= 0], return_counts=True)
+    share = n_noise / values.size if values.size else 0.0
+    per_phase = ", ".join(f"{p} {_count(int(c))}" for p, c in zip(phases, counts))
+    return (f"hdb: {phases.size} phases, {n_noise:,} noise ({share:.1%}); "
+            f"pixels per phase: {per_phase}")
+
+
+def label_images(labels, shape) -> tuple:
+    """(phases, noise, probability) images of a Labels payload: phase k as
+    k + 1 with non-mineral and noise pixels 0 (napari draws 0 transparent),
+    noise pixels as 1, and the membership probabilities (0 elsewhere)."""
+    rows, cols = labels.mineral_indices[:, 0], labels.mineral_indices[:, 1]
+    values = np.asarray(labels.labels)
+    phases = np.zeros(shape, np.int32)
+    phases[rows, cols] = np.where(values >= 0, values + 1, 0)
+    noise = np.zeros(shape, np.uint8)
+    noise[rows, cols] = values == -1
+    probability = np.zeros(shape, np.float32)
+    if labels.probabilities is not None:
+        probability[rows, cols] = labels.probabilities
+    return phases, noise, probability
+
+
 def layer_specs(cube, bse, masks=None, denoised=None, normalized=None,
-                features=None, show=("Fe-K",)) -> list[LayerSpec]:
+                features=None, labels=None, show=("Fe-K",)) -> list[LayerSpec]:
     """BSE, one layer per element, the denoised cube's elements as
     ``dn: <element>``, the normalized cube's as ``nrm: <element>`` (z-scores,
     so contrast limits come from the data), each kept principal component
     as ``pca: PC<k>`` (scores scattered into the image, 0 elsewhere,
-    hidden), then the masks as labels layers, all placed in full-resolution
-    pixels. Only ``show`` elements start visible. PCA features whose image
-    shape differs from the cube's are skipped."""
+    hidden), the HDBSCAN labels as ``hdb: phases`` (visible), ``hdb: noise``
+    and ``hdb: probability`` (hidden), then the masks as labels layers, all
+    placed in full-resolution pixels. Only ``show`` elements start visible.
+    PCA features or labels whose image shape differs from the cube's are
+    skipped."""
     factor = cube.downsample_factor
     offset = (factor - 1) / 2  # a block's center, in full-resolution pixels
     translate = (
@@ -287,6 +336,14 @@ def layer_specs(cube, bse, masks=None, denoised=None, normalized=None,
             image[rows, cols] = scores
             specs.append(LayerSpec(f"pca: PC{k + 1}", image, scale, translate,
                                    False, contrast_limits=_feature_limits(scores)))
+    if labels is not None and tuple(labels.image_shape) == cube.pixels.shape[:2]:
+        phases, noise, probability = label_images(labels, cube.pixels.shape[:2])
+        specs.append(LayerSpec("hdb: phases", phases, scale, translate, True,
+                               kind="labels"))
+        specs.append(LayerSpec("hdb: noise", noise, scale, translate, False,
+                               kind="labels"))
+        specs.append(LayerSpec("hdb: probability", probability, scale, translate,
+                               False, contrast_limits=(0.0, 1.0)))
     if masks is not None:
         specs.append(LayerSpec("mineral mask", masks.mineral_mask.astype(np.uint8),
                                scale, translate, True, kind="labels"))
@@ -329,7 +386,8 @@ def open_viewer(specs: list[LayerSpec], shapes) -> None:
 def view_main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="karak view",
-        description="Open the cached load, mask, denoise, normalize and PCA outputs of a run in napari.",
+        description=("Open the cached load, mask, denoise, normalize, PCA and "
+                     "HDBSCAN outputs of a run in napari."),
     )
     parser.add_argument(
         "path",
@@ -383,7 +441,13 @@ def view_main(argv: list[str]) -> int:
         if tuple(features.image_shape) != cube.pixels.shape[:2]:
             print(f"pca: image shape {tuple(features.image_shape)} differs from "
                   f"the cube's {cube.pixels.shape[:2]}; PCA layers skipped")
-    specs = layer_specs(cube, bse, masks, denoised, normalized, features,
+    labels = load(picked.labels) if picked.labels is not None else None
+    if labels is not None:
+        print(hdb_summary(labels))
+        if tuple(labels.image_shape) != cube.pixels.shape[:2]:
+            print(f"hdb: image shape {tuple(labels.image_shape)} differs from "
+                  f"the cube's {cube.pixels.shape[:2]}; HDBSCAN layers skipped")
+    specs = layer_specs(cube, bse, masks, denoised, normalized, features, labels,
                         show=tuple(args.show.split(",")))
     shapes = read_napari_shapes(args.mask) if args.mask else []
     open_viewer(specs, shapes)

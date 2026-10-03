@@ -39,7 +39,7 @@ karak run --builtin tiled|tiled-rare ...             # tiled variants
 karak run FLOW.json --input DIR --out BASE           # run a custom flow
 karak run ... --set NODE.PARAM=VALUE                 # override any node param
 karak run ... --no-qc                                # skip QC figure sinks
-karak run --builtin stepwise --input DIR --out BASE  # the growing step-by-step flow (load + mask + denoise + normalize + pca, for now)
+karak run --builtin stepwise --input DIR --out BASE  # the growing step-by-step flow (load through pca + hdbscan, for now)
 karak run ... --plain                      # line output instead of the live dashboard
 uv run --extra view karak view BASE [--mask CSV]    # open a run's cached load outputs in napari
 karak run ... --no-cache                             # ignore the node cache
