@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- User guide: "HDBSCAN settings for full-scale runs". On NWA 4587 at full
+  scale, `subsample_n` 50000 with `min_cluster_size` = `min_samples` = 1000
+  finds 5 phases; with 125 it finds the 7 phases of a fit on every pixel
+  at `downsample_factor` 8, in 15 s on a GPU. The builtins keep the
+  `global` values.
 - `noise_assign` runs on the GPU with `device: cuda` (new param; `--device
   cuda` sets it). A CuPy kernel finds each noise pixel's nearest labelled
   pixels by brute force from direct differences (so exact matches survive

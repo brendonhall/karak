@@ -156,14 +156,15 @@ by `edges` (output port to input port). Four builtins ship with karak:
 today it runs the load step (`src`), the mask step (`msk`), the denoise
 step (`dn`, bilateral with the `global` values), the normalize step
 (`nrm`, z-scores with float64 sums), the PCA step (`pca`, components
-kept up to 95% of the variance, at least 5), and the HDBSCAN step (`hdb`,
-`hdbscan_global` with the `global` values), and the noise-reassignment
-step (`knn`, 5 neighbours; about 24 s on a GPU at full NWA 4587 scale),
-and then the cluster statistics (`stats`) and the chemical fingerprints
-(`fp`, from the denoised cube) of the reassigned phases. With those values (no
-`subsample_n`, cpu) HDBSCAN fits every mineral pixel on the CPU, which
-takes hours at full NWA 4587 scale; on a GPU use `--device cuda --set
-hdb.subsample_n=50000` (about 1 minute), or downsample for a CPU check. The
+kept up to 95% of the variance, at least 5), the HDBSCAN step (`hdb`,
+`hdbscan_global` with the `global` values), the noise-reassignment step
+(`knn`, 5 neighbours; about 24 s on a GPU at full NWA 4587 scale), and
+then the cluster statistics (`stats`) and the chemical fingerprints (`fp`,
+from the denoised cube) of the reassigned phases. With the `global` values
+(no `subsample_n`) HDBSCAN fits every mineral pixel, which takes hours on
+the CPU and does not fit on a 24 GB GPU at full NWA 4587 scale; see
+[HDBSCAN settings for full-scale runs](#hdbscan-settings-for-full-scale-runs)
+for the values to set instead. The
 builtin leaves `msk.valid_mask_path` at `null` (no polygon); set it in your
 own copy (`karak flow init --builtin stepwise -o FILE`), for example to
 `"{input}/mask/Valid_mask.csv"`.
@@ -226,6 +227,44 @@ Conventions:
   so the builtins use `0`.
 - `mask.valid_mask_path` is a napari shapes CSV with polygon coordinates in
   original image space; it aligns with any downsample factor and trim.
+
+### HDBSCAN settings for full-scale runs
+
+The builtins keep the `global` HDBSCAN values (`min_cluster_size` 1000,
+`min_samples` 1000, `subsample_n` 0), so their recipe hashes and the
+published baseline stay the same. At full scale, set these instead:
+
+```bash
+--set hdb.subsample_n=50000 --set hdb.min_cluster_size=125 --set hdb.min_samples=125
+```
+
+With `subsample_n`, HDBSCAN fits a random subsample and then assigns every
+pixel to the clusters it found. A phase that covers a share p of the
+mineral pixels has about p × `subsample_n` points in the subsample, and it
+can only become a cluster when that number is well above
+`min_cluster_size`. With 50000 and 1000, a phase needs more than about 2 %
+of the pixels, so small phases disappear into their neighbours. With 50000
+and 125, the limit is about 0.25 %.
+
+Measured on NWA 4587 (`flows/nwa4587_stepwise.json`, 12,495,787 mineral
+pixels at `downsample_factor` 2; RTX 4090 and 16 CPU threads with
+`--workers 0`):
+
+| `subsample_n` | `min_cluster_size` = `min_samples` | phases | `hdb` time |
+|---|---|---|---|
+| 50000 | 1000 | 5: a 0.4 % Ca-P-Y phase and a 2.1 % Fe-O phase merge into larger ones | 65 s (GPU) |
+| 50000 | 125 | 7 | 15 s (GPU), 267 s (CPU) |
+| 100000 | 100 | the same 7 | 27 s (GPU) |
+| 50000 | 50 | 8: adds a 0.28 % silica-like phase (Si 0.94, O 0.31) | 13 s (GPU) |
+
+The 7 phases at 50000 / 125 match the 7 phases of a fit on every pixel at
+`downsample_factor` 8 (each mean element spectrum has a cosine similarity
+of at least 0.999 with its match), and the CPU and the GPU give the same
+HDBSCAN labels (adjusted Rand index 1.000). At `downsample_factor` 8, three
+random seeds at 50000 / 1000 give the same phases. Smaller values find smaller phases but also more noise
+pixels (24 % at 125 against 19 % at 1000; the noise-reassignment step gives
+each of them a phase). Check any new small phase with the fingerprints
+that `karak view` prints before you treat it as a mineral.
 
 ---
 
@@ -456,9 +495,10 @@ Tested on an AMD Ryzen AI 5 340 with 32 GB RAM (Linux).
   does not fit on a 24 GB GPU without `subsample_n`. With `subsample_n`,
   cuda fits the same random subsample as the cpu and then assigns every
   pixel with `approximate_predict`, in batches sized from the free device
-  memory: `--set hdb.subsample_n=50000` clusters NWA 4587 in about a minute
-  on an RTX 4090, and 200000 runs out of memory in the cuML fit. Labels
-  agree with the cpu but are not identical.
+  memory: with the [full-scale settings](#hdbscan-settings-for-full-scale-runs)
+  `hdb` takes about 15 s on NWA 4587 on an RTX 4090. With `min_samples`
+  1000, 50000 takes about a minute and 200000 runs out of memory in the
+  cuML fit. Labels agree with the cpu but are not identical.
 - The tiled flows on cuda fit cuML once per tile, so the same limit applies
   per tile. A full 512 px tile (up to 262 k pixels) runs out of memory with
   `min_samples` 1000 even on an empty 24 GB GPU. Set `hdb.subsample_n`
