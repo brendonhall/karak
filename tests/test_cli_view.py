@@ -179,9 +179,9 @@ def test_view_opens_layers_and_mask(tmp_path, monkeypatch, capsys):
 
 
 def _write_record(out_base, outputs, masks=None, denoised=None,
-                  normalized=None, features=None, labels=None):
+                  normalized=None, features=None, labels=None, cleaned=None):
     """A minimal run record whose src node lists the given cache files,
-    plus msk, dn, nrm, pca and hdb nodes for the files given."""
+    plus msk, dn, nrm, pca, hdb and knn nodes for the files given."""
     import json
 
     def node(stage, files):
@@ -200,6 +200,8 @@ def _write_record(out_base, outputs, masks=None, denoised=None,
         nodes["pca"] = node("pca", {"features": features})
     if labels is not None:
         nodes["hdb"] = node("hdbscan_global", {"labels": labels})
+    if cleaned is not None:
+        nodes["knn"] = node("noise_assign", {"labels": cleaned})
     run_dir = out_base / "runs" / "2026-09-29T14-05-12Z"
     run_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(json.dumps({
@@ -706,3 +708,135 @@ def test_view_main_prints_the_hdb_summary(tmp_path, monkeypatch, capsys):
     assert "hdb: 2 phases, 2 noise (33.3%)" in capsys.readouterr().out
     assert [s.name for s in opened["specs"]][-3:] == [
         "hdb: phases", "hdb: noise", "hdb: probability"]
+
+
+def _cleaned(image_shape=(4, 5)):
+    """The noise pixels of _labels() reassigned: one to phase 0, one to 1."""
+    raw = _labels(image_shape=image_shape)
+    return raw.replace(labels=np.array([0, 0, 0, 1, 1, 1], np.int32),
+                       state=LabelState.CLEANED)
+
+
+def test_pick_cleaned_labels_linked_to_the_raw_labels_from_a_cache_scan(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store_chain(cache)
+    _store(cache, "hdb", "labels", _labels(), 5000, upstream={"features": "pca"})
+    _store(cache, "knn", "labels", _cleaned(), 6000,
+           upstream={"features": "pca", "labels": "hdb"})
+    _store(cache, "other", "labels", _cleaned(), 7000,
+           upstream={"features": "pca", "labels": "another-hdb"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.labels.recipe == "hdb"
+    assert picked.cleaned.recipe == "knn"
+
+
+def test_pick_no_cleaned_labels_without_raw_labels(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store_chain(cache)
+    _store(cache, "knn", "labels", _cleaned(), 6000,
+           upstream={"features": "pca", "labels": "hdb"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.labels is None and picked.cleaned is None
+
+
+def test_pick_cleaned_labels_of_the_recorded_run(tmp_path):
+    from karak.cli.view import find_run_outputs
+
+    cache = tmp_path / "output" / "work" / "cache"
+    rec = {name: _store(cache, f"rec{name}", port, payload, 1000)
+           for name, port, payload in [
+               ("c", "cube", _cube()), ("d", "cube", _denoised()),
+               ("n", "cube", _normalized()), ("p", "features", _features()),
+               ("h", "labels", _labels()), ("k", "labels", _cleaned())]}
+    _store(cache, "newer", "labels", _cleaned(), 5000)   # not from the run
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": rec["c"]}, denoised=rec["d"],
+                  normalized=rec["n"], features=rec["p"], labels=rec["h"],
+                  cleaned=rec["k"])
+    picked = pick_outputs(find_run_outputs(out_base), newest_first=False)
+    assert (picked.labels.recipe, picked.cleaned.recipe) == ("rech", "reck")
+
+
+def test_knn_layer_shows_every_mineral_pixel_with_a_phase():
+    cleaned = _cleaned()
+    specs = layer_specs(_cube(factor=2, trim=3), None, _masks(), None, None,
+                        None, _labels(), cleaned)
+    by_name = {s.name: s for s in specs}
+    names = [s.name for s in specs]
+    assert names[names.index("hdb: phases"):] == [
+        "hdb: phases", "hdb: noise", "hdb: probability", "knn: phases",
+        "mineral mask", "valid mask"]
+    knn = by_name["knn: phases"]
+    assert knn.kind == "labels" and not knn.visible
+    rows, cols = cleaned.mineral_indices.T
+    np.testing.assert_array_equal(knn.data[rows, cols], [1, 1, 1, 2, 2, 2])
+    assert (knn.data[~_masks().mineral_mask] == 0).all()
+    assert (knn.scale, knn.translate) == (by_name["hdb: phases"].scale,
+                                          by_name["hdb: phases"].translate)
+
+
+def test_knn_layer_skipped_when_the_image_shape_differs():
+    specs = layer_specs(_cube(), None, None, None, None, None, None,
+                        _cleaned(image_shape=(8, 10)))
+    assert not any(s.name.startswith("knn:") for s in specs)
+
+
+def test_knn_summary_counts_the_reassigned_pixels():
+    from karak.cli.view import knn_summary
+
+    assert knn_summary(_cleaned(), _labels()) == (
+        "knn: 2 phases; pixels per phase: 0 3 (+1), 1 3 (+1)")
+    assert knn_summary(_cleaned()) == "knn: 2 phases; pixels per phase: 0 3, 1 3"
+
+
+def test_view_main_prints_the_knn_summary(tmp_path, monkeypatch, capsys):
+    cache = tmp_path / "work" / "cache"
+    _store_chain(cache)
+    _store(cache, "hdb", "labels", _labels(), 5000, upstream={"features": "pca"})
+    _store(cache, "knn", "labels", _cleaned(), 6000,
+           upstream={"features": "pca", "labels": "hdb"})
+    opened = {}
+    monkeypatch.setattr(view, "_napari_available", lambda: True)
+    monkeypatch.setattr(view, "open_viewer",
+                        lambda specs, shapes: opened.update(specs=specs))
+    assert view_main([str(cache)]) == 0
+    assert "knn: 2 phases; pixels per phase: 0 3 (+1), 1 3 (+1)" in capsys.readouterr().out
+    assert [s.name for s in opened["specs"]][-1] == "knn: phases"
+
+
+def test_knn_summary_skips_gains_when_the_pixels_differ():
+    from karak.cli.view import knn_summary
+
+    raw = _labels()
+    reordered = _cleaned().replace(mineral_indices=_cleaned().mineral_indices[::-1])
+    assert knn_summary(reordered, raw) == "knn: 2 phases; pixels per phase: 0 3, 1 3"
+
+
+def test_view_main_opens_when_the_cleaned_labels_cover_other_pixels(
+        tmp_path, monkeypatch, capsys):
+    # review regression: a record whose raw labels (6 pixels) and cleaned
+    # labels (3 pixels, another image) come from different branches
+    cache = tmp_path / "output" / "work" / "cache"
+    other = Labels(labels=np.array([0, 1, 1], np.int32), probabilities=None,
+                   mineral_indices=np.array([[0, 0], [0, 1], [1, 1]], np.int32),
+                   image_shape=(8, 10), state=LabelState.CLEANED)
+    rec = {name: _store(cache, f"rec{name}", port, payload, 1000)
+           for name, port, payload in [
+               ("c", "cube", _cube()), ("d", "cube", _denoised()),
+               ("n", "cube", _normalized()), ("p", "features", _features()),
+               ("h", "labels", _labels()), ("k", "labels", other)]}
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": rec["c"]}, denoised=rec["d"],
+                  normalized=rec["n"], features=rec["p"], labels=rec["h"],
+                  cleaned=rec["k"])
+    opened = {}
+    monkeypatch.setattr(view, "_napari_available", lambda: True)
+    monkeypatch.setattr(view, "open_viewer",
+                        lambda specs, shapes: opened.update(specs=specs))
+    assert view_main([str(out_base)]) == 0
+    out = capsys.readouterr().out
+    assert "gains not shown" in out
+    assert "knn: 2 phases; pixels per phase: 0 1, 1 2" in out
+    assert "knn layer skipped" in out
+    names = [s.name for s in opened["specs"]]
+    assert "hdb: phases" in names and "knn: phases" not in names

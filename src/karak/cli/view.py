@@ -1,5 +1,5 @@
-"""karak view: open a run's cached load, mask, denoise, normalize, PCA and
-HDBSCAN outputs in napari.
+"""karak view: open a run's cached load, mask, denoise, normalize, PCA,
+HDBSCAN and noise-reassignment outputs in napari.
 
 It opens the outputs listed in the run's latest record
 (``{out}/runs/latest/run.json``): the load step's ElementCube (the first
@@ -7,15 +7,16 @@ with no upstream cube), the BseImage from the same step, the first MaskSet
 (the mask step's), the denoised ElementCube computed from that cube (the
 denoise step's), the normalized ElementCube computed from the denoised
 one (the normalize step's), the PCAFeatures computed from the normalized
-one (the PCA step's), and the raw Labels computed from those features (the
-HDBSCAN step's). Without a record it scans the cache, which
+one (the PCA step's), the raw Labels computed from those features (the
+HDBSCAN step's), and the cleaned Labels computed from the raw ones (the
+noise-reassignment step's). Without a record it scans the cache, which
 names files by recipe hash, reading each file's ``payload_type`` and
 upstream recipes to find the newest of each. Elements are image layers,
 the denoised elements ``dn: <element>`` layers, the z-scores
 ``nrm: <element>`` layers with contrast limits from the data, each kept
 principal component scattered back into the image as a ``pca: PC<k>``
 layer, the HDBSCAN phases, noise and membership probabilities as ``hdb:``
-layers, and the mineral mask and the valid mask labels layers. Layers are
+layers, the reassigned phases as ``knn: phases``, and the mineral mask and the valid mask labels layers. Layers are
 placed in full-resolution coordinates (scale = downsample factor, offset =
 trims) so positions match the original exports and the napari shapes the
 valid mask was drawn with.
@@ -77,6 +78,7 @@ class PickedOutputs:
     normalized: CacheFile | None
     features: CacheFile | None
     labels: CacheFile | None
+    cleaned: CacheFile | None
     other_cubes: list
 
 
@@ -162,7 +164,8 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
     on an older denoised cube; the normalized cube shown is one whose
     upstream ``cube`` is that denoised cube, and the PCA features shown are
     ones whose upstream ``cube`` is that normalized cube; the raw labels
-    shown are ones whose upstream ``features`` are those PCA features.
+    shown are ones whose upstream ``features`` are those PCA features, and
+    the cleaned labels shown are ones whose upstream ``labels`` are those.
     Without a denoised cube the
     newest masks computed from the raw cube are shown. Another run's
     outputs are never overlaid.
@@ -212,6 +215,14 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
             label_sets = [e for e in label_sets
                           if e.upstream.get("features") == features.recipe]
         labels = (label_sets or [None])[0]
+    cleaned = None
+    if labels is not None:
+        cleaned_sets = newest(e for e in entries
+                              if e.payload_type == "labels" and e.state == "cleaned")
+        if newest_first:
+            cleaned_sets = [e for e in cleaned_sets
+                            if e.upstream.get("labels") == labels.recipe]
+        cleaned = (cleaned_sets or [None])[0]
     if not newest_first:
         masks = (mask_sets or [None])[0]
     elif denoised is not None:
@@ -223,7 +234,7 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
     shown = (cube, denoised, normalized)
     others = [e for e in cubes if all(e is not s for s in shown)]
     return PickedOutputs(cube, bse, masks, denoised, normalized, features,
-                         labels, others)
+                         labels, cleaned, others)
 
 
 def _zscore_limits(channel: np.ndarray) -> tuple:
@@ -276,6 +287,37 @@ def hdb_summary(labels) -> str:
             f"pixels per phase: {per_phase}")
 
 
+def same_pixels(a, b) -> bool:
+    """True when two label payloads cover the same mineral pixels in the
+    same order (and the same image), so their values compare pixel by
+    pixel."""
+    return (tuple(a.image_shape) == tuple(b.image_shape)
+            and np.array_equal(np.asarray(a.mineral_indices),
+                               np.asarray(b.mineral_indices)))
+
+
+def knn_summary(cleaned, raw=None) -> str:
+    """One line: phase count and pixels per phase after noise reassignment,
+    with each phase's gain over the raw labels when they are given and
+    cover the same pixels (see ``same_pixels``); otherwise no gains."""
+    values = np.asarray(cleaned.labels)
+    phases, counts = np.unique(values[values >= 0], return_counts=True)
+    gained = {}
+    if raw is not None and not same_pixels(cleaned, raw):
+        raw = None
+    if raw is not None:
+        before = np.asarray(raw.labels)
+        moved = values[before == -1]
+        gained = dict(zip(*np.unique(moved[moved >= 0], return_counts=True)))
+    parts = []
+    for p, c in zip(phases, counts):
+        text = f"{p} {_count(int(c))}"
+        if raw is not None:
+            text += f" (+{_count(int(gained.get(p, 0)))})"
+        parts.append(text)
+    return f"knn: {phases.size} phases; pixels per phase: {', '.join(parts)}"
+
+
 def label_images(labels, shape) -> tuple:
     """(phases, noise, probability) images of a Labels payload: phase k as
     k + 1 with non-mineral and noise pixels 0 (napari draws 0 transparent),
@@ -293,13 +335,15 @@ def label_images(labels, shape) -> tuple:
 
 
 def layer_specs(cube, bse, masks=None, denoised=None, normalized=None,
-                features=None, labels=None, show=("Fe-K",)) -> list[LayerSpec]:
+                features=None, labels=None, cleaned=None,
+                show=("Fe-K",)) -> list[LayerSpec]:
     """BSE, one layer per element, the denoised cube's elements as
     ``dn: <element>``, the normalized cube's as ``nrm: <element>`` (z-scores,
     so contrast limits come from the data), each kept principal component
     as ``pca: PC<k>`` (scores scattered into the image, 0 elsewhere,
     hidden), the HDBSCAN labels as ``hdb: phases`` (visible), ``hdb: noise``
-    and ``hdb: probability`` (hidden), then the masks as labels layers, all
+    and ``hdb: probability`` (hidden), the reassigned labels as ``knn:
+    phases`` (hidden, the same values), then the masks as labels layers, all
     placed in full-resolution pixels. Only ``show`` elements start visible.
     PCA features or labels whose image shape differs from the cube's are
     skipped."""
@@ -344,6 +388,10 @@ def layer_specs(cube, bse, masks=None, denoised=None, normalized=None,
                                kind="labels"))
         specs.append(LayerSpec("hdb: probability", probability, scale, translate,
                                False, contrast_limits=(0.0, 1.0)))
+    if cleaned is not None and tuple(cleaned.image_shape) == cube.pixels.shape[:2]:
+        phases, _, _ = label_images(cleaned, cube.pixels.shape[:2])
+        specs.append(LayerSpec("knn: phases", phases, scale, translate, False,
+                               kind="labels"))
     if masks is not None:
         specs.append(LayerSpec("mineral mask", masks.mineral_mask.astype(np.uint8),
                                scale, translate, True, kind="labels"))
@@ -386,8 +434,8 @@ def open_viewer(specs: list[LayerSpec], shapes) -> None:
 def view_main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="karak view",
-        description=("Open the cached load, mask, denoise, normalize, PCA and "
-                     "HDBSCAN outputs of a run in napari."),
+        description=("Open the cached load, mask, denoise, normalize, PCA, "
+                     "HDBSCAN and noise-reassignment outputs of a run in napari."),
     )
     parser.add_argument(
         "path",
@@ -447,8 +495,17 @@ def view_main(argv: list[str]) -> int:
         if tuple(labels.image_shape) != cube.pixels.shape[:2]:
             print(f"hdb: image shape {tuple(labels.image_shape)} differs from "
                   f"the cube's {cube.pixels.shape[:2]}; HDBSCAN layers skipped")
+    cleaned = load(picked.cleaned) if picked.cleaned is not None else None
+    if cleaned is not None:
+        if labels is not None and not same_pixels(cleaned, labels):
+            print("knn: the cleaned labels cover other pixels than the raw "
+                  "labels (another branch or run); gains not shown")
+        print(knn_summary(cleaned, labels))
+        if tuple(cleaned.image_shape) != cube.pixels.shape[:2]:
+            print(f"knn: image shape {tuple(cleaned.image_shape)} differs from "
+                  f"the cube's {cube.pixels.shape[:2]}; knn layer skipped")
     specs = layer_specs(cube, bse, masks, denoised, normalized, features, labels,
-                        show=tuple(args.show.split(",")))
+                        cleaned, show=tuple(args.show.split(",")))
     shapes = read_napari_shapes(args.mask) if args.mask else []
     open_viewer(specs, shapes)
     return 0

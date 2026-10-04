@@ -74,6 +74,14 @@
         "random_state": 42,
         "device": "cpu"
       }
+    },
+    {
+      "id": "knn",
+      "type": "noise_assign",
+      "params": {
+        "k": 5,
+        "device": "cpu"
+      }
     }
   ],
   "edges": [
@@ -162,6 +170,28 @@
       },
       "to": {
         "node": "hdb",
+        "port": "features"
+      }
+    },
+    {
+      "id": "e9",
+      "from": {
+        "node": "hdb",
+        "port": "labels"
+      },
+      "to": {
+        "node": "knn",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e10",
+      "from": {
+        "node": "pca",
+        "port": "features"
+      },
+      "to": {
+        "node": "knn",
         "port": "features"
       }
     }
