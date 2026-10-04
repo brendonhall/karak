@@ -78,7 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the run summary. `--plain` (automatic when stdout is not a terminal)
   prints the same information as lines.
 - `stepwise` builtin flow, which grows one step at a time; it currently
-  runs the load, mask, denoise, normalize, PCA, and HDBSCAN steps.
+  runs the load, mask, denoise, normalize, PCA, HDBSCAN, and noise
+  reassignment steps.
+- `karak view` also opens the noise-reassignment step's labels as a hidden
+  `knn: phases` labels layer (the same colours as `hdb: phases`), and
+  prints the pixels per phase after reassignment with each phase's gain.
 - `karak view` also opens the HDBSCAN step's raw labels: the phases as a
   visible `hdb: phases` labels layer, the noise pixels as `hdb: noise`, and
   the membership probabilities as `hdb: probability` (both hidden), and it

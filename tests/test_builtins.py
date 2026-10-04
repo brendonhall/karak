@@ -140,10 +140,11 @@ def test_apply_device_no_declaring_nodes_is_identity():
     assert result is graph
 
 
-def test_stepwise_runs_load_mask_denoise_normalize_pca_then_hdbscan():
+def test_stepwise_runs_load_through_hdbscan_then_noise_assign():
     from karak.stages.denoise import DenoiseStage
     from karak.stages.load import LoadElementsStage
     from karak.stages.mask import MaskStage
+    from karak.stages.noise import NoiseAssignStage
     from karak.stages.normalize import NormalizeStage
     from karak.stages.cluster import HdbscanGlobalStage
     from karak.stages.pca import PCAStage
@@ -152,6 +153,7 @@ def test_stepwise_runs_load_mask_denoise_normalize_pca_then_hdbscan():
     assert [(n.id, n.type) for n in graph.nodes] == [
         ("src", "load_elements"), ("msk", "mask"), ("dn", "denoise"),
         ("nrm", "normalize"), ("pca", "pca"), ("hdb", "hdbscan_global"),
+        ("knn", "noise_assign"),
     ]
     assert graph.node("src").params == LoadElementsStage.template()
     assert graph.node("msk").params == MaskStage.template()
@@ -159,6 +161,7 @@ def test_stepwise_runs_load_mask_denoise_normalize_pca_then_hdbscan():
     assert graph.node("nrm").params == NormalizeStage.template()
     assert graph.node("pca").params == PCAStage.template()
     assert graph.node("hdb").params == HdbscanGlobalStage.template()
+    assert graph.node("knn").params == NoiseAssignStage.template()
     assert [(e.src.node, e.src.port, e.dst.node, e.dst.port)
             for e in graph.edges] == [
         ("src", "cube", "msk", "cube"),
@@ -169,6 +172,8 @@ def test_stepwise_runs_load_mask_denoise_normalize_pca_then_hdbscan():
         ("nrm", "cube", "pca", "cube"),
         ("msk", "masks", "pca", "masks"),
         ("pca", "features", "hdb", "features"),
+        ("hdb", "labels", "knn", "labels"),
+        ("pca", "features", "knn", "features"),
     ]
 
 
