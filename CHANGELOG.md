@@ -239,6 +239,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The tiled flows summed tile fingerprints and rare-cluster (pass 2)
+  fingerprints in float32 along axis 0, the error #12 fixed in the
+  fingerprints step. New `accumulate` param on `hdbscan_tiled` and
+  `rare_phase` (`float64` default; `float32` reproduces the published
+  baseline exactly). In `tiled` and `tiled-rare`, the `hdb`, `rare`,
+  `knn`, `stats` and `fp` recipe hashes changed; `global` and `stepwise`
+  did not.
 - `hdbscan_global` and `hdbscan_tiled` on `device: cuda` ignored
   `subsample_n` and fitted cuML HDBSCAN on every pixel, which does not fit
   in GPU memory at NWA 4587 scale. cuda now fits the same random subsample

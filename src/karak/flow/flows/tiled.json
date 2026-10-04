@@ -76,7 +76,8 @@
         "tile_size": 512,
         "merge_threshold": 0.92,
         "min_tile_pixels": 0,
-        "min_clusters_per_tile": 3
+        "min_clusters_per_tile": 3,
+        "accumulate": "float64"
       }
     },
     {

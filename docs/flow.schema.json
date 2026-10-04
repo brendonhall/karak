@@ -505,7 +505,8 @@
         "tile_size",
         "merge_threshold",
         "min_tile_pixels",
-        "min_clusters_per_tile"
+        "min_clusters_per_tile",
+        "accumulate"
       ],
       "properties": {
         "min_cluster_size": {
@@ -572,6 +573,16 @@
           "description": "Tiles with fewer clusters defer to the k-NN pass",
           "minimum": 0,
           "default": 3
+        },
+        "accumulate": {
+          "type": "string",
+          "title": "Accumulate",
+          "description": "Precision of the tile-fingerprint sums: float64 is accurate; float32 reproduces the published baseline",
+          "enum": [
+            "float64",
+            "float32"
+          ],
+          "default": "float64"
         }
       },
       "additionalProperties": false
@@ -1397,7 +1408,8 @@
         "min_samples",
         "subsample_n",
         "merge_threshold",
-        "random_state"
+        "random_state",
+        "accumulate"
       ],
       "properties": {
         "min_cluster_size": {
@@ -1433,6 +1445,16 @@
           "type": "integer",
           "title": "Random seed",
           "default": 42
+        },
+        "accumulate": {
+          "type": "string",
+          "title": "Accumulate",
+          "description": "Precision of the rare-cluster fingerprint sums: float64 is accurate; float32 reproduces the published baseline",
+          "enum": [
+            "float64",
+            "float32"
+          ],
+          "default": "float64"
         }
       },
       "additionalProperties": false
