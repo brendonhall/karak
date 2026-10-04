@@ -42,12 +42,14 @@ _SHARED = {
     "pca": "700ce0030be91ee0d4d2e06cea32ef2c",
 }
 _GLOBAL_HDB = "001dae34839b919b681ba865cb8fecaa"
+_GLOBAL_STATS = "544faeef7033052a4950593773201b02"
+_GLOBAL_FP = "368ab0228a129897bd986bfcd137ab87"
 _GLOBAL_KNN = "0998c21ffbc4bc42ae9116ab1c4d9327"
 
 GOLDEN = {
     "global": {**_SHARED, "hdb": _GLOBAL_HDB, "knn": _GLOBAL_KNN,
-               "stats": "544faeef7033052a4950593773201b02",
-               "fp": "368ab0228a129897bd986bfcd137ab87"},
+               "stats": _GLOBAL_STATS,
+               "fp": _GLOBAL_FP},
     "tiled": {**_SHARED,
               "hdb": "8a54033635797cd25cc20df0f519cc4b",
               "knn": "5f0978cc4e043fbfcf6bea5c190d6758",
@@ -62,7 +64,8 @@ GOLDEN = {
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
                  "dn": _SHARED["dn"], "nrm": _SHARED["nrm"],
                  "pca": _SHARED["pca"], "hdb": _GLOBAL_HDB,
-                 "knn": _GLOBAL_KNN},
+                 "knn": _GLOBAL_KNN, "stats": _GLOBAL_STATS,
+                 "fp": _GLOBAL_FP},
 }
 
 

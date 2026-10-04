@@ -14,6 +14,7 @@ from karak.stages.payloads import (
     BseImage,
     ClusterStats,
     ElementCube,
+    Fingerprints,
     Labels,
     LabelState,
     MaskSet,
@@ -179,7 +180,8 @@ def test_view_opens_layers_and_mask(tmp_path, monkeypatch, capsys):
 
 
 def _write_record(out_base, outputs, masks=None, denoised=None,
-                  normalized=None, features=None, labels=None, cleaned=None):
+                  normalized=None, features=None, labels=None, cleaned=None,
+                  stats=None, fingerprints=None):
     """A minimal run record whose src node lists the given cache files,
     plus msk, dn, nrm, pca, hdb and knn nodes for the files given."""
     import json
@@ -202,6 +204,10 @@ def _write_record(out_base, outputs, masks=None, denoised=None,
         nodes["hdb"] = node("hdbscan_global", {"labels": labels})
     if cleaned is not None:
         nodes["knn"] = node("noise_assign", {"labels": cleaned})
+    if stats is not None:
+        nodes["stats"] = node("cluster_stats", {"stats": stats})
+    if fingerprints is not None:
+        nodes["fp"] = node("fingerprints", {"fingerprints": fingerprints})
     run_dir = out_base / "runs" / "2026-09-29T14-05-12Z"
     run_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(json.dumps({
@@ -840,3 +846,102 @@ def test_view_main_opens_when_the_cleaned_labels_cover_other_pixels(
     assert "knn layer skipped" in out
     names = [s.name for s in opened["specs"]]
     assert "hdb: phases" in names and "knn: phases" not in names
+
+
+def _stats():
+    return ClusterStats(stats={
+        "n_clusters": 2, "n_noise": 0, "noise_pct": 0.0, "n_total": 6,
+        "clusters": {0: {"n_pixels": 3, "pct": 50.0, "mean_prob": 0.9},
+                     1: {"n_pixels": 3, "pct": 50.0, "mean_prob": 0.65}}})
+
+
+def _fingerprints(pairs=()):
+    return Fingerprints(data={
+        "fingerprints": {
+            0: {"mean": np.array([0.6, 0.1, 0.3]), "std": np.zeros(3),
+                "n_pixels": 3, "area_pct": 50.0},
+            1: {"mean": np.array([0.05, 0.7, 0.2]), "std": np.zeros(3),
+                "n_pixels": 3, "area_pct": 50.0}},
+        "element_names": ["Al", "Fe-K", "Si"],
+        "element_order": np.array([1, 0, 2]),
+        "n_clusters": 2, "n_mineral_pixels": 6}, similar_pairs=list(pairs))
+
+
+def _store_through_knn(cache):
+    _store_chain(cache)
+    _store(cache, "hdb", "labels", _labels(), 5000, upstream={"features": "pca"})
+    _store(cache, "knn", "labels", _cleaned(), 6000,
+           upstream={"features": "pca", "labels": "hdb"})
+
+
+def test_pick_stats_and_fingerprints_of_the_cleaned_labels_from_a_cache_scan(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store_through_knn(cache)
+    _store(cache, "stats", "stats", _stats(), 7000, upstream={"labels": "knn"})
+    _store(cache, "fp", "fingerprints", _fingerprints(), 7000,
+           upstream={"labels": "knn", "cube": "dn"})
+    _store(cache, "ostats", "stats", _stats(), 8000, upstream={"labels": "other"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert (picked.stats.recipe, picked.fingerprints.recipe) == ("stats", "fp")
+
+
+def test_pick_no_stats_without_cleaned_labels(tmp_path):
+    cache = tmp_path / "work" / "cache"
+    _store_chain(cache)
+    _store(cache, "stats", "stats", _stats(), 7000, upstream={"labels": "knn"})
+    picked = pick_outputs(find_cache_files(cache))
+    assert picked.stats is None and picked.fingerprints is None
+
+
+def test_pick_stats_and_fingerprints_of_the_recorded_run(tmp_path):
+    from karak.cli.view import find_run_outputs
+
+    cache = tmp_path / "output" / "work" / "cache"
+    rec = {name: _store(cache, f"rec{name}", port, payload, 1000)
+           for name, port, payload in [
+               ("c", "cube", _cube()), ("d", "cube", _denoised()),
+               ("n", "cube", _normalized()), ("p", "features", _features()),
+               ("h", "labels", _labels()), ("k", "labels", _cleaned()),
+               ("s", "stats", _stats()), ("f", "fingerprints", _fingerprints())]}
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": rec["c"]}, denoised=rec["d"],
+                  normalized=rec["n"], features=rec["p"], labels=rec["h"],
+                  cleaned=rec["k"], stats=rec["s"], fingerprints=rec["f"])
+    picked = pick_outputs(find_run_outputs(out_base), newest_first=False)
+    assert (picked.stats.recipe, picked.fingerprints.recipe) == ("recs", "recf")
+
+
+def test_stats_summary_lists_each_phase():
+    from karak.cli.view import stats_summary
+
+    assert stats_summary(_stats()) == (
+        "stats: 2 phases; 0: 3 px (50.0%), mean probability 0.90; "
+        "1: 3 px (50.0%), mean probability 0.65")
+
+
+def test_fingerprint_lines_show_the_strongest_elements_and_pairs():
+    from karak.cli.view import fingerprint_lines
+
+    assert fingerprint_lines(_fingerprints()) == [
+        "fp: phase 0 (50.0%): Al 0.60, Si 0.30, Fe-K 0.10",
+        "fp: phase 1 (50.0%): Fe-K 0.70, Si 0.20, Al 0.05",
+        "fp: no similar pairs",
+    ]
+    assert fingerprint_lines(_fingerprints([(0, 1, 0.9712)]))[-1] == (
+        "fp: similar pairs: 0-1 0.971")
+
+
+def test_view_main_prints_stats_and_fingerprints_from_the_cache(
+        tmp_path, monkeypatch, capsys):
+    cache = tmp_path / "work" / "cache"
+    _store_through_knn(cache)
+    _store(cache, "stats", "stats", _stats(), 7000, upstream={"labels": "knn"})
+    _store(cache, "fp", "fingerprints", _fingerprints(), 7000,
+           upstream={"labels": "knn", "cube": "dn"})
+    monkeypatch.setattr(view, "_napari_available", lambda: True)
+    monkeypatch.setattr(view, "open_viewer", lambda specs, shapes: None)
+    assert view_main([str(cache)]) == 0
+    out = capsys.readouterr().out
+    assert "stats: 2 phases; 0: 3 px (50.0%), mean probability 0.90" in out
+    assert "fp: phase 1 (50.0%): Fe-K 0.70, Si 0.20, Al 0.05" in out
+    assert "fp: no similar pairs" in out

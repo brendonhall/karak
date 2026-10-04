@@ -78,8 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the run summary. `--plain` (automatic when stdout is not a terminal)
   prints the same information as lines.
 - `stepwise` builtin flow, which grows one step at a time; it currently
-  runs the load, mask, denoise, normalize, PCA, HDBSCAN, and noise
-  reassignment steps.
+  runs the load, mask, denoise, normalize, PCA, HDBSCAN, noise
+  reassignment, cluster statistics, and fingerprint steps.
+- `karak view` also prints the statistics (each phase's pixels, share and
+  mean probability) and fingerprints (each phase's three strongest mean
+  element intensities, and the cosine-similar pairs) computed from the
+  cleaned labels.
+- `ClusterStats` and `Fingerprints` summaries count phases (`ClusterStats
+  5 phases · 0 noise`, `Fingerprints 5 phases · top Ti, Ba, Fe-K · 0
+  similar pairs`) instead of dictionary keys.
 - `karak view` also opens the noise-reassignment step's labels as a hidden
   `knn: phases` labels layer (the same colours as `hdb: phases`), and
   prints the pixels per phase after reassignment with each phase's gain.

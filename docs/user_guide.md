@@ -150,7 +150,7 @@ by `edges` (output port to input port). Four builtins ship with karak:
 | `global` | `hdbscan_global → noise_assign` |
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
-| `stepwise` | `hdbscan_global → noise_assign` (no statistics or fingerprints yet) |
+| `stepwise` | `hdbscan_global → noise_assign`, then statistics and fingerprints (no export or QC figures yet) |
 
 `stepwise` grows one step at a time as steps join the dashboard work;
 today it runs the load step (`src`), the mask step (`msk`), the denoise
@@ -158,7 +158,9 @@ step (`dn`, bilateral with the `global` values), the normalize step
 (`nrm`, z-scores with float64 sums), the PCA step (`pca`, components
 kept up to 95% of the variance, at least 5), and the HDBSCAN step (`hdb`,
 `hdbscan_global` with the `global` values), and the noise-reassignment
-step (`knn`, 5 neighbours; about 24 s on a GPU at full NWA 4587 scale). With those values (no
+step (`knn`, 5 neighbours; about 24 s on a GPU at full NWA 4587 scale),
+and then the cluster statistics (`stats`) and the chemical fingerprints
+(`fp`, from the denoised cube) of the reassigned phases. With those values (no
 `subsample_n`, cpu) HDBSCAN fits every mineral pixel on the CPU, which
 takes hours at full NWA 4587 scale; on a GPU use `--device cuda --set
 hdb.subsample_n=50000` (about 1 minute), or downsample for a CPU check. The
@@ -351,7 +353,7 @@ log), the same information prints as plain lines.
 `karak run` exits with 1 when a step fails and with 130 on Ctrl-C;
 completed steps stay cached.
 
-To inspect the outputs of the load through noise-reassignment steps, open them in
+To inspect the outputs of the load through fingerprint steps, open them in
 napari (install the extra once with `uv sync --extra view`):
 
 ```
@@ -364,7 +366,8 @@ command opens the outputs listed in the latest run record
 (`{out}/runs/latest/run.json`): the load step's element cube, the BSE
 image from the same step, the mask step's masks, the denoise step's cube,
 the normalize step's cube, the PCA step's features, the HDBSCAN step's
-labels, and the noise-reassignment step's labels. Without a record
+labels, and the noise-reassignment step's labels, and it prints the
+statistics and fingerprints computed from those labels. Without a record
 (or if its cache files are gone) it opens the newest cached load cube, and
 the newest cached masks and denoised cube computed from it, the normalized
 cube computed from that, the PCA features computed from the normalized
@@ -392,8 +395,10 @@ the denoised and normalized cubes the viewer holds three cubes in memory
 (about 6 GB for NWA 4587), plus one image per kept component (9
 components, about 0.9 GB for NWA 4587). The command prints the explained
 variance of each kept component, the HDBSCAN phase count, noise share
-and pixels per phase, and the pixels per phase after reassignment with
-each phase's gain. Every layer is placed in full-resolution
+and pixels per phase, the pixels per phase after reassignment with
+each phase's gain, each phase's pixels, share and mean probability
+(`stats:`), and each phase's three strongest mean element intensities plus
+the cosine-similar phase pairs (`fp:`). Every layer is placed in full-resolution
 coordinates, so the cursor position matches the original exports and a
 napari shapes CSV such as the valid-area mask lines up. It loads the whole
 cube into memory (about 2 GB for NWA 4587).
