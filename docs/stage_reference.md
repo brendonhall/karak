@@ -93,6 +93,7 @@ Write connected results to the provenance HDF5 file using the legacy group layou
 |------|------|---------|------------------|------|
 | `path` | str | `{out}.h5` | - | Output path |
 | `flow_json` | str | `{flow}` | - | JSON of the executing flow, embedded for provenance |
+| `compression` | enum | `gzip` | gzip \| lzf \| none | gzip (level 4, readable by any HDF5 tool), lzf (faster, h5py and PyTables only) or none; the denoised and normalized cubes also use the shuffle filter |
 
 ## `fingerprints` — Chemical fingerprints
 

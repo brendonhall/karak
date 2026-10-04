@@ -131,3 +131,73 @@ def test_export_refuses_a_flow_without_the_producing_node(tmp_path, payloads):
         get("export_h5")().run(
             subset, {"path": str(tmp_path / "x.h5"), "flow_json": "{}"}
         )
+
+
+def _datasets(fh):
+    found = {}
+    fh.visititems(lambda name, obj: found.__setitem__(name, obj[()])
+                  if isinstance(obj, h5py.Dataset) else None)
+    return found
+
+
+@pytest.mark.parametrize("compression", ["gzip", "lzf", "none"])
+def test_export_compression_round_trips_every_dataset(tmp_path, payloads, compression):
+    path = str(tmp_path / f"{compression}.h5")
+    get("export_h5")().run(payloads, {"path": path, "flow_json": _flow_json(),
+                                      "compression": compression})
+    with h5py.File(path, "r") as fh:
+        np.testing.assert_array_equal(fh["denoised/cube"][()],
+                                      payloads["cube_denoised"].pixels)
+        np.testing.assert_array_equal(fh["normalized/cube"][()],
+                                      payloads["cube_normalized"].pixels)
+        np.testing.assert_array_equal(fh["raw/Mg"][()],
+                                      payloads["cube_raw"].pixels[:, :, 1])
+        np.testing.assert_array_equal(fh["clusters/mineral_indices"][()],
+                                      payloads["labels"].mineral_indices)
+        cube = fh["denoised/cube"]
+        if compression == "none":
+            assert cube.compression is None and cube.chunks is None
+        else:
+            assert cube.compression == compression and cube.shuffle
+            assert cube.chunks == (8, 8, 2)
+            raw = fh["raw/Mg"]
+            assert raw.compression == compression and not raw.shuffle
+            if compression == "gzip":
+                assert cube.compression_opts == 4
+
+
+def test_export_compressions_hold_the_same_data(tmp_path, payloads):
+    files = {}
+    for compression in ("gzip", "lzf", "none"):
+        path = str(tmp_path / f"{compression}.h5")
+        get("export_h5")().run(payloads, {"path": path, "flow_json": _flow_json(),
+                                          "compression": compression})
+        with h5py.File(path, "r") as fh:
+            files[compression] = _datasets(fh)
+    assert files["gzip"].keys() == files["lzf"].keys() == files["none"].keys()
+    for name, data in files["none"].items():
+        np.testing.assert_array_equal(files["gzip"][name], data)
+        np.testing.assert_array_equal(files["lzf"][name], data)
+
+
+def test_dataset_options_chunks_and_filters():
+    from karak.io.storage import dataset_options
+
+    cube = np.zeros((6525, 3990, 19), np.float32)
+    assert dataset_options(cube, "gzip", shuffle=True) == {
+        "shuffle": True, "chunks": (256, 256, 19),
+        "compression": "gzip", "compression_opts": 4}
+    assert dataset_options(cube, "gzip", shuffle=False) == {
+        "chunks": (256, 256, 19), "compression": "gzip", "compression_opts": 4}
+    assert dataset_options(cube, "lzf", shuffle=True)["chunks"] == (256, 256, 19)
+    assert dataset_options(cube, "none", shuffle=True) == {}
+    small = np.zeros((100, 30), bool)
+    assert dataset_options(small, "gzip", shuffle=False)["chunks"] == (100, 30)
+    labels = np.zeros(12_495_787, np.int32)
+    assert dataset_options(labels, "gzip", shuffle=False)["chunks"] == (262_144,)
+    indices = np.zeros((12_495_787, 2), np.int32)
+    assert dataset_options(indices, "gzip", shuffle=False)["chunks"] == (131_072, 2)
+    assert dataset_options(np.zeros(5), "gzip", shuffle=False)["chunks"] == (5,)
+    assert dataset_options(np.zeros((0, 2)), "gzip", shuffle=False) == {}
+    with pytest.raises(ValueError, match="compression"):
+        dataset_options(cube, "zstd", shuffle=False)

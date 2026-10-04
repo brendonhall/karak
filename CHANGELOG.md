@@ -158,6 +158,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `export_h5` writes faster and smaller: compressed datasets use 256 × 256
+  pixel chunks with every element in one chunk, and the denoised and
+  normalized cubes add HDF5's shuffle filter. On NWA 4587 at full scale
+  the gzip export takes 67 s instead of 89 s and the file is 2.06 GB
+  instead of 2.24 GB, with the same data. New param `compression`
+  (`gzip` default, `lzf`, `none`; lzf takes 28 s). The `exp` recipe hash
+  changes; no other node's does. `karak.io.storage` writers take a
+  required `compression` keyword.
 - `hdbscan_global` on the cpu uses `--workers`: N jobs for the core
   distances and N processes for `approximate_predict` after a
   `subsample_n` fit, with identical labels. The prediction also runs in
