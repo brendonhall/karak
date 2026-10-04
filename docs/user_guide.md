@@ -150,10 +150,22 @@ by `edges` (output port to input port). Four builtins ship with karak:
 | `global` | `hdbscan_global → noise_assign` |
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
-| `stepwise` | `hdbscan_global → noise_assign`, then statistics and fingerprints (no export or QC figures yet) |
+| `stepwise` | `hdbscan_global → noise_assign`, then statistics and fingerprints; `global` without the export and QC figures |
 
-`stepwise` grows one step at a time as steps join the dashboard work;
-today it runs the load step (`src`), the mask step (`msk`), the denoise
+`stepwise` is the dashboard flow: every processing step of `global`, with
+the same parameters and wiring, but without the HDF5 export and the QC
+figures, so a run writes only the cache, which `karak view` reads. A test
+keeps the two flows in step. Because the recipes are the same, `karak run
+--builtin global` with the same `--input`, `--out`, `--device` and `--set`
+values afterwards takes every processing step from the cache and runs only
+the export and the figures (on NWA 4587: 9 steps cached, 8 run, 122 s):
+
+```bash
+karak run --builtin global --input DIR --out BASE --device cuda \
+    --set 'msk.valid_mask_path={input}/mask/Valid_mask.csv' --set hdb.subsample_n=50000
+```
+
+It runs the load step (`src`), the mask step (`msk`), the denoise
 step (`dn`, bilateral with the `global` values), the normalize step
 (`nrm`, z-scores with float64 sums), the PCA step (`pca`, components
 kept up to 95% of the variance, at least 5), the HDBSCAN step (`hdb`,

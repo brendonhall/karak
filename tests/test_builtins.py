@@ -199,3 +199,25 @@ def test_apply_overrides_without_overrides_is_identity():
 
     graph = builtin_flow("global")
     assert apply_overrides(graph) is graph
+
+
+def test_stepwise_is_global_without_its_output_steps():
+    """stepwise is the dashboard flow: every global processing step with
+    the same params and wiring, without the HDF5 export and QC figures.
+    `karak run --builtin global` after a stepwise run reuses every cached
+    step and runs only the outputs."""
+    def is_output(node_type):
+        return node_type == "export_h5" or node_type.startswith("qc_")
+
+    glob, step = builtin_flow("global"), builtin_flow("stepwise")
+    processing = {n.id: (n.type, n.params) for n in glob.nodes
+                  if not is_output(n.type)}
+    assert {n.id: (n.type, n.params) for n in step.nodes} == processing
+    kept = set(processing)
+
+    def wiring(graph):
+        return {(e.src.node, e.src.port, e.dst.node, e.dst.port)
+                for e in graph.edges if e.dst.node in kept}
+
+    assert wiring(step) == wiring(glob)
+    assert {n.type for n in glob.nodes if is_output(n.type)} >= {"export_h5"}
