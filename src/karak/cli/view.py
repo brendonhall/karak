@@ -287,12 +287,24 @@ def hdb_summary(labels) -> str:
             f"pixels per phase: {per_phase}")
 
 
+def same_pixels(a, b) -> bool:
+    """True when two label payloads cover the same mineral pixels in the
+    same order (and the same image), so their values compare pixel by
+    pixel."""
+    return (tuple(a.image_shape) == tuple(b.image_shape)
+            and np.array_equal(np.asarray(a.mineral_indices),
+                               np.asarray(b.mineral_indices)))
+
+
 def knn_summary(cleaned, raw=None) -> str:
     """One line: phase count and pixels per phase after noise reassignment,
-    with each phase's gain over the raw labels when they are given."""
+    with each phase's gain over the raw labels when they are given and
+    cover the same pixels (see ``same_pixels``); otherwise no gains."""
     values = np.asarray(cleaned.labels)
     phases, counts = np.unique(values[values >= 0], return_counts=True)
     gained = {}
+    if raw is not None and not same_pixels(cleaned, raw):
+        raw = None
     if raw is not None:
         before = np.asarray(raw.labels)
         moved = values[before == -1]
@@ -485,6 +497,9 @@ def view_main(argv: list[str]) -> int:
                   f"the cube's {cube.pixels.shape[:2]}; HDBSCAN layers skipped")
     cleaned = load(picked.cleaned) if picked.cleaned is not None else None
     if cleaned is not None:
+        if labels is not None and not same_pixels(cleaned, labels):
+            print("knn: the cleaned labels cover other pixels than the raw "
+                  "labels (another branch or run); gains not shown")
         print(knn_summary(cleaned, labels))
         if tuple(cleaned.image_shape) != cube.pixels.shape[:2]:
             print(f"knn: image shape {tuple(cleaned.image_shape)} differs from "

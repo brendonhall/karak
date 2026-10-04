@@ -802,3 +802,41 @@ def test_view_main_prints_the_knn_summary(tmp_path, monkeypatch, capsys):
     assert view_main([str(cache)]) == 0
     assert "knn: 2 phases; pixels per phase: 0 3 (+1), 1 3 (+1)" in capsys.readouterr().out
     assert [s.name for s in opened["specs"]][-1] == "knn: phases"
+
+
+def test_knn_summary_skips_gains_when_the_pixels_differ():
+    from karak.cli.view import knn_summary
+
+    raw = _labels()
+    reordered = _cleaned().replace(mineral_indices=_cleaned().mineral_indices[::-1])
+    assert knn_summary(reordered, raw) == "knn: 2 phases; pixels per phase: 0 3, 1 3"
+
+
+def test_view_main_opens_when_the_cleaned_labels_cover_other_pixels(
+        tmp_path, monkeypatch, capsys):
+    # review regression: a record whose raw labels (6 pixels) and cleaned
+    # labels (3 pixels, another image) come from different branches
+    cache = tmp_path / "output" / "work" / "cache"
+    other = Labels(labels=np.array([0, 1, 1], np.int32), probabilities=None,
+                   mineral_indices=np.array([[0, 0], [0, 1], [1, 1]], np.int32),
+                   image_shape=(8, 10), state=LabelState.CLEANED)
+    rec = {name: _store(cache, f"rec{name}", port, payload, 1000)
+           for name, port, payload in [
+               ("c", "cube", _cube()), ("d", "cube", _denoised()),
+               ("n", "cube", _normalized()), ("p", "features", _features()),
+               ("h", "labels", _labels()), ("k", "labels", other)]}
+    out_base = tmp_path / "output" / "run"
+    _write_record(out_base, {"cube": rec["c"]}, denoised=rec["d"],
+                  normalized=rec["n"], features=rec["p"], labels=rec["h"],
+                  cleaned=rec["k"])
+    opened = {}
+    monkeypatch.setattr(view, "_napari_available", lambda: True)
+    monkeypatch.setattr(view, "open_viewer",
+                        lambda specs, shapes: opened.update(specs=specs))
+    assert view_main([str(out_base)]) == 0
+    out = capsys.readouterr().out
+    assert "gains not shown" in out
+    assert "knn: 2 phases; pixels per phase: 0 1, 1 2" in out
+    assert "knn layer skipped" in out
+    names = [s.name for s in opened["specs"]]
+    assert "hdb: phases" in names and "knn: phases" not in names
