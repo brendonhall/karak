@@ -137,7 +137,8 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
         "pca.features -> PCAFeatures",
         "hdb.labels -> Labels", "state=raw",
         "knn.labels -> Labels", "state=cleaned",
-        "run finished in", "(7 ran, 0 cached)", "Found 4 matching files",
+        "stats.stats -> ClusterStats", "fp.fingerprints -> Fingerprints",
+        "run finished in", "(9 ran, 0 cached)", "Found 4 matching files",
     ]:
         assert expected in out, expected
     assert "nodes:" not in out
@@ -152,7 +153,8 @@ def test_stepwise_plain_run_end_to_end(tmp_path, capsys, scene):
     assert "pca: cached (" in out
     assert "hdb: cached (" in out
     assert "knn: cached (" in out
-    assert "(0 ran, 7 cached)" in out
+    assert "fp: cached (" in out
+    assert "(0 ran, 9 cached)" in out
 
 
 def test_run_links_cached_outputs_to_their_upstream_recipes(tmp_path, scene):

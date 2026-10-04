@@ -442,6 +442,9 @@ class ClusterStats(_Replaceable):
     stats: dict
 
     def summary(self) -> str:
+        if "clusters" in self.stats:   # a compute_cluster_stats() result
+            return (f"ClusterStats {len(self.stats['clusters'])} phases · "
+                    f"{self.stats.get('n_noise', 0):,} noise")
         return f"ClusterStats {len(self.stats)} entries"
 
     def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
@@ -464,10 +467,16 @@ class Fingerprints(_Replaceable):
     similar_pairs: list = dataclasses.field(default_factory=list)
 
     def summary(self) -> str:
-        return (
-            f"Fingerprints {len(self.data)} entries · "
-            f"{len(self.similar_pairs)} similar pairs"
-        )
+        pairs = f"{len(self.similar_pairs)} similar pairs"
+        if "fingerprints" in self.data:   # a compute_fingerprints() result
+            names = list(self.data.get("element_names", []))
+            order = list(self.data.get("element_order", []))[:3]
+            top = ", ".join(names[int(i)] for i in order if int(i) < len(names))
+            text = f"Fingerprints {len(self.data['fingerprints'])} phases"
+            if top:
+                text += f" · top {top}"
+            return f"{text} · {pairs}"
+        return f"Fingerprints {len(self.data)} entries · {pairs}"
 
     def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type

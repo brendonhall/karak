@@ -91,3 +91,17 @@ def test_tiled_cluster_stats_fingerprints_summaries():
     assert ClusterStats(stats={"a": 1, "b": 2}).summary() == "ClusterStats 2 entries"
     fp = Fingerprints(data={"p1": {}}, similar_pairs=[])
     assert fp.summary() == "Fingerprints 1 entries · 0 similar pairs"
+
+
+def test_clustering_stats_and_fingerprints_count_phases():
+    stats = ClusterStats(stats={"n_clusters": 2, "n_noise": 1234, "noise_pct": 1.0,
+                                "n_total": 10_000,
+                                "clusters": {0: {}, 1: {}}})
+    assert stats.summary() == "ClusterStats 2 phases · 1,234 noise"
+    fp = Fingerprints(
+        data={"fingerprints": {0: {}, 1: {}, 2: {}},
+              "element_names": ["Al", "Fe-K", "Si", "Ca"],
+              "element_order": np.array([2, 1, 3, 0]),
+              "n_clusters": 3, "n_mineral_pixels": 10},
+        similar_pairs=[(0, 1, 0.97)])
+    assert fp.summary() == "Fingerprints 3 phases · top Si, Fe-K, Ca · 1 similar pairs"

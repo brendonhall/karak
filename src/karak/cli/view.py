@@ -1,5 +1,6 @@
 """karak view: open a run's cached load, mask, denoise, normalize, PCA,
-HDBSCAN and noise-reassignment outputs in napari.
+HDBSCAN and noise-reassignment outputs in napari, and print the run's
+cluster statistics and fingerprints.
 
 It opens the outputs listed in the run's latest record
 (``{out}/runs/latest/run.json``): the load step's ElementCube (the first
@@ -9,7 +10,9 @@ denoise step's), the normalized ElementCube computed from the denoised
 one (the normalize step's), the PCAFeatures computed from the normalized
 one (the PCA step's), the raw Labels computed from those features (the
 HDBSCAN step's), and the cleaned Labels computed from the raw ones (the
-noise-reassignment step's). Without a record it scans the cache, which
+noise-reassignment step's), plus the ClusterStats and Fingerprints computed
+from the cleaned labels, which are printed. Without a record it scans the
+cache, which
 names files by recipe hash, reading each file's ``payload_type`` and
 upstream recipes to find the newest of each. Elements are image layers,
 the denoised elements ``dn: <element>`` layers, the z-scores
@@ -79,6 +82,8 @@ class PickedOutputs:
     features: CacheFile | None
     labels: CacheFile | None
     cleaned: CacheFile | None
+    stats: CacheFile | None
+    fingerprints: CacheFile | None
     other_cubes: list
 
 
@@ -165,7 +170,9 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
     upstream ``cube`` is that denoised cube, and the PCA features shown are
     ones whose upstream ``cube`` is that normalized cube; the raw labels
     shown are ones whose upstream ``features`` are those PCA features, and
-    the cleaned labels shown are ones whose upstream ``labels`` are those.
+    the cleaned labels shown are ones whose upstream ``labels`` are those;
+    the statistics and fingerprints printed are ones computed from those
+    cleaned labels.
     Without a denoised cube the
     newest masks computed from the raw cube are shown. Another run's
     outputs are never overlaid.
@@ -223,6 +230,17 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
             cleaned_sets = [e for e in cleaned_sets
                             if e.upstream.get("labels") == labels.recipe]
         cleaned = (cleaned_sets or [None])[0]
+
+    def from_cleaned(payload_type):
+        if cleaned is None:
+            return None
+        found = newest(e for e in entries if e.payload_type == payload_type)
+        if newest_first:
+            found = [e for e in found if e.upstream.get("labels") == cleaned.recipe]
+        return (found or [None])[0]
+
+    stats = from_cleaned("cluster_stats")
+    fingerprints = from_cleaned("fingerprints")
     if not newest_first:
         masks = (mask_sets or [None])[0]
     elif denoised is not None:
@@ -234,7 +252,7 @@ def pick_outputs(entries: list[CacheFile], newest_first: bool = True) -> PickedO
     shown = (cube, denoised, normalized)
     others = [e for e in cubes if all(e is not s for s in shown)]
     return PickedOutputs(cube, bse, masks, denoised, normalized, features,
-                         labels, cleaned, others)
+                         labels, cleaned, stats, fingerprints, others)
 
 
 def _zscore_limits(channel: np.ndarray) -> tuple:
@@ -316,6 +334,37 @@ def knn_summary(cleaned, raw=None) -> str:
             text += f" (+{_count(int(gained.get(p, 0)))})"
         parts.append(text)
     return f"knn: {phases.size} phases; pixels per phase: {', '.join(parts)}"
+
+
+def stats_summary(stats) -> str:
+    """One line per run: each phase's pixels, share and mean probability."""
+    data = stats.stats
+    clusters = data.get("clusters", {})
+    parts = "; ".join(
+        f"{label}: {_count(int(c['n_pixels']))} px ({c['pct']:.1f}%), "
+        f"mean probability {c['mean_prob']:.2f}"
+        for label, c in sorted(clusters.items(), key=lambda kv: int(kv[0])))
+    return f"stats: {len(clusters)} phases; {parts}"
+
+
+def fingerprint_lines(fingerprints, top: int = 3) -> list[str]:
+    """One line per phase with its strongest mean element intensities, then
+    the cosine-similar pairs."""
+    data = fingerprints.data
+    names = list(data.get("element_names", []))
+    lines = []
+    for label, entry in sorted(data.get("fingerprints", {}).items()):
+        mean = np.asarray(entry["mean"])
+        strongest = np.argsort(mean)[::-1][:top]
+        elements = ", ".join(f"{names[i]} {mean[i]:.2f}" for i in strongest)
+        lines.append(f"fp: phase {label} ({entry['area_pct']:.1f}%): {elements}")
+    pairs = fingerprints.similar_pairs
+    if pairs:
+        lines.append("fp: similar pairs: " + ", ".join(
+            f"{a}-{b} {sim:.3f}" for a, b, sim in pairs))
+    else:
+        lines.append("fp: no similar pairs")
+    return lines
 
 
 def label_images(labels, shape) -> tuple:
@@ -504,6 +553,11 @@ def view_main(argv: list[str]) -> int:
         if tuple(cleaned.image_shape) != cube.pixels.shape[:2]:
             print(f"knn: image shape {tuple(cleaned.image_shape)} differs from "
                   f"the cube's {cube.pixels.shape[:2]}; knn layer skipped")
+    if picked.stats is not None:
+        print(stats_summary(load(picked.stats)))
+    if picked.fingerprints is not None:
+        for line in fingerprint_lines(load(picked.fingerprints)):
+            print(line)
     specs = layer_specs(cube, bse, masks, denoised, normalized, features, labels,
                         cleaned, show=tuple(args.show.split(",")))
     shapes = read_napari_shapes(args.mask) if args.mask else []

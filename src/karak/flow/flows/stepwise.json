@@ -82,6 +82,19 @@
         "k": 5,
         "device": "cpu"
       }
+    },
+    {
+      "id": "stats",
+      "type": "cluster_stats",
+      "params": {}
+    },
+    {
+      "id": "fp",
+      "type": "fingerprints",
+      "params": {
+        "similarity_threshold": 0.95,
+        "accumulate": "float64"
+      }
     }
   ],
   "edges": [
@@ -193,6 +206,39 @@
       "to": {
         "node": "knn",
         "port": "features"
+      }
+    },
+    {
+      "id": "e11",
+      "from": {
+        "node": "knn",
+        "port": "labels"
+      },
+      "to": {
+        "node": "stats",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e12",
+      "from": {
+        "node": "knn",
+        "port": "labels"
+      },
+      "to": {
+        "node": "fp",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e13",
+      "from": {
+        "node": "dn",
+        "port": "cube"
+      },
+      "to": {
+        "node": "fp",
+        "port": "cube"
       }
     }
   ]

@@ -140,20 +140,23 @@ def test_apply_device_no_declaring_nodes_is_identity():
     assert result is graph
 
 
-def test_stepwise_runs_load_through_hdbscan_then_noise_assign():
+def test_stepwise_runs_load_through_noise_assign_then_stats_and_fingerprints():
     from karak.stages.denoise import DenoiseStage
+    from karak.stages.fingerprints import FingerprintsStage
     from karak.stages.load import LoadElementsStage
     from karak.stages.mask import MaskStage
     from karak.stages.noise import NoiseAssignStage
     from karak.stages.normalize import NormalizeStage
     from karak.stages.cluster import HdbscanGlobalStage
     from karak.stages.pca import PCAStage
+    from karak.stages.stats import ClusterStatsStage
 
     graph = builtin_flow("stepwise")
     assert [(n.id, n.type) for n in graph.nodes] == [
         ("src", "load_elements"), ("msk", "mask"), ("dn", "denoise"),
         ("nrm", "normalize"), ("pca", "pca"), ("hdb", "hdbscan_global"),
-        ("knn", "noise_assign"),
+        ("knn", "noise_assign"), ("stats", "cluster_stats"),
+        ("fp", "fingerprints"),
     ]
     assert graph.node("src").params == LoadElementsStage.template()
     assert graph.node("msk").params == MaskStage.template()
@@ -162,6 +165,8 @@ def test_stepwise_runs_load_through_hdbscan_then_noise_assign():
     assert graph.node("pca").params == PCAStage.template()
     assert graph.node("hdb").params == HdbscanGlobalStage.template()
     assert graph.node("knn").params == NoiseAssignStage.template()
+    assert graph.node("stats").params == ClusterStatsStage.template()
+    assert graph.node("fp").params == FingerprintsStage.template()
     assert [(e.src.node, e.src.port, e.dst.node, e.dst.port)
             for e in graph.edges] == [
         ("src", "cube", "msk", "cube"),
@@ -174,6 +179,9 @@ def test_stepwise_runs_load_through_hdbscan_then_noise_assign():
         ("pca", "features", "hdb", "features"),
         ("hdb", "labels", "knn", "labels"),
         ("pca", "features", "knn", "features"),
+        ("knn", "labels", "stats", "labels"),
+        ("knn", "labels", "fp", "labels"),
+        ("dn", "cube", "fp", "cube"),
     ]
 
 
