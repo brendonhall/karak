@@ -42,12 +42,28 @@ def _run(monkeypatch, device, reporter=True):
     return (stage.reporter.logs if reporter else None), seen
 
 
-def test_tiled_cuda_warns_once_through_the_reporter(monkeypatch, caplog):
-    with caplog.at_level("WARNING", logger="karak.stages.cluster"):
-        logs, seen = _run(monkeypatch, "cuda")
+def test_tiled_cuda_warns_once_through_the_cli_log_capture(monkeypatch):
+    from karak.cli.logs import capture_logs
+
+    recorder = _Recorder()
+    with capture_logs(recorder):
+        logs, seen = _run(monkeypatch, "cuda", reporter=False)
     assert seen["device"] == "cuda"
-    assert logs == [("warning", cluster.TILED_CUDA_WARNING)]
-    assert cluster.TILED_CUDA_WARNING not in caplog.text   # not printed twice
+    assert recorder.logs == [("warning", cluster.TILED_CUDA_WARNING)]
+
+
+def test_tiled_cuda_warns_under_the_executor_null_reporter(monkeypatch, caplog):
+    # review regression: karak bench and programmatic runs attach NullReporter
+    from karak.flow.events import NullReporter
+
+    monkeypatch.setattr("karak.clustering.tiling.run_tiled_hdbscan",
+                        lambda f, i, s, c, h, t, **kw: (np.zeros(len(f), np.int32), None,
+                                                        np.zeros(len(f), np.float32), [], []))
+    stage = cluster.HdbscanTiledStage()
+    stage.reporter = NullReporter()
+    with caplog.at_level("WARNING", logger="karak.stages.cluster"):
+        stage.run(_inputs(), {**cluster.HdbscanTiledStage.template(), "device": "cuda"})
+    assert caplog.text.count("hdbscan_tiled on cuda") == 1
 
 
 def test_tiled_cuda_without_a_reporter_warns_in_the_log(monkeypatch, caplog):
@@ -58,5 +74,5 @@ def test_tiled_cuda_without_a_reporter_warns_in_the_log(monkeypatch, caplog):
 
 def test_tiled_cpu_does_not_warn(monkeypatch, caplog):
     with caplog.at_level("WARNING", logger="karak.stages.cluster"):
-        logs, _ = _run(monkeypatch, "cpu")
-    assert logs == [] and cluster.TILED_CUDA_WARNING not in caplog.text
+        _run(monkeypatch, "cpu", reporter=False)
+    assert cluster.TILED_CUDA_WARNING not in caplog.text

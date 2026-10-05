@@ -151,12 +151,13 @@ class HdbscanTiledStage(Stage):
         from karak.clustering.tiling import run_tiled_hdbscan
 
         if params["device"] == "cuda":
-            if self.reporter is not None:
-                self.reporter.log("warning", TILED_CUDA_WARNING)
-            else:   # a direct Stage.run() call: no CLI reporter
-                import logging
+            # One path for every caller: the CLI forwards karak log records
+            # to its reporter (cli/logs.capture_logs), and bench or a
+            # programmatic run with the executor's NullReporter still sees
+            # the record through standard logging.
+            import logging
 
-                logging.getLogger(__name__).warning(TILED_CUDA_WARNING)
+            logging.getLogger(__name__).warning(TILED_CUDA_WARNING)
         # The tiled path is host code (tile bookkeeping, registry merge,
         # process pool); per-tile cuML calls move each tile to the device.
         features = inputs["features"].to("cpu")
