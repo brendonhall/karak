@@ -329,9 +329,10 @@ named phases of the published run:
 | every small phase | `--builtin paper` (tiled, `min_cluster_size` 100, `min_samples` 25, 1024 px tiles, no subsample) | 11: adds silica (0.10 %), calcite (0.15 %), Fe oxyhydroxide (0.03 %), a Zn phase (0.01 %) and xenotime (0.004 %), each 100 % pure; olivine stays in the pyroxene group | 1,775 s; CPU only |
 | in between | `tiled` or `tiled-rare` with 50000 / 125 | 9: silica and calcite mixed with weathering material; Fe oxyhydroxide, the Zn phase and xenotime lost | 365 s |
 
-A per-tile subsample does not shorten the `paper` settings: with
-`subsample_n` 200000 the step takes 672 s but loses or mixes all five small
-phases, and with 500000 it takes 1,590 s and keeps only xenotime. Only the
+A per-tile subsample speeds up the `paper` settings but does not keep their
+small-phase recovery: with `subsample_n` 200000 the step takes 672 s
+instead of 1,775 s but loses or mixes all five small phases, and with
+500000 it takes 1,590 s and keeps only xenotime. Only the
 subsampled fits separate the ferroan olivine (about 2.5 %) from the
 pyroxene group; the published run separated it afterwards with a manual
 threshold.
