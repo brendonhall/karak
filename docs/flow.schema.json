@@ -1409,6 +1409,7 @@
         "subsample_n",
         "merge_threshold",
         "random_state",
+        "device",
         "accumulate"
       ],
       "properties": {
@@ -1445,6 +1446,16 @@
           "type": "integer",
           "title": "Random seed",
           "default": 42
+        },
+        "device": {
+          "type": "string",
+          "title": "Device",
+          "description": "cpu (hdbscan package) or cuda (cuML; needs karak[cuda]) for the pass-2 HDBSCAN; cuda labels agree with cpu but are not identical. Fingerprints and the registry merge run on the host.",
+          "enum": [
+            "cpu",
+            "cuda"
+          ],
+          "default": "cpu"
         },
         "accumulate": {
           "type": "string",

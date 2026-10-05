@@ -54,6 +54,11 @@ class RarePhaseStage(Stage):
               "registry phase; usually the tiled node's merge_threshold",
               min=0.5, max=1.0),
         Param("random_state", "int", 42, "Random seed"),
+        Param("device", "str", "cpu", "Device",
+              "cpu (hdbscan package) or cuda (cuML; needs karak[cuda]) for "
+              "the pass-2 HDBSCAN; cuda labels agree with cpu but are not "
+              "identical. Fingerprints and the registry merge run on the host.",
+              choices=("cpu", "cuda")),
         Param("accumulate", "enum", "float64", "Accumulate",
               "Precision of the rare-cluster fingerprint sums: float64 is "
               "accurate; float32 reproduces the published baseline",
@@ -64,7 +69,11 @@ class RarePhaseStage(Stage):
         from karak.accel import resolve_workers
         from karak.clustering.tiling import recluster_unassigned
 
-        labels, features = inputs["labels"], inputs["features"]
+        # The registry merge and fingerprints are host code, so the inputs
+        # the executor placed on the device come back to the host; with
+        # device=cuda run_hdbscan uploads only the unassigned features.
+        labels, features = inputs["labels"].to("cpu"), inputs["features"].to("cpu")
+        cube = inputs["cube"].to("cpu")
         tiles = inputs["tiles"]
         # recluster_unassigned extends the registry in place — work on a copy
         # so the input payload stays immutable.
@@ -72,7 +81,7 @@ class RarePhaseStage(Stage):
         updated_labels, registry, _, _ = recluster_unassigned(
             features.features,
             labels.labels,
-            inputs["cube"].pixels,
+            cube.pixels,
             features.mineral_indices,
             registry,
             rare_phase_config(params),
@@ -80,6 +89,7 @@ class RarePhaseStage(Stage):
             # --workers N: N core-distance jobs and N prediction processes
             # for the pass-2 HDBSCAN (same labels)
             workers=resolve_workers(self.workers),
+            device=params["device"],
         )
         return {
             "labels": labels.replace(labels=updated_labels),
