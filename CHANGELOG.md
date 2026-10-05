@@ -243,6 +243,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- With `--workers N`, the tiled flows fitted N tiles at once on the cpu
+  regardless of memory: each full 512 px tile at `min_samples` 1000 holds
+  about 8.4 GB, so 16 workers needed about 134 GB. The pool now runs only
+  as many workers as the largest tile fits need together within 80 % of
+  the available memory, and warns when it lowers the count (2 of 16 on
+  NWA 4587 with the `global` values, all 16 with the full-scale settings).
+  Results do not depend on the worker count.
 - The tiled flows summed tile fingerprints and rare-cluster (pass 2)
   fingerprints in float32 along axis 0, the error #12 fixed in the
   fingerprints step. New `accumulate` param on `hdbscan_tiled` and

@@ -282,7 +282,10 @@ On the CPU, the HDBSCAN fit holds about 32 bytes per fitted pixel and
 `min_samples` neighbour (24 GB for 782 k pixels at 1000). Before it starts,
 the step compares that estimate with the available memory and stops with
 an error that names `subsample_n` when the fit would need more than 80 %
-of it. With the `global` values at full NWA 4587 scale the estimate is
+of it. With `--workers N` the tiled flows fit N tiles at once, so they run
+only as many workers as the largest tile fits need together (a warning
+names the number); on NWA 4587 with the `global` values (8.4 GB per full
+512 px tile) that is 2 of 16 workers, with the full-scale settings all 16. With the `global` values at full NWA 4587 scale the estimate is
 400 GB, so the step stops at once instead of swapping.
 
 ---

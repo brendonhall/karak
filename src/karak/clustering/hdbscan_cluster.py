@@ -194,12 +194,31 @@ def check_fit_memory(n_fit: int, n_total: int, min_samples: int,
     )
 
 
+def parallel_fit_workers(fit_sizes: list[int], min_samples: int, workers: int,
+                         available: int | None) -> int:
+    """How many of ``workers`` concurrent cpu fits fit in memory: the
+    largest w for which the w largest fits' estimates together stay within
+    80 % of ``available`` (at least 1; ``workers`` when the figure is
+    unknown)."""
+    if available is None or workers <= 1:
+        return max(1, workers)
+    needs = sorted((fit_memory_bytes(n, min_samples) for n in fit_sizes), reverse=True)
+    total, fitted = 0, 0
+    for need in needs[:workers]:
+        if total + need > _FIT_MEMORY_FRACTION * available:
+            break
+        total += need
+        fitted += 1
+    return max(1, fitted)
+
+
 def run_hdbscan(
     pca_features: np.ndarray,
     config: HDBSCANConfig,
     device: str = "cpu",
     core_dist_n_jobs: int | None = None,
     predict_workers: int = 1,
+    check_memory: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, hdbscan.HDBSCAN]:
     """Run HDBSCAN on PCA-reduced mineral pixel features.
 
@@ -227,6 +246,11 @@ def run_hdbscan(
         Processes for the cpu ``approximate_predict`` after a subsample fit
         (``approximate_predict_parallel``, memory-bounded chunks). 1 =
         serial. Results are identical for any count.
+    check_memory : bool
+        Refuse a cpu fit that would not fit in the available memory
+        (``check_fit_memory``). A pool that plans its fits together with
+        ``parallel_fit_workers`` passes False: each worker would otherwise
+        compare its fit with memory the other workers already hold.
 
     Returns
     -------
@@ -258,8 +282,9 @@ def run_hdbscan(
     fit_idx = subsample_indices(n_mineral, config.subsample_n, config.random_state)
     from karak.memory import available_host_memory
 
-    check_fit_memory(n_mineral if fit_idx is None else fit_idx.size, n_mineral,
-                     min_samples, available_host_memory())
+    if check_memory:
+        check_fit_memory(n_mineral if fit_idx is None else fit_idx.size,
+                         n_mineral, min_samples, available_host_memory())
 
     hdbscan_kwargs: dict = {}
     if core_dist_n_jobs is not None:
