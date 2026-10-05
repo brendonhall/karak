@@ -177,6 +177,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- User guide: the stepwise paragraph says that the builtin HDBSCAN values
+  stop at once on the CPU at full scale (since the fit memory check),
+  instead of "takes hours".
 - `export_h5` writes faster and smaller: compressed datasets use 256 × 256
   pixel chunks with every element in one chunk, and the denoised and
   normalized cubes add HDF5's shuffle filter. On NWA 4587 at full scale
