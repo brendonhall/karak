@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settings: 12 phases and 4.2 M noise pixels on cuda against 11 and 2.8 M
   on the cpu, adjusted Rand index 0.57; one 733 k-pixel tile gives 2
   clusters against 8). The user guide and the `device` help text say so.
+- `paper` builtin flow: `tiled-rare` with the settings of the published
+  NWA 4587 run (`cmap:jet`, 100 px header trim, the valid mask,
+  `min_cluster_size` 100, `min_samples` 25, 1024 px tiles, merge 0.88,
+  float32 sums). On the CPU, load through normalize are bit-identical to
+  the published run and the tiled pass matches its per-tile cluster
+  counts; the rare-phase pass does not reproduce the published labels.
 - `rare_phase` runs its pass-2 HDBSCAN on the GPU with `device: cuda`
   (new param; `--device cuda` sets it), with cuML's subsample fit and
   batched prediction; fingerprints and the registry merge stay on the

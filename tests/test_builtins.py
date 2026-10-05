@@ -12,7 +12,7 @@ from karak.flow.graph import Graph
 from karak.flow.validate import validate
 
 
-@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise"])
+@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise", "paper"])
 def test_builtin_flows_validate_clean(name):
     graph = builtin_flow(name)
     errors = [i for i in validate(graph) if i.level == "error"]
@@ -24,7 +24,7 @@ def test_unknown_builtin_raises():
         builtin_flow("nope")
 
 
-@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise"])
+@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise", "paper"])
 def test_shipped_flows_are_complete_version_2(name):
     from karak.flow.complete import FLOW_VERSION, complete_graph
 
@@ -221,3 +221,27 @@ def test_stepwise_is_global_without_its_output_steps():
 
     assert wiring(step) == wiring(glob)
     assert {n.type for n in glob.nodes if is_output(n.type)} >= {"export_h5"}
+
+
+# The settings of the published NWA 4587 run (eds_pipeline.h5,
+# clusters.attrs["cluster_config"] and the load stage of that file).
+PAPER_SETTINGS = {
+    "src": {"colormap": "cmap:jet", "header_trim_px": 100},
+    "msk": {"valid_mask_path": "{input}/mask/Valid_mask.csv"},
+    "nrm": {"accumulate": "float32"},
+    "hdb": {"min_cluster_size": 100, "min_samples": 25, "tile_size": 1024,
+            "merge_threshold": 0.88, "accumulate": "float32"},
+    "rare": {"merge_threshold": 0.88, "accumulate": "float32"},
+    "fp": {"accumulate": "float32"},
+}
+
+
+def test_paper_is_tiled_rare_with_the_published_settings():
+    paper, base = builtin_flow("paper"), builtin_flow("tiled-rare")
+    assert [(n.id, n.type) for n in paper.nodes] == [(n.id, n.type) for n in base.nodes]
+    assert paper.edges == base.edges
+    for node in base.nodes:
+        expected = {**node.params, **PAPER_SETTINGS.get(node.id, {})}
+        assert paper.node(node.id).params == expected, node.id
+    assert all(paper.node(n).params["device"] == "cpu"
+               for n in ("dn", "nrm", "pca", "hdb", "rare", "knn"))

@@ -143,7 +143,7 @@ payloads via `.replace()` instead of mutating inputs.
 ## Flows
 
 A flow is a JSON DAG of stages: `nodes` (stage `type` + `params`) connected
-by `edges` (output port to input port). Four builtins ship with karak:
+by `edges` (output port to input port). Five builtins ship with karak:
 
 | Flow | Clustering path |
 |------|-----------------|
@@ -151,6 +151,7 @@ by `edges` (output port to input port). Four builtins ship with karak:
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
 | `stepwise` | `hdbscan_global → noise_assign`, then statistics and fingerprints; `global` without the export and QC figures |
+| `paper` | `hdbscan_tiled → rare_phase → noise_assign` with the settings of the published NWA 4587 run |
 
 `stepwise` is the dashboard flow: every processing step of `global`, with
 the same parameters and wiring, but without the HDF5 export and the QC
@@ -164,6 +165,31 @@ the export and the figures (on NWA 4587: 9 steps cached, 8 run, 122 s):
 karak run --builtin global --input DIR --out BASE --device cuda \
     --set 'msk.valid_mask_path={input}/mask/Valid_mask.csv' --set hdb.subsample_n=50000
 ```
+
+`paper` is `tiled-rare` with the settings of the published NWA 4587 run
+(stored in that run's HDF5 as `clusters.attrs["cluster_config"]`): the
+matplotlib jet palette (`cmap:jet`) and a 100 px header trim for the load,
+the valid mask at `{input}/mask/Valid_mask.csv`, `min_cluster_size` 100,
+`min_samples` 25, 1024 px tiles and merge threshold 0.88 for the tiled
+HDBSCAN, merge threshold 0.88 for the rare phases, and float32 sums in the
+normalize, tile, rare-phase and fingerprint steps. A test pins these
+differences from `tiled-rare`. On the CPU it reproduces the published run
+as follows:
+
+- load, mask, denoise and normalize outputs are bit-identical;
+- the PCA explained variance agrees within 5e-7;
+- the tiled pass finds the published 22 tiles with the same cluster count
+  in each, and 2,847,514 noise pixels against the published 2,852,516; its
+  11 phases each match one published phase (every phase 100 % pure; the
+  published 16 labels add manual olivine, pyroxene and apatite splits);
+- the rare-phase pass does not reproduce the published labels: it assigns
+  all but 26 k of the noise pixels, where the published labels keep 1.26 M,
+  and the code that produced those labels is not known.
+
+Run it on the CPU: cuML selects different clusters on these full tiles
+(see [Computational requirements](#computational-requirements)). The tiled
+HDBSCAN takes about 30 minutes on 16 threads, with the pool limited to 7
+workers by memory.
 
 It runs the load step (`src`), the mask step (`msk`), the denoise
 step (`dn`, bilateral with the `global` values), the normalize step
