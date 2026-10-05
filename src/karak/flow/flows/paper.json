@@ -180,7 +180,7 @@
       "type": "qc_tiled",
       "params": {
         "figure_dir": "{out}/figures",
-        "min_tile_pixels": 2000
+        "min_tile_pixels": 200
       }
     }
   ],

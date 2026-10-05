@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `paper` builtin flow: `tiled-rare` with the settings of the published
   NWA 4587 run (`cmap:jet`, 100 px header trim, the valid mask,
   `min_cluster_size` 100, `min_samples` 25, 1024 px tiles, merge 0.88,
-  float32 sums). On the CPU, load through normalize are bit-identical to
+  float32 sums; the tile-grid QC figure keeps tiles from 200 pixels, as the
+  clustering does). On the CPU, load through normalize are bit-identical to
   the published run and the tiled pass matches its per-tile cluster
   counts; the rare-phase pass does not reproduce the published labels.
 - `rare_phase` runs its pass-2 HDBSCAN on the GPU with `device: cuda`
