@@ -52,6 +52,7 @@ def _run_hdbscan_for_pool(
 
     labels, probs, _ = run_hdbscan(
         features, hdb_cfg, device=device, core_dist_n_jobs=1,
+        check_memory=False,   # the pool planned all workers' memory together
     )
     return labels, probs
 
@@ -618,6 +619,24 @@ def run_tiled_hdbscan(
     # the merge loop stays sequential in tile order for byte-identical
     # results regardless of worker count.
     tile_hdbscan: dict[int, tuple] | None = None
+    if workers > 1 and len(tiles) > 1 and device == "cpu":
+        from karak.clustering.hdbscan_cluster import parallel_fit_workers
+        from karak.memory import available_host_memory
+
+        # Concurrent tile fits each hold their own memory: run only as many
+        # as fit together (results do not depend on the worker count).
+        sub = hdb_cfg.subsample_n
+        fit_sizes = [len(t.pixel_indices) if sub is None else min(sub, len(t.pixel_indices))
+                     for t in tiles]
+        min_samples = (hdb_cfg.min_samples if hdb_cfg.min_samples is not None
+                       else hdb_cfg.min_cluster_size)
+        planned = parallel_fit_workers(fit_sizes, min_samples, workers,
+                                       available_host_memory())
+        if planned < workers:
+            logger.warning(
+                "Tile HDBSCAN: %d concurrent fits would need more than 80%% "
+                "of the available memory; using %d workers", workers, planned)
+        workers = planned
     if workers > 1 and len(tiles) > 1 and device == "cpu":
         import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
