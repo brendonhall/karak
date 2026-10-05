@@ -53,6 +53,18 @@ _GLOBAL_FP = "368ab0228a129897bd986bfcd137ab87"
 _GLOBAL_KNN = "0998c21ffbc4bc42ae9116ab1c4d9327"
 
 GOLDEN = {
+    # paper: tiled-rare with the published NWA 4587 settings (own load
+    # settings, so no hash is shared with the other flows)
+    "paper": {"src": "0ade69c7021c1667b3362450f838bac0",
+              "msk": "a299625ddfd762b1af547bdbfca0a0b1",
+              "dn": "b6aded777b5cfb0fc67e895c3c845d19",
+              "nrm": "da983310b20bcb02b559790f0e03dbf4",
+              "pca": "9c1401964c98ddd2f5e08334d556383f",
+              "hdb": "be4fbe467cf7282e5020a3e98b82fa2b",
+              "rare": "80ed30aecaf42cea9200ae303acdad80",
+              "knn": "7e59dc3d4d039f12fa1239780fd16d61",
+              "stats": "714adb24e978ef37996eba0b7b449ddb",
+              "fp": "7df3e51d04d5c25fd5baa2b66a01053f"},
     "global": {**_SHARED, "hdb": _GLOBAL_HDB, "knn": _GLOBAL_KNN,
                "stats": _GLOBAL_STATS,
                "fp": _GLOBAL_FP},

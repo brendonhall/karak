@@ -12,7 +12,7 @@ from karak.flow.graph import Graph
 from karak.flow.validate import validate
 
 
-@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise"])
+@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise", "paper"])
 def test_builtin_flows_validate_clean(name):
     graph = builtin_flow(name)
     errors = [i for i in validate(graph) if i.level == "error"]
@@ -24,7 +24,7 @@ def test_unknown_builtin_raises():
         builtin_flow("nope")
 
 
-@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise"])
+@pytest.mark.parametrize("name", ["global", "tiled", "tiled-rare", "stepwise", "paper"])
 def test_shipped_flows_are_complete_version_2(name):
     from karak.flow.complete import FLOW_VERSION, complete_graph
 
@@ -221,3 +221,61 @@ def test_stepwise_is_global_without_its_output_steps():
 
     assert wiring(step) == wiring(glob)
     assert {n.type for n in glob.nodes if is_output(n.type)} >= {"export_h5"}
+
+
+# The settings of the published NWA 4587 run (eds_pipeline.h5,
+# clusters.attrs["cluster_config"] and the load stage of that file).
+PAPER_SETTINGS = {
+    "src": {"colormap": "cmap:jet", "header_trim_px": 100},
+    "msk": {"valid_mask_path": "{input}/mask/Valid_mask.csv"},
+    "nrm": {"accumulate": "float32"},
+    "hdb": {"min_cluster_size": 100, "min_samples": 25, "tile_size": 1024,
+            "merge_threshold": 0.88, "accumulate": "float32"},
+    "rare": {"merge_threshold": 0.88, "accumulate": "float32"},
+    "fp": {"accumulate": "float32"},
+    # the QC tile grid must keep the tiles the clustering keeps (2 x 100)
+    "qc_tiled": {"min_tile_pixels": 200},
+}
+
+
+def test_paper_is_tiled_rare_with_the_published_settings():
+    paper, base = builtin_flow("paper"), builtin_flow("tiled-rare")
+    assert [(n.id, n.type) for n in paper.nodes] == [(n.id, n.type) for n in base.nodes]
+    assert paper.edges == base.edges
+    for node in base.nodes:
+        expected = {**node.params, **PAPER_SETTINGS.get(node.id, {})}
+        assert paper.node(node.id).params == expected, node.id
+    assert all(paper.node(n).params["device"] == "cpu"
+               for n in ("dn", "nrm", "pca", "hdb", "rare", "knn"))
+
+
+@pytest.mark.parametrize("name", ["tiled", "tiled-rare", "paper"])
+def test_qc_tile_grid_keeps_the_tiles_the_clustering_keeps(name):
+    """qc_tiled rebuilds the tile grid with its own min_tile_pixels and
+    matches tile results by position, so it must equal the clustering's
+    effective threshold (min_tile_pixels, or 2 x min_cluster_size for 0)."""
+    graph = builtin_flow(name)
+    hdb = graph.node("hdb").params
+    clustering = hdb["min_tile_pixels"] or 2 * hdb["min_cluster_size"]
+    assert graph.node("qc_tiled").params["min_tile_pixels"] == clustering
+
+
+def test_paper_qc_grid_numbers_a_sparse_tile_like_the_clustering():
+    """Review regression: tiles of 500 and 3,000 mineral pixels."""
+    import numpy as np
+
+    from karak.clustering.tiling import compute_tile_grid
+
+    graph = builtin_flow("paper")
+    hdb = graph.node("hdb").params
+    rows_a, cols_a = np.divmod(np.arange(500), 100)
+    rows_b, cols_b = np.divmod(np.arange(3000), 100)
+    idx = np.concatenate([np.stack([rows_a, cols_a], 1),
+                          np.stack([rows_b, cols_b + 1024], 1)]).astype(np.int32)
+    shape = (1024, 2048)
+    clustering = compute_tile_grid(idx, shape, hdb["tile_size"],
+                                   hdb["min_tile_pixels"] or 2 * hdb["min_cluster_size"])
+    qc = compute_tile_grid(idx, shape, hdb["tile_size"],
+                           graph.node("qc_tiled").params["min_tile_pixels"])
+    assert [(t.tile_id, t.col_start) for t in qc] == \
+        [(t.tile_id, t.col_start) for t in clustering] == [(0, 0), (1, 1024)]
