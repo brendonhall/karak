@@ -179,11 +179,20 @@ def compute_tile_grid(
 # ---------------------------------------------------------------------------
 
 
+def _check_accumulate(accumulate: str) -> None:
+    from karak.identification.fingerprint import ACCUMULATE
+
+    if accumulate not in ACCUMULATE:
+        raise ValueError(f"accumulate must be one of {ACCUMULATE}, got {accumulate!r}")
+
+
 def compute_tile_fingerprints(
     denoised_cube: np.ndarray,
     mineral_indices: np.ndarray,
     tile_pixel_indices: np.ndarray,
     local_labels: np.ndarray,
+    *,
+    accumulate: str,
 ) -> dict[int, np.ndarray]:
     """Compute mean chemical fingerprint for each non-noise cluster in a tile.
 
@@ -197,12 +206,17 @@ def compute_tile_fingerprints(
         Indices into mineral_indices for this tile's pixels.
     local_labels : np.ndarray
         HDBSCAN labels for this tile's pixels (-1 = noise).
+    accumulate : str
+        Precision of the mean sums, "float64" (accurate) or "float32" (the
+        published baseline; numpy sums float32 rows one by one). The means
+        come back as float32 either way.
 
     Returns
     -------
     dict[int, np.ndarray]
         local_label -> (C,) mean fingerprint vector.
     """
+    _check_accumulate(accumulate)
     tile_coords = mineral_indices[tile_pixel_indices]
     tile_spectra = denoised_cube[tile_coords[:, 0], tile_coords[:, 1], :]
 
@@ -211,7 +225,8 @@ def compute_tile_fingerprints(
         if label == -1:
             continue
         mask = local_labels == label
-        fingerprints[int(label)] = np.mean(tile_spectra[mask], axis=0)
+        fingerprints[int(label)] = tile_spectra[mask].mean(
+            axis=0, dtype=accumulate).astype(np.float32)
 
     return fingerprints
 
@@ -378,6 +393,7 @@ def recluster_unassigned(
     from karak.core_params import HDBSCANConfig
 
     rare_cfg = rare
+    _check_accumulate(rare_cfg.accumulate)
     unassigned_mask = raw_labels == -1
     n_unassigned = int(np.sum(unassigned_mask))
 
@@ -437,7 +453,8 @@ def recluster_unassigned(
         if label == -1:
             continue
         mask = pass2_labels == label
-        pass2_fingerprints[int(label)] = np.mean(unassigned_spectra[mask], axis=0)
+        pass2_fingerprints[int(label)] = unassigned_spectra[mask].mean(
+            axis=0, dtype=rare_cfg.accumulate).astype(np.float32)
         pass2_pixel_counts[int(label)] = int(np.sum(mask))
 
     # Match against existing registry
@@ -660,6 +677,7 @@ def run_tiled_hdbscan(
         # Compute fingerprints for non-noise clusters
         tile_fps = compute_tile_fingerprints(
             denoised_cube, mineral_indices, tile.pixel_indices, tile_labels,
+            accumulate=tiled_cfg.accumulate,
         )
 
         # Match to phase registry

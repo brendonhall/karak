@@ -54,6 +54,7 @@ def tiled_config(params: dict) -> TiledConfig:
         merge_threshold=params["merge_threshold"],
         min_tile_pixels=params["min_tile_pixels"] or None,
         min_clusters_per_tile=params["min_clusters_per_tile"],
+        accumulate=params["accumulate"],
     )
 
 
@@ -126,6 +127,10 @@ class HdbscanTiledStage(Stage):
               min=0),
         Param("min_clusters_per_tile", "int", 3, "Min clusters per tile",
               "Tiles with fewer clusters defer to the k-NN pass", min=0),
+        Param("accumulate", "enum", "float64", "Accumulate",
+              "Precision of the tile-fingerprint sums: float64 is "
+              "accurate; float32 reproduces the published baseline",
+              choices=("float64", "float32")),
     ]
 
     @classmethod

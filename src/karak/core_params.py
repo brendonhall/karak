@@ -64,6 +64,7 @@ class TiledConfig:
     merge_threshold: float
     min_tile_pixels: int | None    # None = 2 * min_cluster_size
     min_clusters_per_tile: int
+    accumulate: str                # float64 | float32 tile-fingerprint sums
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -74,6 +75,7 @@ class RarePhaseConfig:
     min_samples: int | None        # None = min_cluster_size
     subsample_n: int | None        # None = fit on every unassigned pixel
     merge_threshold: float
+    accumulate: str                # float64 | float32 rare-cluster fingerprint sums
 
 
 @dataclass(frozen=True, kw_only=True)

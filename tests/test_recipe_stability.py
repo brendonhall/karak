@@ -21,6 +21,10 @@ reproduces the published baseline), so `fp` carries a new hash; `fp` is a
 leaf, so no other hash changes.
 2026-10-03: noise_assign gained a `device` param, so `knn` and everything
 downstream (`stats`, `fp`) carry new hashes.
+2026-10-04: hdbscan_tiled and rare_phase gained `accumulate` (float64 tile
+and rare-cluster fingerprint sums by default; float32 reproduces the
+published baseline), so in tiled and tiled-rare `hdb`, `rare` and
+everything downstream carry new hashes; global and stepwise do not change.
 """
 
 from __future__ import annotations
@@ -51,16 +55,16 @@ GOLDEN = {
                "stats": _GLOBAL_STATS,
                "fp": _GLOBAL_FP},
     "tiled": {**_SHARED,
-              "hdb": "8a54033635797cd25cc20df0f519cc4b",
-              "knn": "5f0978cc4e043fbfcf6bea5c190d6758",
-              "stats": "31c803d804ea99e837df8241c1010415",
-              "fp": "885b7b0f838c52d97f4d92d2f1f3c511"},
+              "hdb": "650b15d84812cebb4d3cdf1a9c096bf8",
+              "knn": "8c63956522d8073fbb99446576c7f437",
+              "stats": "c2c95da3a1734cd85d26b3fda4164626",
+              "fp": "141e6c8b6e7861f1d0f166da12b9c043"},
     "tiled-rare": {**_SHARED,
-                   "hdb": "8a54033635797cd25cc20df0f519cc4b",
-                   "rare": "34d2726979907355c0f8ae7c827b885d",
-                   "knn": "9c40ec9e4eb21cf95b302fe80ca7d281",
-                   "stats": "2c44d018a769817a8d9ae27365ca3445",
-                   "fp": "f4229c209a91147a8b21b6d3ccc4f5e7"},
+                   "hdb": "650b15d84812cebb4d3cdf1a9c096bf8",
+                   "rare": "a1bdb5be39305f13b8441ff9557e8892",
+                   "knn": "d01d5d32d45c421b02668cfb2e73c415",
+                   "stats": "d869788712e1918345b70ca723175dd7",
+                   "fp": "00da5d68f176485dd20df64ad0c346a7"},
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
                  "dn": _SHARED["dn"], "nrm": _SHARED["nrm"],
                  "pca": _SHARED["pca"], "hdb": _GLOBAL_HDB,

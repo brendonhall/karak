@@ -176,6 +176,7 @@ Per-tile HDBSCAN with cosine-similarity phase-registry merging. Unassigned pixel
 | `merge_threshold` | float | `0.92` | 0.0..1.0 | Cosine similarity for matching tile clusters to the registry |
 | `min_tile_pixels` | int | `0` | 0.. | Minimum mineral pixels per tile; 0 = 2 * min_cluster_size |
 | `min_clusters_per_tile` | int | `3` | 0.. | Tiles with fewer clusters defer to the k-NN pass |
+| `accumulate` | enum | `float64` | float64 \| float32 | Precision of the tile-fingerprint sums: float64 is accurate; float32 reproduces the published baseline |
 
 ## `load_elements` — Load element maps
 
@@ -516,6 +517,7 @@ Recluster still-unassigned pixels with more sensitive HDBSCAN parameters; novel 
 | `subsample_n` | int | `500000` | 0.. | Max unassigned pixels to fit on; 0 = all |
 | `merge_threshold` | float | `0.92` | 0.5..1.0 | Cosine similarity a rare cluster needs to join an existing registry phase; usually the tiled node's merge_threshold |
 | `random_state` | int | `42` | - | Random seed |
+| `accumulate` | enum | `float64` | float64 \| float32 | Precision of the rare-cluster fingerprint sums: float64 is accurate; float32 reproduces the published baseline |
 
 ## `refine` — Phase refinement
 

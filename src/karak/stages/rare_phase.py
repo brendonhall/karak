@@ -16,6 +16,7 @@ def rare_phase_config(params: dict) -> RarePhaseConfig:
         min_samples=params["min_samples"] or None,
         subsample_n=params["subsample_n"] or None,
         merge_threshold=params["merge_threshold"],
+        accumulate=params["accumulate"],
     )
 
 
@@ -53,6 +54,10 @@ class RarePhaseStage(Stage):
               "registry phase; usually the tiled node's merge_threshold",
               min=0.5, max=1.0),
         Param("random_state", "int", 42, "Random seed"),
+        Param("accumulate", "enum", "float64", "Accumulate",
+              "Precision of the rare-cluster fingerprint sums: float64 is "
+              "accurate; float32 reproduces the published baseline",
+              choices=("float64", "float32")),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
