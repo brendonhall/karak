@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `hdbscan_tiled` warns when it runs on cuda: on full tiles, cuML can
+  select different clusters than the cpu (NWA 4587 with the paper's tiled
+  settings: 12 phases and 4.2 M noise pixels on cuda against 11 and 2.8 M
+  on the cpu, adjusted Rand index 0.57; one 733 k-pixel tile gives 2
+  clusters against 8). The user guide and the `device` help text say so.
 - `rare_phase` runs its pass-2 HDBSCAN on the GPU with `device: cuda`
   (new param; `--device cuda` sets it), with cuML's subsample fit and
   batched prediction; fingerprints and the registry merge stay on the

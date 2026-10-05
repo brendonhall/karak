@@ -143,7 +143,7 @@ Single HDBSCAN run over all mineral-pixel features.
 | `min_samples` | int | `0` | 0.. | HDBSCAN min_samples; 0 = defaults to min_cluster_size |
 | `subsample_n` | int | `0` | 0.. | Max pixels for fitting (rest via approximate_predict); 0 = all |
 | `random_state` | int | `42` | - | Random seed |
-| `device` | str | `cpu` | cpu \| cuda | cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample. |
+| `device` | str | `cpu` | cpu \| cuda | cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample. On full tiles (hdbscan_tiled) cuda can select different clusters than cpu; use cpu to match it. |
 
 ## `hdbscan_tiled` — HDBSCAN (tiled)
 
@@ -171,7 +171,7 @@ Per-tile HDBSCAN with cosine-similarity phase-registry merging. Unassigned pixel
 | `min_samples` | int | `0` | 0.. | HDBSCAN min_samples; 0 = defaults to min_cluster_size |
 | `subsample_n` | int | `0` | 0.. | Max pixels for fitting (rest via approximate_predict); 0 = all |
 | `random_state` | int | `42` | - | Random seed |
-| `device` | str | `cpu` | cpu \| cuda | cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample. |
+| `device` | str | `cpu` | cpu \| cuda | cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample. On full tiles (hdbscan_tiled) cuda can select different clusters than cpu; use cpu to match it. |
 | `tile_size` | int | `512` | 1.., px | Tile size |
 | `merge_threshold` | float | `0.92` | 0.0..1.0 | Cosine similarity for matching tile clusters to the registry |
 | `min_tile_pixels` | int | `0` | 0.. | Minimum mineral pixels per tile; 0 = 2 * min_cluster_size |
