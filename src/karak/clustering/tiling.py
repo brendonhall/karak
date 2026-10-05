@@ -346,8 +346,13 @@ def recluster_unassigned(
     rare: RarePhaseConfig,
     *,
     random_state: int,
+    workers: int = 1,
 ) -> tuple[np.ndarray, list[PhaseEntry], int, int]:
     """Recluster unassigned pixels to discover rare phases (Pass 2).
+
+    ``workers`` > 1 gives the cpu HDBSCAN that many core-distance jobs and
+    prediction processes (``run_hdbscan``); labels are identical for any
+    count.
 
     Collects all pixels with label == -1, runs HDBSCAN with more sensitive
     parameters (lower min_cluster_size), and matches discovered clusters
@@ -419,7 +424,11 @@ def recluster_unassigned(
     unassigned_features = pca_features[unassigned_indices]
 
     # Run HDBSCAN on unassigned pixels
-    pass2_labels, pass2_probs, _ = run_hdbscan(unassigned_features, pass2_hdb)
+    pass2_labels, pass2_probs, _ = run_hdbscan(
+        unassigned_features, pass2_hdb,
+        core_dist_n_jobs=workers if workers > 1 else None,
+        predict_workers=workers,
+    )
     del unassigned_features
     gc.collect()
 

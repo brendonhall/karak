@@ -61,6 +61,7 @@ class RarePhaseStage(Stage):
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
+        from karak.accel import resolve_workers
         from karak.clustering.tiling import recluster_unassigned
 
         labels, features = inputs["labels"], inputs["features"]
@@ -76,6 +77,9 @@ class RarePhaseStage(Stage):
             registry,
             rare_phase_config(params),
             random_state=params["random_state"],
+            # --workers N: N core-distance jobs and N prediction processes
+            # for the pass-2 HDBSCAN (same labels)
+            workers=resolve_workers(self.workers),
         )
         return {
             "labels": labels.replace(labels=updated_labels),

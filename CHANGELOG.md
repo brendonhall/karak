@@ -177,6 +177,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`gzip` default, `lzf`, `none`; lzf takes 28 s). The `exp` recipe hash
   changes; no other node's does. `karak.io.storage` writers take a
   required `compression` keyword.
+- `rare_phase` uses `--workers` for its pass-2 HDBSCAN on the cpu (N
+  core-distance jobs, N prediction processes), with identical labels. On
+  NWA 4587 `tiled-rare` (5.47 M unassigned pixels, 500 k fitted) it takes
+  684 s with 16 workers instead of 2,493 s.
 - `hdbscan_global` on the cpu uses `--workers`: N jobs for the core
   distances and N processes for `approximate_predict` after a
   `subsample_n` fit, with identical labels. The prediction also runs in
