@@ -311,11 +311,31 @@ On the CPU, the HDBSCAN fit holds about 32 bytes per fitted pixel and
 `min_samples` neighbour (24 GB for 782 k pixels at 1000). Before it starts,
 the step compares that estimate with the available memory and stops with
 an error that names `subsample_n` when the fit would need more than 80 %
-of it. With `--workers N` the tiled flows fit N tiles at once, so they run
-only as many workers as the largest tile fits need together (a warning
-names the number); on NWA 4587 with the `global` values (8.4 GB per full
-512 px tile) that is 2 of 16 workers, with the full-scale settings all 16. With the `global` values at full NWA 4587 scale the estimate is
-400 GB, so the step stops at once instead of swapping.
+of it. With the `global` values at full NWA 4587 scale the estimate is
+400 GB, so the step stops at once instead of swapping. With `--workers N`
+the tiled flows fit N tiles at once, so they run only as many workers as
+the largest tile fits need together (a warning names the number); on NWA
+4587 with the `global` values (8.4 GB per full 512 px tile) that is 2 of
+16 workers, with the full-scale settings all 16.
+
+#### Which flow and settings for which goal
+
+Measured on NWA 4587 at full scale on the CPU (16 threads), against the
+named phases of the published run:
+
+| goal | flow and settings | phases | `hdb` time |
+|---|---|---|---|
+| main phases, fast | `global` (or `stepwise`) with `subsample_n` 50000, `min_cluster_size` = `min_samples` = 125 | 7: ilmenite, spinel, plagioclase, epoxy, the pyroxene group, merrillite/chlorapatite, ferroan olivine | 267 s (15 s on a GPU) |
+| every small phase | `--builtin paper` (tiled, `min_cluster_size` 100, `min_samples` 25, 1024 px tiles, no subsample) | 11: adds silica (0.10 %), calcite (0.15 %), Fe oxyhydroxide (0.03 %), a Zn phase (0.01 %) and xenotime (0.004 %), each 100 % pure; olivine stays in the pyroxene group | 1,775 s; CPU only |
+| in between | `tiled` or `tiled-rare` with 50000 / 125 | 9: silica and calcite mixed with weathering material; Fe oxyhydroxide, the Zn phase and xenotime lost | 365 s |
+
+A per-tile subsample speeds up the `paper` settings but does not keep their
+small-phase recovery: with `subsample_n` 200000 the step takes 672 s
+instead of 1,775 s but loses or mixes all five small phases, and with
+500000 it takes 1,590 s and keeps only xenotime. Only the
+subsampled fits separate the ferroan olivine (about 2.5 %) from the
+pyroxene group; the published run separated it afterwards with a manual
+threshold.
 
 ---
 

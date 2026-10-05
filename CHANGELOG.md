@@ -192,6 +192,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - User guide: the stepwise paragraph says that the builtin HDBSCAN values
   stop at once on the CPU at full scale (since the fit memory check),
   instead of "takes hours".
+- User guide: "Which flow and settings for which goal" at full scale (NWA
+  4587, CPU): `global` 50k/125 for the main phases in 267 s (7 phases),
+  `--builtin paper` for every small phase in 1,775 s (11 phases), tiled
+  50k/125 in between (9 phases); a per-tile subsample speeds up the paper
+  settings but does not keep their small-phase recovery. README: the paper reproduction claim states what
+  reproduces (load through normalization bit for bit, the tiled pass per
+  tile) and that the rare-phase pass does not yet.
 - `export_h5` writes faster and smaller: compressed datasets use 256 × 256
   pixel chunks with every element in one chunk, and the denoised and
   normalized cubes add HDF5's shuffle filter. On NWA 4587 at full scale
