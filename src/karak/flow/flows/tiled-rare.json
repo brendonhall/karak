@@ -89,6 +89,7 @@
         "subsample_n": 500000,
         "merge_threshold": 0.92,
         "random_state": 42,
+        "device": "cpu",
         "accumulate": "float64"
       }
     },

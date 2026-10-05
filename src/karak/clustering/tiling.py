@@ -348,12 +348,15 @@ def recluster_unassigned(
     *,
     random_state: int,
     workers: int = 1,
+    device: str = "cpu",
 ) -> tuple[np.ndarray, list[PhaseEntry], int, int]:
     """Recluster unassigned pixels to discover rare phases (Pass 2).
 
     ``workers`` > 1 gives the cpu HDBSCAN that many core-distance jobs and
     prediction processes (``run_hdbscan``); labels are identical for any
-    count.
+    count. ``device="cuda"`` runs the pass-2 HDBSCAN with cuML (a subsample
+    fit and batched prediction when ``subsample_n`` is set); the
+    fingerprints and the registry merge stay on the host.
 
     Collects all pixels with label == -1, runs HDBSCAN with more sensitive
     parameters (lower min_cluster_size), and matches discovered clusters
@@ -425,11 +428,15 @@ def recluster_unassigned(
     unassigned_features = pca_features[unassigned_indices]
 
     # Run HDBSCAN on unassigned pixels
+    from karak.accel import to_numpy
+
     pass2_labels, pass2_probs, _ = run_hdbscan(
         unassigned_features, pass2_hdb,
+        device=device,
         core_dist_n_jobs=workers if workers > 1 else None,
         predict_workers=workers,
     )
+    pass2_labels, pass2_probs = to_numpy(pass2_labels), to_numpy(pass2_probs)
     del unassigned_features
     gc.collect()
 

@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `rare_phase` runs its pass-2 HDBSCAN on the GPU with `device: cuda`
+  (new param; `--device cuda` sets it), with cuML's subsample fit and
+  batched prediction; fingerprints and the registry merge stay on the
+  host. On NWA 4587 `tiled-rare` (5.47 M unassigned pixels) the step takes
+  92 s instead of 684 s on 16 CPU threads (2,493 s serial), with the same
+  11 phases (ARI 0.988 against the cpu labels, 0.998 after noise
+  reassignment). In `tiled-rare` the `rare`, `knn`, `stats` and `fp`
+  recipe hashes changed.
 - The cpu HDBSCAN fit checks its memory before it starts: about 32 bytes
   per fitted pixel and `min_samples` neighbour (measured 31.3 to 33.0 on
   NWA 4587). Above 80 % of the available memory the step stops with an

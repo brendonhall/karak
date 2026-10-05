@@ -25,6 +25,8 @@ downstream (`stats`, `fp`) carry new hashes.
 and rare-cluster fingerprint sums by default; float32 reproduces the
 published baseline), so in tiled and tiled-rare `hdb`, `rare` and
 everything downstream carry new hashes; global and stepwise do not change.
+2026-10-05: rare_phase gained a `device` param, so in tiled-rare `rare` and
+everything downstream carry new hashes.
 """
 
 from __future__ import annotations
@@ -61,10 +63,10 @@ GOLDEN = {
               "fp": "141e6c8b6e7861f1d0f166da12b9c043"},
     "tiled-rare": {**_SHARED,
                    "hdb": "650b15d84812cebb4d3cdf1a9c096bf8",
-                   "rare": "a1bdb5be39305f13b8441ff9557e8892",
-                   "knn": "d01d5d32d45c421b02668cfb2e73c415",
-                   "stats": "d869788712e1918345b70ca723175dd7",
-                   "fp": "00da5d68f176485dd20df64ad0c346a7"},
+                   "rare": "79294078ee2a071c51dac5730ee5ac7a",
+                   "knn": "07698fa3938849eceabdb3d0a2cd05d5",
+                   "stats": "fcd955c389911fb8b52842756c856e42",
+                   "fp": "a3cfd2f9155b8141a333027786098143"},
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
                  "dn": _SHARED["dn"], "nrm": _SHARED["nrm"],
                  "pca": _SHARED["pca"], "hdb": _GLOBAL_HDB,

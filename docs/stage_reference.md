@@ -517,6 +517,7 @@ Recluster still-unassigned pixels with more sensitive HDBSCAN parameters; novel 
 | `subsample_n` | int | `500000` | 0.. | Max unassigned pixels to fit on; 0 = all |
 | `merge_threshold` | float | `0.92` | 0.5..1.0 | Cosine similarity a rare cluster needs to join an existing registry phase; usually the tiled node's merge_threshold |
 | `random_state` | int | `42` | - | Random seed |
+| `device` | str | `cpu` | cpu \| cuda | cpu (hdbscan package) or cuda (cuML; needs karak[cuda]) for the pass-2 HDBSCAN; cuda labels agree with cpu but are not identical. Fingerprints and the registry merge run on the host. |
 | `accumulate` | enum | `float64` | float64 \| float32 | Precision of the rare-cluster fingerprint sums: float64 is accurate; float32 reproduces the published baseline |
 
 ## `refine` — Phase refinement

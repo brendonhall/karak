@@ -96,7 +96,7 @@ the registry; `karak schema` prints the same contract as JSON.
 | `pca` | `cube:normalized`, `masks` → `features` | PCA fit + projection of mineral pixels. `n_components: 0` auto-selects the first count reaching 95% cumulative variance (minimum 5). On `--device cuda` runs on the GPU; features match the CPU path within 1e-3. |
 | `hdbscan_global` | `features` → `labels:raw` | Single HDBSCAN run over all mineral-pixel features. |
 | `hdbscan_tiled` | `features`, `cube:denoised` → `labels:raw`, `tiles` | Per-tile HDBSCAN with cosine-similarity phase-registry merging across tiles. `accumulate` sets the precision of the tile-fingerprint sums: `float64` (default) or `float32` (the published baseline). |
-| `rare_phase` | `labels:raw`, `features`, `cube:denoised`, `tiles` → `labels:raw`, `tiles` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. `accumulate` sets the precision of the rare-cluster fingerprint sums, as for `hdbscan_tiled`. |
+| `rare_phase` | `labels:raw`, `features`, `cube:denoised`, `tiles` → `labels:raw`, `tiles` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. `accumulate` sets the precision of the rare-cluster fingerprint sums, as for `hdbscan_tiled`. On `--device cuda` the pass-2 HDBSCAN runs with cuML (NWA 4587: 92 s instead of 684 s on 16 CPU threads, the same 11 phases); the registry merge stays on the host. |
 | `noise_assign` | `labels:raw`, `features` → `labels:cleaned` | Distance-weighted k-NN reassignment of every remaining unlabeled pixel. On `--device cuda` a CuPy brute-force search with the same vote runs on the GPU (NWA 4587: 24 s instead of 281 s, identical labels); labels can differ from the cpu only where two neighbor distances tie within float32 precision. |
 | `refine` | `labels:cleaned`, `cube:denoised`, `bse` → `labels:cleaned` | Composite-phase splitting: threshold-based olivine extraction, then a GMM split of the target phase. |
 | `cluster_stats` | `labels:cleaned` → `stats` | Cluster counts, sizes, and noise fraction. |
@@ -519,7 +519,8 @@ Tested on an AMD Ryzen AI 5 340 with 32 GB RAM (Linux).
   src.include_elements=Fe-K,Ca,Mg,Si` checks an installation in minutes on
   a laptop.
 - No GPU is required. With the `cuda` extra and `--device cuda`, denoise,
-  normalize, PCA, HDBSCAN and noise reassignment run on the GPU.
+  normalize, PCA, HDBSCAN (including the pass-2 HDBSCAN of `rare_phase`)
+  and noise reassignment run on the GPU.
 - cuML HDBSCAN needs device memory in proportion to the fitted pixel count
   times `min_samples` (it builds a `min_samples`-neighbour graph). The
   `global` flow at full NWA 4587 scale (12.5 M pixels, `min_samples` 1000)
