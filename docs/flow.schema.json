@@ -313,7 +313,8 @@
       "type": "object",
       "required": [
         "path",
-        "flow_json"
+        "flow_json",
+        "compression"
       ],
       "properties": {
         "path": {
@@ -326,6 +327,17 @@
           "title": "Flow definition",
           "description": "JSON of the executing flow, embedded for provenance",
           "default": "{flow}"
+        },
+        "compression": {
+          "type": "string",
+          "title": "Compression",
+          "description": "gzip (level 4, readable by any HDF5 tool), lzf (faster, h5py and PyTables only) or none; the denoised and normalized cubes also use the shuffle filter",
+          "enum": [
+            "gzip",
+            "lzf",
+            "none"
+          ],
+          "default": "gzip"
         }
       },
       "additionalProperties": false

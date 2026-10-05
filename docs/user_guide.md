@@ -270,8 +270,17 @@ that `karak view` prints before you treat it as a mineral.
 
 ## HDF5 output layout
 
-All results are written to a single HDF5 file (`hdf5_output`) with gzip
-compression:
+All results are written to a single HDF5 file (`hdf5_output`). The
+`export_h5` param `compression` picks the filter for the large datasets:
+`gzip` (the default; level 4, readable by any HDF5 tool), `lzf` (faster,
+readable by h5py and PyTables only) or `none`. Compressed datasets use
+chunks of 256 × 256 pixels with every element in one chunk, and the
+denoised and normalized cubes also use HDF5's shuffle filter, which makes
+continuous floats compress smaller and faster (it makes the raw maps,
+which hold few distinct values, larger, so they do without it). On NWA
+4587 at full scale the export takes 67 s with gzip (2.06 GB), 28 s with
+lzf (2.51 GB) and 6 s without compression (6.34 GB); the data are the same
+in each.
 
 ```
 /

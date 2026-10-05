@@ -79,12 +79,18 @@ class ExportH5Stage(Stage):
         Param("path", "str", "{out}.h5", "Output path"),
         Param("flow_json", "str", "{flow}", "Flow definition",
               "JSON of the executing flow, embedded for provenance"),
+        Param("compression", "enum", "gzip", "Compression",
+              "gzip (level 4, readable by any HDF5 tool), lzf (faster, h5py "
+              "and PyTables only) or none; the denoised and normalized cubes "
+              "also use the shuffle filter",
+              choices=("gzip", "lzf", "none")),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
         from karak.io import storage
 
         path = params["path"]
+        compression = params["compression"]
         try:
             flow = json.loads(params["flow_json"] or "{}")
         except json.JSONDecodeError:
@@ -98,7 +104,7 @@ class ExportH5Stage(Stage):
             elements = {
                 name: cube_raw.pixels[:, :, i] for i, name in enumerate(names)
             }
-            storage.save_raw_data(path, elements, names)
+            storage.save_raw_data(path, elements, names, compression=compression)
 
         bse = inputs.get("bse")
         if bse is not None:
@@ -106,21 +112,21 @@ class ExportH5Stage(Stage):
             storage.save_bse(
                 path, bse.pixels,
                 original_shape=bse.pixels.shape,
-                downsample_factor=factor,
+                downsample_factor=factor, compression=compression,
             )
 
         masks = inputs.get("masks")
         if masks is not None:
             storage.save_mask(
                 path, masks.mineral_mask, masks.valid_mask, masks.stats,
-                _params_for(flow, "mask"),
+                _params_for(flow, "mask"), compression=compression,
             )
 
         denoised = inputs.get("cube_denoised")
         if denoised is not None:
             storage.save_denoised_data(
                 path, denoised.pixels, list(denoised.element_names),
-                _params_for(flow, "denoise"),
+                _params_for(flow, "denoise"), compression=compression,
             )
 
         normalized = inputs.get("cube_normalized")
@@ -129,6 +135,7 @@ class ExportH5Stage(Stage):
                 path, normalized.pixels, normalized.means, normalized.stds,
                 list(normalized.element_names),
                 method=_params_for(flow, "normalize")["method"],
+                compression=compression,
             )
 
         labels = inputs.get("labels")
@@ -154,6 +161,7 @@ class ExportH5Stage(Stage):
                 stats.stats,
                 features.n_kept,
                 cluster_params,
+                compression=compression,
             )
             if tiles is not None:
                 storage.save_tiled_metadata(

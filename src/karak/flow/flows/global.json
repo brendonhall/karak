@@ -101,7 +101,8 @@
       "type": "export_h5",
       "params": {
         "path": "{out}.h5",
-        "flow_json": "{flow}"
+        "flow_json": "{flow}",
+        "compression": "gzip"
       }
     },
     {
