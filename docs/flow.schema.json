@@ -459,7 +459,7 @@
         "device": {
           "type": "string",
           "title": "Device",
-          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample.",
+          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample. On full tiles (hdbscan_tiled) cuda can select different clusters than cpu; use cpu to match it.",
           "enum": [
             "cpu",
             "cuda"
@@ -538,7 +538,7 @@
         "device": {
           "type": "string",
           "title": "Device",
-          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample.",
+          "description": "cpu (hdbscan package, exact baseline) or cuda (cuML; needs karak[cuda]). cuda results differ from cpu; with subsample_n both fit the same subsample. On full tiles (hdbscan_tiled) cuda can select different clusters than cpu; use cpu to match it.",
           "enum": [
             "cpu",
             "cuda"

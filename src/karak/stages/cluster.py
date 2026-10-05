@@ -26,7 +26,8 @@ _HDBSCAN_PARAMS = [
     Param("device", "str", "cpu", "Device",
           "cpu (hdbscan package, exact baseline) or cuda (cuML; needs "
           "karak[cuda]). cuda results differ from cpu; with subsample_n "
-          "both fit the same subsample.",
+          "both fit the same subsample. On full tiles (hdbscan_tiled) cuda "
+          "can select different clusters than cpu; use cpu to match it.",
           choices=("cpu", "cuda")),
 ]
 
@@ -37,6 +38,14 @@ def _cuda_subsample_revision(params: dict) -> str | None:
     if params["device"] == "cuda" and params["subsample_n"]:
         return "cuda-subsample-1"
     return None
+
+
+TILED_CUDA_WARNING = (
+    "hdbscan_tiled on cuda: cuML can select different clusters than the cpu "
+    "on full tiles (NWA 4587, a 733 k-pixel tile at min_cluster_size 100: "
+    "2 clusters against 8 on the cpu). Use device=cpu for results that match "
+    "the cpu or the published baseline."
+)
 
 
 def hdbscan_config(params: dict) -> HDBSCANConfig:
@@ -141,6 +150,14 @@ class HdbscanTiledStage(Stage):
         from karak.accel import resolve_workers
         from karak.clustering.tiling import run_tiled_hdbscan
 
+        if params["device"] == "cuda":
+            # One path for every caller: the CLI forwards karak log records
+            # to its reporter (cli/logs.capture_logs), and bench or a
+            # programmatic run with the executor's NullReporter still sees
+            # the record through standard logging.
+            import logging
+
+            logging.getLogger(__name__).warning(TILED_CUDA_WARNING)
         # The tiled path is host code (tile bookkeeping, registry merge,
         # process pool); per-tile cuML calls move each tile to the device.
         features = inputs["features"].to("cpu")

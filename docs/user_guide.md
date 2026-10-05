@@ -532,7 +532,18 @@ Tested on an AMD Ryzen AI 5 340 with 32 GB RAM (Linux).
   memory: with the [full-scale settings](#hdbscan-settings-for-full-scale-runs)
   `hdb` takes about 15 s on NWA 4587 on an RTX 4090. With `min_samples`
   1000, 50000 takes about a minute and 200000 runs out of memory in the
-  cuML fit. Labels agree with the cpu but are not identical.
+  cuML fit. For `hdbscan_global` with `subsample_n`, labels agree with the
+  cpu but are not identical (adjusted Rand index 1.000 at 50000 / 125 on
+  NWA 4587).
+- On full tiles, cuML can select different clusters than the cpu. With the
+  paper's tiled settings (`min_cluster_size` 100, `min_samples` 25, 1024 px
+  tiles) on NWA 4587, the cpu reproduces the published per-tile cluster
+  counts, but cuda finds 12 phases instead of 11 and 4.2 M noise pixels
+  instead of 2.8 M (adjusted Rand index 0.57 against the cpu); in one
+  733 k-pixel tile cuML finds 2 clusters where the cpu finds 8, whatever its
+  options or input precision. `hdbscan_tiled` therefore warns when it runs
+  on cuda. Use `--set hdb.device=cpu` for tiled results that match the cpu
+  or the published baseline.
 - The tiled flows on cuda fit cuML once per tile, so the same limit applies
   per tile. A full 512 px tile (up to 262 k pixels) runs out of memory with
   `min_samples` 1000 even on an empty 24 GB GPU. Set `hdb.subsample_n`
