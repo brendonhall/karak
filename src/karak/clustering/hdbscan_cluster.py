@@ -106,6 +106,13 @@ def _cuml_memory_hint(n: int, config, min_samples: int, exc) -> str:
     )
 
 
+# The cpu fit (hdbscan package) holds about this many bytes per fitted
+# point and min_samples neighbor: measured 31.3 to 33.0 on NWA 4587 features
+# (200 k to 782 k points, min_samples 250 and 1000).
+_FIT_BYTES_PER_NEIGHBOR = 32
+# Refuse a fit whose estimate exceeds this share of the available memory.
+_FIT_MEMORY_FRACTION = 0.8
+
 # approximate_predict queries 2 * min_samples neighbors per point at once
 # (an 8-byte distance and an 8-byte index each); chunks keep all workers'
 # queries together under this many bytes.
@@ -159,6 +166,32 @@ def approximate_predict_parallel(clusterer, points: np.ndarray, workers: int):
             parts = list(pool.map(_predict_chunk, chunks))
     return (np.concatenate([labels for labels, _ in parts]),
             np.concatenate([probs for _, probs in parts]))
+
+
+def fit_memory_bytes(n_fit: int, min_samples: int) -> int:
+    """Estimated peak memory of a cpu HDBSCAN fit on ``n_fit`` points."""
+    return _FIT_BYTES_PER_NEIGHBOR * n_fit * max(1, min_samples)
+
+
+def check_fit_memory(n_fit: int, n_total: int, min_samples: int,
+                     available: int | None) -> None:
+    """StageError when a cpu fit would need more than 80 % of ``available``
+    bytes (no check when the available memory is unknown), before the
+    hdbscan package allocates it and the machine starts to swap."""
+    if available is None:
+        return
+    need = fit_memory_bytes(n_fit, min_samples)
+    if need <= _FIT_MEMORY_FRACTION * available:
+        return
+    from karak.errors import StageError
+
+    raise StageError(
+        f"HDBSCAN on the cpu would need about {need / 1e9:.0f} GB to fit "
+        f"{n_fit:,} of {n_total:,} pixels with min_samples={min_samples} "
+        f"({available / 1e9:.0f} GB available). Set subsample_n (see "
+        "'HDBSCAN settings for full-scale runs' in the user guide), lower "
+        "min_samples, or run on a downsampled cube."
+    )
 
 
 def run_hdbscan(
@@ -223,6 +256,10 @@ def run_hdbscan(
     min_samples = config.min_samples if config.min_samples is not None else config.min_cluster_size
 
     fit_idx = subsample_indices(n_mineral, config.subsample_n, config.random_state)
+    from karak.memory import available_host_memory
+
+    check_fit_memory(n_mineral if fit_idx is None else fit_idx.size, n_mineral,
+                     min_samples, available_host_memory())
 
     hdbscan_kwargs: dict = {}
     if core_dist_n_jobs is not None:

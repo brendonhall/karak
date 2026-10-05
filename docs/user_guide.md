@@ -266,6 +266,13 @@ pixels (24 % at 125 against 19 % at 1000; the noise-reassignment step gives
 each of them a phase). Check any new small phase with the fingerprints
 that `karak view` prints before you treat it as a mineral.
 
+On the CPU, the HDBSCAN fit holds about 32 bytes per fitted pixel and
+`min_samples` neighbour (24 GB for 782 k pixels at 1000). Before it starts,
+the step compares that estimate with the available memory and stops with
+an error that names `subsample_n` when the fit would need more than 80 %
+of it. With the `global` values at full NWA 4587 scale the estimate is
+400 GB, so the step stops at once instead of swapping.
+
 ---
 
 ## HDF5 output layout

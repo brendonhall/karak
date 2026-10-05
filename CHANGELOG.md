@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The cpu HDBSCAN fit checks its memory before it starts: about 32 bytes
+  per fitted pixel and `min_samples` neighbour (measured 31.3 to 33.0 on
+  NWA 4587). Above 80 % of the available memory the step stops with an
+  error that names `subsample_n` and the full-scale settings, instead of
+  swapping. The `global` values at full NWA 4587 scale would need 400 GB.
+  The host-memory reader moved from `karak.flow.budget` to `karak.memory`.
 - User guide: "HDBSCAN settings for full-scale runs". On NWA 4587 at full
   scale, `subsample_n` 50000 with `min_cluster_size` = `min_samples` = 1000
   finds 5 phases; with 125 it finds the 7 phases of a fit on every pixel

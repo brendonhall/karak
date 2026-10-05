@@ -66,7 +66,8 @@ Three layers; each depends only on the one below it.
    stages or flows. Settings arrive as explicit arguments or as the
    default-free dataclass bundles in `core_params.py` (no default values:
    every run value comes from the flow via the stage). `provenance.py`
-   holds version info for run records and HDF5.
+   holds version info for run records and HDF5; `memory.py` reads the
+   host memory (the flow budget and the HDBSCAN fit check use it).
 2. **Stages** — `stages/`. One small class per operation declaring typed
    `PARAMS` (name, type, default, bounds, help) and named input/output
    `Port`s; `apply(inputs, params)` calls the core. `@register` +
