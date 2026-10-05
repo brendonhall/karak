@@ -173,8 +173,10 @@ kept up to 95% of the variance, at least 5), the HDBSCAN step (`hdb`,
 (`knn`, 5 neighbours; about 24 s on a GPU at full NWA 4587 scale), and
 then the cluster statistics (`stats`) and the chemical fingerprints (`fp`,
 from the denoised cube) of the reassigned phases. With the `global` values
-(no `subsample_n`) HDBSCAN fits every mineral pixel, which takes hours on
-the CPU and does not fit on a 24 GB GPU at full NWA 4587 scale; see
+(no `subsample_n`) HDBSCAN fits every mineral pixel. At full NWA 4587
+scale that needs about 400 GB on the CPU, so the step stops at once with
+an error that names `subsample_n`, and on a 24 GB GPU cuML runs out of
+memory; see
 [HDBSCAN settings for full-scale runs](#hdbscan-settings-for-full-scale-runs)
 for the values to set instead. The
 builtin leaves `msk.valid_mask_path` at `null` (no polygon); set it in your
