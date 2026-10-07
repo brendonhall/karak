@@ -100,11 +100,3 @@ def rare_cfg(**fields):
     from karak.stages.rare_phase import RarePhaseStage, rare_phase_config
 
     return replace(rare_phase_config(RarePhaseStage.template()), **fields)
-
-
-def refinement_cfg(**fields):
-    from dataclasses import replace
-
-    from karak.stages.refine import RefineStage, refinement_config
-
-    return replace(refinement_config(RefineStage.template()), **fields)

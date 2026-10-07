@@ -150,13 +150,15 @@ def test_labels_roundtrip_names_and_history(tmp_path):
         names={0: "Olivine", 1: "Augite", 2: "Pigeonite"},
         history=({"stage": "split_gmm", "parent": 1, "new_labels": [2],
                   "names": {2: "Pigeonite"}, "n_pixels": {2: 1},
-                  "method": "GMM on Ca", "note": "why"},),
+                  "method": "GMM on Ca", "note": "why",
+                  "component_means": {1: {"Ca": 0.1}, 2: {"Ca": 0.9}}},),
     )
     back = _roundtrip(labels, tmp_path)
     assert back.names == {0: "Olivine", 1: "Augite", 2: "Pigeonite"}
     assert back.history[0]["new_labels"] == [2]
     assert back.history[0]["names"] == {2: "Pigeonite"}
     assert back.history[0]["n_pixels"] == {2: 1}
+    assert back.history[0]["component_means"] == {1: {"Ca": 0.1}, 2: {"Ca": 0.9}}
     # old files have neither attribute
     import h5py
     with h5py.File(tmp_path / "old.h5", "w") as fh:

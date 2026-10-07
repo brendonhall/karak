@@ -142,7 +142,10 @@
           "$ref": "#/$defs/node_rare_phase"
         },
         {
-          "$ref": "#/$defs/node_refine"
+          "$ref": "#/$defs/node_split_gmm"
+        },
+        {
+          "$ref": "#/$defs/node_split_threshold"
         }
       ]
     },
@@ -1520,9 +1523,9 @@
       },
       "additionalProperties": false
     },
-    "node_refine": {
-      "title": "Phase refinement",
-      "description": "Split a composite phase: threshold-based olivine extraction, then a GMM split of the remaining target-phase pixels.",
+    "node_split_gmm": {
+      "title": "Split by GMM",
+      "description": "Split one phase with a Gaussian mixture on z-scored features (denoised channels, BSE, or a ratio A/(A+B)). The largest component can keep the parent label; new labels are named in order.",
       "type": "object",
       "required": [
         "id",
@@ -1534,10 +1537,10 @@
           "type": "string"
         },
         "type": {
-          "const": "refine"
+          "const": "split_gmm"
         },
         "params": {
-          "$ref": "#/$defs/params_refine"
+          "$ref": "#/$defs/params_split_gmm"
         },
         "ui": {
           "$ref": "#/$defs/ui"
@@ -1545,73 +1548,51 @@
       },
       "additionalProperties": false
     },
-    "params_refine": {
+    "params_split_gmm": {
       "type": "object",
       "required": [
         "target_phase",
-        "olivine_enabled",
-        "olivine_fe_threshold",
-        "olivine_ca_threshold",
-        "gmm_enabled",
-        "gmm_n_components",
-        "gmm_features",
-        "gmm_bse_weight",
-        "gmm_subsample_n",
-        "random_state"
+        "features",
+        "n_components",
+        "bse_weight",
+        "subsample_n",
+        "random_state",
+        "keep_parent",
+        "order_by",
+        "new_names",
+        "note"
       ],
       "properties": {
         "target_phase": {
           "type": "integer",
           "title": "Target phase",
-          "description": "Cluster label of the phase to refine",
-          "default": 2
+          "description": "Label to split",
+          "minimum": 0,
+          "default": 0
         },
-        "olivine_enabled": {
-          "type": "boolean",
-          "title": "Olivine extraction",
-          "default": false
+        "features": {
+          "type": "string",
+          "title": "Features",
+          "description": "Comma list of channel names, 'BSE', or ratios 'A/(A+B)'",
+          "default": ""
         },
-        "olivine_fe_threshold": {
-          "type": "number",
-          "title": "Olivine Fe threshold",
-          "minimum": 0.0,
-          "maximum": 1.0,
-          "default": 0.6
-        },
-        "olivine_ca_threshold": {
-          "type": "number",
-          "title": "Olivine Ca threshold",
-          "minimum": 0.0,
-          "maximum": 1.0,
-          "default": 0.1
-        },
-        "gmm_enabled": {
-          "type": "boolean",
-          "title": "GMM split",
-          "default": false
-        },
-        "gmm_n_components": {
+        "n_components": {
           "type": "integer",
-          "title": "GMM components",
+          "title": "Components",
           "minimum": 2,
           "default": 2
         },
-        "gmm_features": {
-          "type": "string",
-          "title": "GMM features",
-          "description": "Comma-separated channel names; 'BSE' adds backscatter",
-          "default": "Ca,Mg,Fe-K,BSE"
-        },
-        "gmm_bse_weight": {
+        "bse_weight": {
           "type": "number",
           "title": "BSE weight",
+          "description": "Multiplier on the z-scored BSE column",
           "minimum": 0.0,
           "default": 1.0
         },
-        "gmm_subsample_n": {
+        "subsample_n": {
           "type": "integer",
-          "title": "GMM subsample N",
-          "description": "Max pixels to fit GMM on; 0 = all",
+          "title": "Subsample N",
+          "description": "Max pixels fitted; 0 = all",
           "minimum": 0,
           "default": 500000
         },
@@ -1619,6 +1600,92 @@
           "type": "integer",
           "title": "Random seed",
           "default": 42
+        },
+        "keep_parent": {
+          "type": "boolean",
+          "title": "Keep parent",
+          "description": "The largest component keeps the parent label",
+          "default": true
+        },
+        "order_by": {
+          "type": "string",
+          "title": "Order by",
+          "description": "Feature whose component means (ascending) order the new labels; empty = by size, descending",
+          "default": ""
+        },
+        "new_names": {
+          "type": "string",
+          "title": "New names",
+          "description": "Comma list, one per new label, in order",
+          "default": ""
+        },
+        "note": {
+          "type": "string",
+          "title": "Note",
+          "description": "Why this split: the observation it rests on",
+          "default": ""
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_split_threshold": {
+      "title": "Split by threshold",
+      "description": "Move the pixels of one phase that satisfy a rule on denoised channel values to a new label (e.g. olivine out of a pyroxene phase with 'Fe-K > 0.6 & Ca < 0.10').",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "split_threshold"
+        },
+        "params": {
+          "$ref": "#/$defs/params_split_threshold"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_split_threshold": {
+      "type": "object",
+      "required": [
+        "target_phase",
+        "rule",
+        "new_name",
+        "note"
+      ],
+      "properties": {
+        "target_phase": {
+          "type": "integer",
+          "title": "Target phase",
+          "description": "Label to split",
+          "minimum": 0,
+          "default": 0
+        },
+        "rule": {
+          "type": "string",
+          "title": "Rule",
+          "description": "Comparisons joined by '&': 'Fe-K > 0.6 & Ca < 0.10' (operators <, <=, >, >= on channel names)",
+          "default": ""
+        },
+        "new_name": {
+          "type": "string",
+          "title": "New name",
+          "description": "Name of the new label",
+          "default": ""
+        },
+        "note": {
+          "type": "string",
+          "title": "Note",
+          "description": "Why this split: the observation it rests on",
+          "default": ""
         }
       },
       "additionalProperties": false

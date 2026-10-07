@@ -195,6 +195,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `colormap: tima:jet`, the 256-entry palette TIMA renders element maps
   with, recovered from the NWA 4587 exports (all 256 entries occur there).
   Level k inverts to exactly k/255.
+- `split_threshold` and `split_gmm` stages replace `refine`. Each names
+  its new labels in its own params, carries a `note`, and appends a
+  record to the labels' split history (parent, new labels, pixel counts,
+  method, component means). `split_gmm` can give every component a new
+  label (`keep_parent: false`) and order them by a feature's mean
+  (`order_by`), as the published phosphate split did.
 
 ### Changed
 
@@ -353,6 +359,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `rare_phase.noise_reassign_k`, which had no effect.
 - The `pydantic` dependency. Write the pipeline as a flow
   JSON instead (`karak flow init`). `karak` with no command prints usage.
+- The `refine` stage. Its core functions stay in
+  `clustering/refinement.py`; `split_threshold` and `split_gmm` call them.
 
 ## [0.2.0] - 2026-08-22
 

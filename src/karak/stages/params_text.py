@@ -8,10 +8,9 @@ Params are scalar, so lists and rules travel as strings (as
 
 from __future__ import annotations
 
-import re
+from karak.clustering.features import parse_feature  # noqa: F401  (moved to the core)
 
 _OPS = ("<=", ">=", "<", ">")
-_RATIO = re.compile(r"^\s*([^/()\s]+)\s*/\s*\(\s*([^+()\s]+)\s*\+\s*([^+()\s]+)\s*\)\s*$")
 
 
 def parse_csv(text: str | None) -> list[str]:
@@ -70,18 +69,3 @@ def parse_rule(text: str | None, name: str) -> list[tuple[str, str, float]]:
             raise ValueError(f"{name}: {clause!r} has no channel name")
         rules.append((channel, op, number))
     return rules
-
-
-def parse_feature(token: str) -> tuple[str, tuple[str, ...]]:
-    """One feature token: a channel name, ``BSE`` or a ratio ``A/(A+B)``."""
-    token = token.strip()
-    if token.upper() == "BSE":
-        return ("bse", ())
-    if "/" in token:
-        m = _RATIO.match(token)
-        if m is None or m.group(1) != m.group(2):
-            raise ValueError(f"ratio feature must look like A/(A+B), got {token!r}")
-        return ("ratio", (m.group(1), m.group(3)))
-    if not token:
-        raise ValueError("empty feature name")
-    return ("channel", (token,))

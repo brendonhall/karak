@@ -302,6 +302,8 @@ def _history_from_json(text: str) -> tuple:
         for key in ("names", "n_pixels"):
             if key in rec:
                 rec[key] = _int_keys(rec[key])
+        if "component_means" in rec:
+            rec["component_means"] = _int_keys(rec["component_means"])
         records.append(rec)
     return tuple(records)
 

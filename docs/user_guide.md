@@ -99,7 +99,8 @@ the registry; `karak schema` prints the same contract as JSON.
 | `rare_phase` | `labels:raw`, `features`, `cube:denoised`, `tiles` → `labels:raw`, `tiles` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. `accumulate` sets the precision of the rare-cluster fingerprint sums, as for `hdbscan_tiled`. On `--device cuda` the pass-2 HDBSCAN runs with cuML (NWA 4587: 92 s instead of 684 s on 16 CPU threads, the same 11 phases); the registry merge stays on the host. Pixels of deferred tiles are skipped (they would otherwise form one block of the pass-2 majority phase). |
 | `noise_assign` | `labels:raw`, `features` → `labels:cleaned` | Distance-weighted k-NN reassignment of every remaining unlabeled pixel. On `--device cuda` a CuPy brute-force search with the same vote runs on the GPU (NWA 4587: 24 s instead of 281 s, identical labels); labels can differ from the cpu only where two neighbor distances tie within float32 precision. |
 | `name_phases` | `labels:cleaned` → `labels:cleaned` | Attaches mineral names (`names`: `'0: Ilmenite; 1: Silica'`) that travel with the labels to the fingerprints, the QC figures and the export (`clusters/mineral_names`). Fails validation if a named label is not in the data. |
-| `refine` | `labels:cleaned`, `cube:denoised`, `bse` → `labels:cleaned` | Composite-phase splitting: threshold-based olivine extraction, then a GMM split of the target phase. |
+| `split_threshold` | `labels:cleaned`, `cube:denoised` → `labels:cleaned` | Moves the pixels of one phase that satisfy a rule on denoised channels (`'Fe-K > 0.6 & Ca < 0.10'`) to a new, named label. Appends a record to the split history. |
+| `split_gmm` | `labels:cleaned`, `cube:denoised` (+`bse`) → `labels:cleaned` | Gaussian mixture on z-scored features (channels, `BSE`, ratios `A/(A+B)`). `keep_parent` lets the largest component keep the parent label; `order_by` orders the new labels by a feature's component mean. |
 | `cluster_stats` | `labels:cleaned` → `stats` | Cluster counts, sizes, and noise fraction. |
 | `fingerprints` | `labels:cleaned`, `cube:denoised` → `fingerprints` | Per-cluster mean/std element intensities from the denoised cube, with cosine-similar pairs flagged. `accumulate` sets the precision of the mean and standard-deviation sums: `float64` (default) is accurate; `float32` reproduces the published baseline, which drifts by a few percent on clusters of millions of pixels. |
 | `export_h5` | ten optional inputs → sink | Writes the provenance HDF5 file; only connected groups are written (see [HDF5 output layout](#hdf5-output-layout)). |
@@ -396,7 +397,7 @@ change:
 ```bash
 karak run --builtin global --input data/ --out output/s1   # first run: all stages
 karak run --builtin global --input data/ --out output/s1   # warm: only sinks re-run
-karak run --builtin global --set refine.target_phase=3 ... # only refine + downstream
+karak run --builtin paper --set weath.target_phase=3 ...  # only weath + downstream
 karak run ... --no-cache                                   # force a clean run
 ```
 
