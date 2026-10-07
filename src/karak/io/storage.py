@@ -697,6 +697,24 @@ def save_mineral_names(h5_path: str | Path, mineral_names: dict[int, str]) -> No
     )
 
 
+def save_hires_labels(h5_path, image, *, ratio, names, downsample_factor,
+                      header_trim_px, left_trim_px, compression) -> None:
+    """Write a full-resolution sub-phase map to ``clusters/hires/labels``."""
+    with h5py.File(h5_path, "a") as f:
+        grp = f.require_group("clusters").require_group("hires")
+        if "labels" in grp:
+            del grp["labels"]
+        data = np.asarray(image, dtype=np.int16)
+        ds = grp.create_dataset("labels", data=data,
+                                **dataset_options(data, compression, shuffle=False))
+        ds.attrs["ratio"] = int(ratio)
+        ds.attrs["names"] = json.dumps({str(k): v for k, v in names.items()})
+        ds.attrs["downsample_factor"] = int(downsample_factor)
+        ds.attrs["header_trim_px"] = int(header_trim_px)
+        ds.attrs["left_trim_px"] = int(left_trim_px)
+    logger.info("Saved hires labels %s to clusters/hires/labels", data.shape)
+
+
 def save_subclustering(h5_path: str | Path, history: list[dict]) -> None:
     """Write the split history to ``clusters/subclustering`` attributes:
     ``history`` (the JSON list) and one ``split_NN`` attribute per record,

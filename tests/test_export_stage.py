@@ -268,3 +268,21 @@ def test_export_history_record_with_numpy_values(tmp_path, payloads):
     assert rec["component_means"]["1"]["Ca"] == pytest.approx(0.5)
     assert rec["n_pixels"]["1"] == 3
     assert rec["new_labels"] == [1]
+
+
+def test_export_writes_hires_labels(tmp_path, payloads):
+    from karak.stages.payloads import HiresLabels
+
+    hires = HiresLabels(image=np.full((16, 16), -1, dtype=np.int16), ratio=2,
+                        names={5: "A"}, downsample_factor=1, header_trim_px=3, left_trim_px=0)
+    path = tmp_path / "out.h5"
+    get("export_h5")().run(
+        {"labels": payloads["labels"], "stats": payloads["stats"],
+         "features": payloads["features"], "labels_hires": hires},
+        {"path": str(path), "flow_json": _flow_json(), "compression": "gzip"},
+    )
+    with h5py.File(path, "r") as fh:
+        ds = fh["clusters/hires/labels"]
+        assert ds.dtype == np.int16 and ds.shape == (16, 16)
+        assert ds.attrs["ratio"] == 2 and ds.attrs["header_trim_px"] == 3
+        assert json.loads(ds.attrs["names"]) == {"5": "A"}

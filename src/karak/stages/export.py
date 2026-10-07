@@ -73,6 +73,8 @@ class ExportH5Stage(Stage):
              help="cluster statistics stored as clusters/ attributes"),
         Port("tiles", required=False,
              help="written to clusters/tiled/ (tile metadata + registry)"),
+        Port("labels_hires", required=False,
+             help="written to clusters/hires/labels (full-resolution sub-phase map)"),
     ]
     OUTPUTS: list = []
     PARAMS = [
@@ -178,5 +180,14 @@ class ExportH5Stage(Stage):
                 storage.save_tiled_metadata(
                     path, list(tiles.tile_results), list(tiles.phase_registry)
                 )
+
+        hires = inputs.get("labels_hires")
+        if hires is not None:
+            storage.save_hires_labels(
+                path, hires.image, ratio=hires.ratio, names=hires.names,
+                downsample_factor=hires.downsample_factor,
+                header_trim_px=hires.header_trim_px, left_trim_px=hires.left_trim_px,
+                compression=compression,
+            )
 
         return {}
