@@ -7,10 +7,14 @@ that made it, in the flow file and in the exported HDF5.
 
 from __future__ import annotations
 
+import logging
+
 from karak.stages.base import Param, Port, Stage, StageError
 from karak.stages.params_text import parse_csv, parse_feature, parse_rule
 from karak.stages.payloads import LabelState, Space
 from karak.stages.registry import register
+
+logger = logging.getLogger(__name__)
 
 _NOTE = Param("note", "str", "", "Note", "Why this split: the observation it rests on")
 
@@ -164,6 +168,11 @@ class SplitGmmStage(Stage):
             raise StageError(f"split_gmm: {exc}") from exc
         given = parse_csv(params["new_names"])
         new_names = {label: given[i] for i, label in enumerate(new_labels) if i < len(given)}
+        if len(given) > len(new_labels):
+            logger.warning(
+                "split_gmm: %d name(s) given for %d new label(s); dropped %s",
+                len(given), len(new_labels), given[len(new_labels):],
+            )
         names = {**labels.names, **new_names}
         if not params["keep_parent"] and new_labels:
             names.pop(params["target_phase"], None)   # the parent emptied

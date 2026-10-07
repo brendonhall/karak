@@ -225,8 +225,10 @@ The builtin `global` flow runs the standard sequence:
 In flow terms these are the stages `load_elements → mask → denoise →
 normalize → pca → hdbscan_global → noise_assign → cluster_stats →
 fingerprints → export_h5`, plus QC figure sinks. The `tiled` flow swaps in
-`hdbscan_tiled`; `tiled-rare` adds a `rare_phase` stage; a `refine` stage
-(olivine extraction + GMM split) can be added to any flow. Optional
+`hdbscan_tiled`; `tiled-rare` adds a `rare_phase` stage. `name_phases`,
+`split_threshold` and `split_gmm` attach names and split composite
+phases; the `paper` flow uses them for the published olivine, weathering
+and phosphate splits (PR 5 adds the hires split). Optional
 post-run stages `qc_named_phase_map` and the notebook helpers
 `save_mineral_names`/`load_mineral_names` attach researcher-assigned
 mineral names.
@@ -265,14 +267,16 @@ prints what it added. Some parameters beyond the basics:
 "params": {"min_cluster_size": 50, "subsample_n": 500000, "...": "..."}
 ```
 
-### Post-clustering refinement (`refine` node)
+### Splitting composite phases (`split_threshold`, `split_gmm`)
 
 ```json
-"params": {"target_phase": 2,
-           "olivine_enabled": true, "olivine_fe_threshold": 0.6,
-           "olivine_ca_threshold": 0.1,
-           "gmm_enabled": true, "gmm_n_components": 2,
-           "gmm_features": "Ca,Mg,Fe-K,BSE", "...": "..."}
+{"id": "oliv", "type": "split_threshold",
+ "params": {"target_phase": 2, "rule": "Fe-K > 0.6 & Ca < 0.10",
+            "new_name": "Ferroan Olivine", "note": "..."}}
+{"id": "phos", "type": "split_gmm",
+ "params": {"target_phase": 7, "features": "Cl,Na,Mg,F", "n_components": 2,
+            "keep_parent": false, "order_by": "Cl",
+            "new_names": "Merrillite,Chlorapatite", "...": "..."}}
 ```
 
 ## Documentation
