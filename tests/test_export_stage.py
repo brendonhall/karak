@@ -226,3 +226,25 @@ def test_dataset_options_chunks_and_filters():
     assert dataset_options(np.zeros((0, 2)), "gzip", shuffle=False) == {}
     with pytest.raises(ValueError, match="compression"):
         dataset_options(cube, "zstd", shuffle=False)
+
+
+def test_export_writes_names_and_history(tmp_path, payloads):
+    from karak.io.storage import load_mineral_names
+
+    labels = payloads["labels"].replace(
+        names={0: "Olivine", 1: "Augite"},
+        history=({"stage": "split_gmm", "parent": 0, "new_labels": [1],
+                  "names": {1: "Augite"}, "n_pixels": {1: 3},
+                  "method": "GMM on Ca", "note": "why"},),
+    )
+    path = tmp_path / "out.h5"
+    get("export_h5")().run(
+        {"labels": labels, "stats": payloads["stats"], "features": payloads["features"]},
+        {"path": str(path), "flow_json": _flow_json(), "compression": "none"},
+    )
+    assert load_mineral_names(path) == {0: "Olivine", 1: "Augite"}
+    with h5py.File(path, "r") as fh:
+        sub = fh["clusters/subclustering"]
+        assert json.loads(sub.attrs["history"])[0]["new_labels"] == [1]
+        assert json.loads(sub.attrs["split_00"])["parent"] == 0
+        assert fh["clusters"].attrs["cluster_1_name"] == "Augite"
