@@ -27,7 +27,8 @@ class RarePhaseStage(Stage):
     description = (
         "Recluster still-unassigned pixels with more sensitive HDBSCAN "
         "parameters; novel clusters join the phase registry. Presence of "
-        "this stage in a flow is what enables the two-pass workflow."
+        "this stage in a flow is what enables the two-pass workflow. "
+        "Pixels of tiles that pass 1 deferred are left to noise_assign."
     )
     INPUTS = [
         Port("labels", space=LabelState.RAW,
@@ -65,6 +66,11 @@ class RarePhaseStage(Stage):
               choices=("float64", "float32")),
     ]
 
+    @classmethod
+    def recipe_revision(cls, params: dict) -> str | None:
+        # 2026-10-06: pixels of deferred tiles skip pass 2
+        return "deferred-1"
+
     def apply(self, inputs: dict, params: dict) -> dict:
         from karak.accel import resolve_workers
         from karak.clustering.tiling import recluster_unassigned
@@ -90,6 +96,7 @@ class RarePhaseStage(Stage):
             # for the pass-2 HDBSCAN (same labels)
             workers=resolve_workers(self.workers),
             device=params["device"],
+            exclude_indices=tiles.deferred_pixels,
         )
         return {
             "labels": labels.replace(labels=updated_labels),

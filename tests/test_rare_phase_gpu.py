@@ -49,7 +49,7 @@ def test_stage_passes_the_device(monkeypatch):
     seen = []
 
     def fake(features, labels, cube, indices, registry, rare, *, random_state,
-             workers, device):
+             workers, device, exclude_indices=None):
         seen.append(device)
         return labels, registry, 0, int((labels == -1).sum())
 

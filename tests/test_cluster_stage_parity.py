@@ -415,3 +415,51 @@ def test_fingerprints_parity(denoised_cube, chain):
             fp.data["fingerprints"][label]["mean"], entry["mean"]
         )
     assert fp.similar_pairs == expected_pairs
+
+
+# ---------------------------------------------------------------------------
+# rare_phase skips the pixels of deferred tiles
+# ---------------------------------------------------------------------------
+
+def _tiled_outputs(features_payload, denoised_cube, min_clusters):
+    return get("hdbscan_tiled")().run(
+        {"features": features_payload, "cube": denoised_cube},
+        {"min_cluster_size": 100, "random_state": 0,
+         "tile_size": 32, "min_clusters_per_tile": min_clusters},
+    )
+
+
+def test_rare_phase_leaves_deferred_pixels_unassigned(features_payload, denoised_cube):
+    out = _tiled_outputs(features_payload, denoised_cube, min_clusters=2)
+    deferred = out["tiles"].deferred_pixels
+    assert deferred.size > 0
+    rare = get("rare_phase")().run(
+        {"labels": out["labels"], "features": features_payload,
+         "cube": denoised_cube, "tiles": out["tiles"]},
+        {"min_cluster_size": 20, "random_state": 0},
+    )
+    assert (rare["labels"].labels[deferred] == -1).all()
+    # the deferred pixels pass through to the payload unchanged
+    np.testing.assert_array_equal(rare["tiles"].deferred_pixels, deferred)
+    # and noise_assign gives every one of them a label
+    knn = get("noise_assign")().run(
+        {"labels": rare["labels"], "features": features_payload}, {"k": 5})
+    assert (knn["labels"].labels[deferred] >= 0).all()
+
+
+def test_rare_phase_with_only_deferred_noise_returns_input_labels(
+        features_payload, denoised_cube):
+    """Every -1 pixel sits in a deferred tile: no HDBSCAN fit on zero rows,
+    labels come back unchanged."""
+    out = _tiled_outputs(features_payload, denoised_cube, min_clusters=2)
+    labels = out["labels"]
+    forced = labels.labels.copy()
+    forced[forced == -1] = 0                      # assign every real noise pixel
+    forced[out["tiles"].deferred_pixels] = -1     # keep only the deferred ones
+    labels = labels.replace(labels=forced)
+    rare = get("rare_phase")().run(
+        {"labels": labels, "features": features_payload,
+         "cube": denoised_cube, "tiles": out["tiles"]},
+        {"min_cluster_size": 20, "random_state": 0},
+    )
+    np.testing.assert_array_equal(rare["labels"].labels, forced)

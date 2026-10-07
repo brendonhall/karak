@@ -45,7 +45,7 @@ def test_rare_phase_stage_passes_the_workers(monkeypatch):
     seen = []
 
     def fake(features, labels, cube, indices, registry, rare, *, random_state, workers,
-             device):
+             device, exclude_indices=None):
         seen.append(workers)
         return labels, registry, 0, int((labels == -1).sum())
 

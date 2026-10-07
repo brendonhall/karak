@@ -370,6 +370,7 @@ def recluster_unassigned(
     random_state: int,
     workers: int = 1,
     device: str = "cpu",
+    exclude_indices: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[PhaseEntry], int, int]:
     """Recluster unassigned pixels to discover rare phases (Pass 2).
 
@@ -378,6 +379,12 @@ def recluster_unassigned(
     count. ``device="cuda"`` runs the pass-2 HDBSCAN with cuML (a subsample
     fit and batched prediction when ``subsample_n`` is set); the
     fingerprints and the registry merge stay on the host.
+
+    ``exclude_indices`` (indices into the mineral arrays) are left out of
+    the pass-2 fit, prediction and registry merge and stay -1: the pixels
+    of tiles that pass 1 deferred, which the kNN step fills from their
+    neighbours instead (a tile with too few clusters otherwise becomes
+    one block of the pass-2 majority phase).
 
     Collects all pixels with label == -1, runs HDBSCAN with more sensitive
     parameters (lower min_cluster_size), and matches discovered clusters
@@ -415,7 +422,8 @@ def recluster_unassigned(
     n_rare_phases : int
         Number of new rare phases discovered.
     n_still_unassigned : int
-        Number of pixels still unassigned after Pass 2.
+        Number of pixels still unassigned after Pass 2, including the
+        excluded pixels.
     """
     import gc
 
@@ -425,11 +433,16 @@ def recluster_unassigned(
     rare_cfg = rare
     _check_accumulate(rare_cfg.accumulate)
     unassigned_mask = raw_labels == -1
+    n_excluded = 0
+    if exclude_indices is not None and exclude_indices.size:
+        n_excluded = int(unassigned_mask[exclude_indices].sum())
+        unassigned_mask[exclude_indices] = False
+        logger.info("Pass 2: %d pixels of deferred tiles left to kNN", n_excluded)
     n_unassigned = int(np.sum(unassigned_mask))
 
     if n_unassigned == 0:
         logger.info("No unassigned pixels for Pass 2")
-        return raw_labels.copy(), phase_registry, 0, 0
+        return raw_labels.copy(), phase_registry, 0, n_excluded
 
     logger.info(
         "Pass 2: reclustering %d unassigned pixels (min_cluster_size=%d)",
@@ -470,7 +483,7 @@ def recluster_unassigned(
 
     if n_pass2_clusters == 0:
         logger.info("Pass 2: no clusters found in unassigned pixels")
-        return raw_labels.copy(), phase_registry, 0, n_unassigned
+        return raw_labels.copy(), phase_registry, 0, n_unassigned + n_excluded
 
     # Load denoised cube on-demand if an HDF5 path was given
     if isinstance(denoised_cube, (str, Path)):

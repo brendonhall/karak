@@ -1378,7 +1378,7 @@
     },
     "node_rare_phase": {
       "title": "Rare phases",
-      "description": "Recluster still-unassigned pixels with more sensitive HDBSCAN parameters; novel clusters join the phase registry. Presence of this stage in a flow is what enables the two-pass workflow.",
+      "description": "Recluster still-unassigned pixels with more sensitive HDBSCAN parameters; novel clusters join the phase registry. Presence of this stage in a flow is what enables the two-pass workflow. Pixels of tiles that pass 1 deferred are left to noise_assign.",
       "type": "object",
       "required": [
         "id",
