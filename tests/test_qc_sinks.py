@@ -206,3 +206,44 @@ def test_qc_fingerprints_uses_the_carried_names(tmp_path, payloads, monkeypatch)
         {"figure_dir": str(tmp_path), "mineral_names": '{"0": "Fo"}'},
     )
     assert seen["names"] == {0: "Fo"}
+
+
+def _gappy(payloads):
+    """Labels 0, 1, 3: a split emptied label 2, and the largest label (3)
+    exceeds the cluster count (3)."""
+    fp = payloads["fingerprints"]
+    d = dict(fp.data)
+    d["fingerprints"] = {
+        0: d["fingerprints"][0], 1: d["fingerprints"][1],
+        3: {"mean": np.array([0.3, 0.3]), "std": np.array([0.02, 0.02]),
+            "n_pixels": 10, "area_pct": 1.0},
+    }
+    d["n_clusters"] = 3
+    return Fingerprints(data=d, similar_pairs=[])
+
+
+def test_qc_fingerprints_with_non_contiguous_labels(tmp_path, payloads):
+    _run("qc_fingerprints", {"fingerprints": _gappy(payloads)}, tmp_path)
+
+
+def test_named_phase_map_with_non_contiguous_labels(tmp_path):
+    from karak.qc.figures import generate_named_phase_map
+
+    image = np.array([[0, 1, 3], [3, -1, 0]], dtype=np.int32)
+    out = generate_named_phase_map(
+        image, np.zeros(image.shape, dtype=np.float32),
+        {0: "a", 1: "b", 3: "c"}, tmp_path,
+    )
+    assert out and list(tmp_path.glob("*.png"))
+
+
+def test_phase_map_with_non_contiguous_labels(tmp_path):
+    from karak.qc.figures import generate_phase_map
+
+    cleaned = np.array([[0, 1, 3], [3, 1, 0]], dtype=np.int32)
+    raw = np.array([[0, -1, 3], [3, 1, -1]], dtype=np.int32)
+    out = generate_phase_map(
+        raw, cleaned, np.zeros(cleaned.shape, dtype=np.float32),
+        {"n_clusters": 3, "noise_pct": 0.0}, tmp_path,
+    )
+    assert out and list(tmp_path.glob("*.png"))
