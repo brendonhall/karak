@@ -68,8 +68,9 @@ def hires_split(
 
     New labels are ``max(labels) + 1`` onwards, ordered by ascending
     component mean of the feature. A working pixel takes the majority label
-    of its defined children; a tie goes to the child at ``(r * ds, c * ds)``
-    when that child is defined, else to the smallest tied label; a pixel
+    of its defined children; a tie goes to the label of the child at
+    ``(r * ds, c * ds)`` when that label is among the tied labels, else to
+    the smallest tied label; a pixel
     with no defined child keeps its parent label.
     """
     from sklearn.mixture import GaussianMixture
@@ -92,7 +93,7 @@ def hires_split(
     sample = values[use]
     method = f"GMM {n_components}-component on {feature} at {ds}x resolution"
     if sample.size < n_components * 10:
-        raise ValueError(f"split_hires: only {sample.size} defined pixels in phases "
+        raise ValueError(f"hires_split: only {sample.size} defined pixels in phases "
                          f"{target_phases}, need {n_components * 10}")
 
     rng = np.random.default_rng(random_state)
@@ -120,7 +121,10 @@ def hires_split(
     winner = np.asarray(new_labels)[counts.argmax(axis=0)]          # smallest on ties
     tied = (counts == best[None]).sum(axis=0) > 1
     top_left = padded[0::ds, 0::ds]
-    winner = np.where(tied & (top_left >= 0), top_left, winner)
+    tl_idx = np.clip(top_left - first, 0, len(new_labels) - 1)
+    tl_count = np.take_along_axis(counts, tl_idx[None], 0)[0]
+    use_tl = tied & (top_left >= 0) & (tl_count == best)
+    winner = np.where(use_tl, top_left, winner)
     result_img = np.where(region & (best > 0), winner, label_img)
 
     out = labels.copy()
