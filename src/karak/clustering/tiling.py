@@ -96,6 +96,7 @@ class TileResult:
     local_labels: np.ndarray  # raw HDBSCAN labels for this tile
     merge_map: dict[int, int]  # local_label -> global_id
     new_phases: list[int]  # global_ids of phases discovered in this tile
+    deferred: bool = False  # True: too few clusters, every pixel left to kNN
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +179,26 @@ def compute_tile_grid(
 # ---------------------------------------------------------------------------
 # Per-tile fingerprint computation
 # ---------------------------------------------------------------------------
+
+
+def resolve_min_tile_pixels(tiled: TiledConfig, hdbscan: HDBSCANConfig) -> int:
+    """``min_tile_pixels`` of the tiled config, or twice ``min_cluster_size``
+    when it is None. One rule for the clustering and for every consumer
+    that recomputes the grid (``hdbscan_tiled``, ``qc_tiled``)."""
+    if tiled.min_tile_pixels is not None:
+        return tiled.min_tile_pixels
+    return 2 * hdbscan.min_cluster_size
+
+
+def deferred_pixel_indices(tiles: list[TileSpec],
+                           tile_results: list[TileResult]) -> np.ndarray:
+    """Sorted indices (into the mineral arrays) of every pixel of a
+    deferred tile; empty when no tile was deferred."""
+    deferred = {tr.tile_id for tr in tile_results if tr.deferred}
+    parts = [t.pixel_indices for t in tiles if t.tile_id in deferred]
+    if not parts:
+        return np.zeros(0, dtype=np.int64)
+    return np.sort(np.concatenate(parts).astype(np.int64))
 
 
 def _check_accumulate(accumulate: str) -> None:
@@ -603,9 +624,7 @@ def run_tiled_hdbscan(
     n_mineral = len(mineral_indices)
 
     # Resolve min_tile_pixels
-    min_tile_pixels = tiled_cfg.min_tile_pixels
-    if min_tile_pixels is None:
-        min_tile_pixels = 2 * hdb_cfg.min_cluster_size
+    min_tile_pixels = resolve_min_tile_pixels(tiled_cfg, hdb_cfg)
 
     # Step 1: Compute tile grid
     tiles = compute_tile_grid(
@@ -702,6 +721,7 @@ def run_tiled_hdbscan(
                     local_labels=tile_labels,
                     merge_map={},
                     new_phases=[],
+                    deferred=True,
                 )
             )
 

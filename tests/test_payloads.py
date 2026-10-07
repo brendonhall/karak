@@ -177,6 +177,53 @@ def test_tiled_artifacts_h5_roundtrip(tmp_path):
     assert pe.tile_contributions == {0: 6}
 
 
+def test_tiled_artifacts_roundtrip_deferred_fields(tmp_path):
+    from karak.clustering.tiling import TileResult
+
+    artifacts = TiledArtifacts(
+        tile_results=(
+            TileResult(tile_id=0, n_pixels=3, n_clusters=1, n_noise=3,
+                       local_labels=np.array([0, 0, 0], dtype=np.int32),
+                       merge_map={}, new_phases=[], deferred=True),
+            TileResult(tile_id=1, n_pixels=2, n_clusters=2, n_noise=0,
+                       local_labels=np.array([0, 1], dtype=np.int32),
+                       merge_map={0: 0, 1: 1}, new_phases=[0, 1]),
+        ),
+        phase_registry=(),
+        tile_size=32,
+        deferred_pixels=np.array([0, 1, 2], dtype=np.int64),
+    )
+    back = _roundtrip(artifacts, tmp_path)
+    assert back.tile_results[0].deferred is True
+    assert back.tile_results[1].deferred is False
+    assert back.deferred_tiles == (0,)
+    np.testing.assert_array_equal(back.deferred_pixels, [0, 1, 2])
+
+
+def test_tiled_artifacts_without_deferred_fields_loads_as_none_deferred(tmp_path):
+    """Cache files written before the deferred-tile rule have no such
+    attributes; they load with no deferred tiles and no deferred pixels."""
+    import h5py
+
+    from karak.clustering.tiling import TileResult
+
+    artifacts = TiledArtifacts(
+        tile_results=(TileResult(tile_id=0, n_pixels=1, n_clusters=1, n_noise=0,
+                                 local_labels=np.array([0], dtype=np.int32),
+                                 merge_map={0: 0}, new_phases=[0]),),
+        phase_registry=(), tile_size=32,
+    )
+    path = tmp_path / "old.h5"
+    with h5py.File(path, "w") as fh:
+        artifacts.to_h5(fh.create_group("p"))
+        del fh["p/tiles/0"].attrs["deferred"]        # as an old file has
+        del fh["p/deferred_pixels"]
+    with h5py.File(path, "r") as fh:
+        back = payload_from_h5(fh["p"])
+    assert back.deferred_tiles == ()
+    assert back.deferred_pixels.size == 0
+
+
 def test_cluster_stats_h5_roundtrip(tmp_path):
     stats = ClusterStats(stats={"n_clusters": 3, "noise_pct": 1.5})
     back = _roundtrip(stats, tmp_path)
