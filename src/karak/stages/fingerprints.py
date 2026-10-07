@@ -48,6 +48,8 @@ class FingerprintsStage(Stage):
             list(cube.element_names),
             accumulate=params["accumulate"],
         )
+        if labels.names:
+            data["names"] = dict(labels.names)
         pairs = flag_similar_clusters(
             data, threshold=params["similarity_threshold"]
         )

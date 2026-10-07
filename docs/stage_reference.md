@@ -389,7 +389,7 @@ Per-cluster chemical fingerprint chart.
 | name | type | default | bounds / choices | help |
 |------|------|---------|------------------|------|
 | `figure_dir` | str | `{out}/figures` | - | Directory the diagnostic figures are written to |
-| `mineral_names` | str | `None` | - | JSON mapping of cluster id to name, e.g. {"0": "olivine"} |
+| `mineral_names` | str | `None` | - | JSON mapping of cluster id to name, e.g. {"0": "olivine"}; null/{} = the names carried by the labels |
 
 ## `qc_mask` — QC: mask
 
@@ -430,7 +430,7 @@ Final phase map with researcher-assigned mineral names.
 | name | type | default | bounds / choices | help |
 |------|------|---------|------------------|------|
 | `figure_dir` | str | `{out}/figures` | - | Directory the diagnostic figures are written to |
-| `mineral_names` | str | `{}` | - | JSON mapping of cluster id to name, e.g. {"0": "olivine"} |
+| `mineral_names` | str | `{}` | - | JSON mapping of cluster id to name, e.g. {"0": "olivine"}; null/{} = the names carried by the labels |
 
 ## `qc_normalize` — QC: normalize
 

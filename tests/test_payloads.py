@@ -268,8 +268,10 @@ def test_fingerprints_h5_roundtrip(tmp_path):
         "n_clusters": 1,
         "n_mineral_pixels": 10,
     }
+    data["names"] = {0: "A"}
     payload = Fingerprints(data=data, similar_pairs=[(0, 1, 0.97)])
     back = _roundtrip(payload, tmp_path)
+    assert back.data["names"] == {0: "A"}
     assert set(back.data["fingerprints"]) == {0}  # int keys survive
     np.testing.assert_allclose(back.data["fingerprints"][0]["mean"], [0.1, 0.2])
     assert back.data["element_names"] == ["Fe", "Mg"]

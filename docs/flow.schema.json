@@ -1155,7 +1155,7 @@
             "null"
           ],
           "title": "Mineral names",
-          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}",
+          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}; null/{} = the names carried by the labels",
           "default": null
         }
       },
@@ -1252,7 +1252,7 @@
         "mineral_names": {
           "type": "string",
           "title": "Mineral names",
-          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}",
+          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}; null/{} = the names carried by the labels",
           "default": "{}"
         }
       },

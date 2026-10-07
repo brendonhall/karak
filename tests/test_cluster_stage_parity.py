@@ -463,3 +463,15 @@ def test_rare_phase_with_only_deferred_noise_returns_input_labels(
         {"min_cluster_size": 20, "random_state": 0},
     )
     np.testing.assert_array_equal(rare["labels"].labels, forced)
+
+
+def test_fingerprints_carry_label_names(denoised_cube, chain):
+    cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5, device="cpu")
+    payload = Labels(
+        labels=cleaned, probabilities=chain["probabilities"],
+        mineral_indices=chain["mineral_indices"],
+        image_shape=chain["shape"], state=LabelState.CLEANED,
+        names={int(cleaned[0]): "First"},
+    )
+    out = get("fingerprints")().run({"labels": payload, "cube": denoised_cube}, {})
+    assert out["fingerprints"].data["names"] == {int(cleaned[0]): "First"}

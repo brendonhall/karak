@@ -535,6 +535,8 @@ class Fingerprints(_Replaceable):
             }
         if "element_order" in data:
             data["element_order"] = np.asarray(data["element_order"])
+        if "names" in data:
+            data["names"] = {int(k): v for k, v in data["names"].items()}
         pairs = [
             tuple(pair)
             for pair in json.loads(group.attrs["similar_pairs"])

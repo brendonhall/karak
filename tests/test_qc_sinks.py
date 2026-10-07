@@ -166,3 +166,43 @@ def test_qc_named_phase_map(tmp_path, payloads):
     _run("qc_named_phase_map",
          {"labels": payloads["labels"], "bse": payloads["bse"]},
          tmp_path, {"mineral_names": '{"0": "olivine", "1": "augite"}'})
+
+
+def test_qc_named_phase_map_uses_the_label_names(tmp_path, payloads, monkeypatch):
+    seen = {}
+
+    def fake(_image, _bse, names, _figure_dir):
+        seen["names"] = names
+
+    monkeypatch.setattr("karak.qc.figures.generate_named_phase_map", fake)
+    labels = payloads["labels"].replace(names={0: "Olivine", 1: "Augite"})
+    get("qc_named_phase_map")().run(
+        {"labels": labels, "bse": payloads["bse"]},
+        {"figure_dir": str(tmp_path), "mineral_names": "{}"},
+    )
+    assert seen["names"] == {0: "Olivine", 1: "Augite"}
+    get("qc_named_phase_map")().run(
+        {"labels": labels, "bse": payloads["bse"]},
+        {"figure_dir": str(tmp_path), "mineral_names": '{"0": "Fo"}'},
+    )
+    assert seen["names"] == {0: "Fo"}
+
+
+def test_qc_fingerprints_uses_the_carried_names(tmp_path, payloads, monkeypatch):
+    seen = {}
+
+    def fake(_data, _figure_dir, mineral_names=None):
+        seen["names"] = mineral_names
+
+    monkeypatch.setattr("karak.qc.figures.generate_fingerprint_chart", fake)
+    fp = payloads["fingerprints"]
+    fp = fp.replace(data={**fp.data, "names": {0: "Olivine"}})
+    get("qc_fingerprints")().run(
+        {"fingerprints": fp}, {"figure_dir": str(tmp_path), "mineral_names": None}
+    )
+    assert seen["names"] == {0: "Olivine"}
+    get("qc_fingerprints")().run(
+        {"fingerprints": fp},
+        {"figure_dir": str(tmp_path), "mineral_names": '{"0": "Fo"}'},
+    )
+    assert seen["names"] == {0: "Fo"}
