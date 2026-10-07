@@ -31,6 +31,9 @@ everything downstream carry new hashes.
 pixels to noise_assign (recipe revision "deferred-1" on both), so in tiled,
 tiled-rare and paper `hdb`, `rare` and everything downstream carry new
 hashes; global and stepwise do not change.
+2026-10-06: paper gains src_hires, names, oliv, weath, pyx and phos; the
+consumers of the final labels (stats, fp) now hash from phos. Other flows
+unchanged.
 """
 
 from __future__ import annotations
@@ -60,6 +63,7 @@ GOLDEN = {
     # paper: tiled-rare with the published NWA 4587 settings (own load
     # settings, so no hash is shared with the other flows)
     "paper": {"src": "0ade69c7021c1667b3362450f838bac0",
+              "src_hires": "75ff6e71c096687d490e501e3078fa92",
               "msk": "a299625ddfd762b1af547bdbfca0a0b1",
               "dn": "b6aded777b5cfb0fc67e895c3c845d19",
               "nrm": "da983310b20bcb02b559790f0e03dbf4",
@@ -67,8 +71,13 @@ GOLDEN = {
               "hdb": "edd534d8d3b1669e1edac6db07d3cfc6",
               "rare": "067bd67ac63614b485f69adc50b70803",
               "knn": "1d8f7101bf77f325d41b0a7a7a5af8e1",
-              "stats": "efc20f0d12733e0e41dd44a45769ef76",
-              "fp": "e66f8b307d97721383b92660225501b0"},
+              "names": "805bc7900a5b41c2b282f1c6167a21a9",
+              "oliv": "7c89e275705fe4acc0e08381a7ec2e78",
+              "weath": "f8ce6634025c3d8d32beb987941d2f6d",
+              "pyx": "717f7bfa233882ff20c9af3942d58f90",
+              "phos": "7ccb08d8fefda5f4149f9c6d7c810565",
+              "stats": "509a781dc7721fb59c5f68f811c808f2",
+              "fp": "f29751506c4859f3eb51d7f3cdaefbe3"},
     "global": {**_SHARED, "hdb": _GLOBAL_HDB, "knn": _GLOBAL_KNN,
                "stats": _GLOBAL_STATS,
                "fp": _GLOBAL_FP},
