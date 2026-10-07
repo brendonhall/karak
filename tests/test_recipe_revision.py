@@ -107,18 +107,23 @@ def test_hdbscan_cuda_subsample_recipes_carry_a_revision():
 
     for cls in (HdbscanGlobalStage, HdbscanTiledStage):
         params = cls.template()
+        # hdbscan_tiled always carries "deferred-1" (2026-10-06); the cuda
+        # subsample tag shows only when it applies
+        base = "deferred-1" if cls is HdbscanTiledStage else None
         assert cls.recipe_revision({**params, "device": "cpu",
-                                    "subsample_n": 500}) is None
+                                    "subsample_n": 500}) == base
         assert cls.recipe_revision({**params, "device": "cuda",
-                                    "subsample_n": 0}) is None
-        assert cls.recipe_revision({**params, "device": "cuda",
-                                    "subsample_n": 500}) is not None
+                                    "subsample_n": 0}) == base
+        assert "cuda-subsample-1" in cls.recipe_revision(
+            {**params, "device": "cuda", "subsample_n": 500})
 
 
 def test_builtin_recipes_do_not_change():
-    # the shipped flows run hdb on cpu with subsample_n 0: no revision
+    # the shipped flows run hdb on cpu with subsample_n 0: no cuda revision;
+    # the tiled ones carry "deferred-1" (2026-10-06), global none
     from karak.flow.builtins import builtin_flow
 
-    for name in ("global", "tiled", "tiled-rare"):
+    for name, expected in (("global", None), ("tiled", "deferred-1"),
+                           ("tiled-rare", "deferred-1")):
         hdb = builtin_flow(name).node("hdb")
-        assert registry.get(hdb.type).recipe_revision(hdb.params) is None
+        assert registry.get(hdb.type).recipe_revision(hdb.params) == expected
