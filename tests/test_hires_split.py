@@ -9,6 +9,7 @@ from karak.clustering.hires import hires_split, resolution_ratio
 def test_resolution_ratio():
     assert resolution_ratio((4, 4), (8, 8)) == 2
     assert resolution_ratio((4, 4), (9, 8)) == 2        # one extra hires row is clipped
+    assert resolution_ratio((4, 5), (7, 9)) == 2        # odd raw size, downsample rounded up
     assert resolution_ratio((4, 4), (4, 4)) == 1
     with pytest.raises(ValueError, match="integer"):
         resolution_ratio((4, 4), (10, 8))                # 2.5
@@ -68,11 +69,35 @@ def test_hires_split_outputs():
 def test_hires_split_clips_an_odd_hires_image():
     labels, idx, shape, cube = _case()
     taller = np.concatenate([cube, cube[-1:]], axis=0)     # 9 x 8
+    even_labels, *_ = hires_split(
+        labels, idx, shape, cube, ["Ca", "Mg"], [2], "Ca/(Ca+Mg)",
+        n_components=2, subsample_n=None, random_state=0)
     out_labels, hires, new, _ = hires_split(
         labels, idx, shape, taller, ["Ca", "Mg"], [2], "Ca/(Ca+Mg)",
         n_components=2, subsample_n=None, random_state=0)
     assert hires.shape == (9, 8) and (hires[8] == -1).all()
     assert new == [4, 5]
+    assert (out_labels == even_labels).all()               # the extra row lies outside the region
+
+
+def test_hires_split_accepts_a_hires_image_one_row_short():
+    """Odd raw height: the downsample rounds up, so the hires image has
+    H * ds - 1 rows. The missing child counts as undefined."""
+    labels, idx, shape, cube = _case()
+    even_labels, *_ = hires_split(
+        labels, idx, shape, cube, ["Ca", "Mg"], [2], "Ca/(Ca+Mg)",
+        n_components=2, subsample_n=None, random_state=0)
+    shorter = cube[:-1]                                    # 7 x 8
+    out_labels, hires, new, _ = hires_split(
+        labels, idx, shape, shorter, ["Ca", "Mg"], [2], "Ca/(Ca+Mg)",
+        n_components=2, subsample_n=None, random_state=0)
+    assert hires.shape == (7, 8)
+    assert new == [4, 5]
+    img = out_labels.reshape(shape)
+    assert (img[:3] == even_labels.reshape(shape)[:3]).all()
+    assert img[3, 0] == 5                                  # the one available child row is high
+    assert img[3, 1] == 2                                  # still no defined child -> parent
+    assert (img[:, 2:] == 3).all()
 
 
 def test_tie_goes_to_top_left_only_when_its_label_is_tied():

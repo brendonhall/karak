@@ -40,7 +40,7 @@ karak run FLOW.json --input DIR --out BASE           # run a custom flow
 karak run ... --set NODE.PARAM=VALUE                 # override any node param
 karak run ... --no-qc                                # skip QC figure sinks
 karak run --builtin stepwise --input DIR --out BASE  # the growing step-by-step flow (global without the HDF5 export and QC figures)
-karak run --builtin paper --input DIR --out BASE     # tiled-rare with the published NWA 4587 settings (cpu, ~40 min)
+karak run --builtin paper --input DIR --out BASE     # tiled-rare with the published NWA 4587 settings and the published names and splits (cpu, ~45 min)
 karak run ... --plain                      # line output instead of the live dashboard
 uv run --extra view karak view BASE [--mask CSV]    # open a run's cached load outputs in napari
 karak run ... --no-cache                             # ignore the node cache

@@ -22,6 +22,25 @@
       }
     },
     {
+      "id": "src_hires",
+      "type": "load_elements",
+      "params": {
+        "input_dir": "{input}",
+        "file_glob": "*.png",
+        "filename_pattern": null,
+        "bse_filename": null,
+        "colormap": "cmap:jet",
+        "exclude_elements": "Fe-L",
+        "include_elements": "Ca,Mg",
+        "bse_channel": "SEM",
+        "header_trim_px": 100,
+        "bottom_trim_px": 0,
+        "left_trim_px": 0,
+        "right_trim_px": 0,
+        "downsample_factor": 1
+      }
+    },
+    {
       "id": "msk",
       "type": "mask",
       "params": {
@@ -99,6 +118,69 @@
       "params": {
         "k": 5,
         "device": "cpu"
+      }
+    },
+    {
+      "id": "names",
+      "type": "name_phases",
+      "params": {
+        "names": "0: Ilmenite (FeTiO₃); 1: Silica polymorph (SiO₂); 2: Pyroxene (Ca,Mg,Fe)SiO₃; 3: Plagioclase (CaAl₂Si₂O₈); 4: Epoxy; 5: Fe-Ti-Cr Spinel (Fe₂TiO₄); 6: Calcite (CaCO₃); 7: Apatite (Ca₅(PO₄)₃(OH,Cl,F)); 8: Fe Oxyhydroxide (FeOOH); 9: Zn-bearing Phase; 10: Xenotime (YPO₄)",
+        "note": "Assigned from the phase fingerprints and the TIMA reference map of NAW 4587-2 (S3858); the published base inventory before the splits."
+      }
+    },
+    {
+      "id": "oliv",
+      "type": "split_threshold",
+      "params": {
+        "target_phase": 2,
+        "rule": "Fe-K > 0.6 & Ca < 0.10",
+        "new_name": "Ferroan Olivine ((Fe,Mg)₂SiO₄)",
+        "note": "Fe-rich, Ca-poor pixels of the pyroxene phase are olivine; thresholds read off the Fe-K and Ca histograms of phase 2."
+      }
+    },
+    {
+      "id": "weath",
+      "type": "split_gmm",
+      "params": {
+        "target_phase": 2,
+        "features": "Ca/(Ca+Mg),BSE,Fe-K",
+        "n_components": 2,
+        "bse_weight": 1.0,
+        "subsample_n": 500000,
+        "random_state": 42,
+        "keep_parent": true,
+        "order_by": "",
+        "new_names": "Weathering Assemblage",
+        "note": "The smaller GMM component of the remaining pyroxene pixels, fitted on the three features of the published split, carries S, Cl and altered mafic chemistry (terrestrial weathering), not a pyroxene composition; the larger component stays pyroxene."
+      }
+    },
+    {
+      "id": "pyx",
+      "type": "split_hires",
+      "params": {
+        "target_phases": "2",
+        "feature": "Ca/(Ca+Mg)",
+        "n_components": 2,
+        "subsample_n": 500000,
+        "random_state": 42,
+        "new_names": "Pigeonite (low-Ca pyroxene);Augite (high-Ca pyroxene)",
+        "note": "Exsolution lamellae are narrower than a 2x pixel; Ca/(Ca+Mg) from the 1x Ca and Mg maps separates low-Ca pigeonite from high-Ca augite. The 1x map feeds the lamellae analysis."
+      }
+    },
+    {
+      "id": "phos",
+      "type": "split_gmm",
+      "params": {
+        "target_phase": 7,
+        "features": "Cl,Na,Mg,F",
+        "n_components": 2,
+        "bse_weight": 1.0,
+        "subsample_n": 500000,
+        "random_state": 42,
+        "keep_parent": false,
+        "order_by": "Cl",
+        "new_names": "Merrillite (Ca₉NaMg(PO₄)₇);Chlorapatite (Ca₅(PO₄)₃(Cl,F,OH))",
+        "note": "The phosphate phase has a low-Cl, Na-Mg-bearing population (merrillite) and a high-Cl population (chlorapatite); ordered by mean Cl."
       }
     },
     {
@@ -181,6 +263,14 @@
       "params": {
         "figure_dir": "{out}/figures",
         "min_tile_pixels": 200
+      }
+    },
+    {
+      "id": "qc_named_phase_map",
+      "type": "qc_named_phase_map",
+      "params": {
+        "figure_dir": "{out}/figures",
+        "mineral_names": "{}"
       }
     }
   ],
@@ -353,7 +443,7 @@
     {
       "id": "e16",
       "from": {
-        "node": "knn",
+        "node": "phos",
         "port": "labels"
       },
       "to": {
@@ -364,7 +454,7 @@
     {
       "id": "e17",
       "from": {
-        "node": "knn",
+        "node": "phos",
         "port": "labels"
       },
       "to": {
@@ -463,7 +553,7 @@
     {
       "id": "e26",
       "from": {
-        "node": "knn",
+        "node": "phos",
         "port": "labels"
       },
       "to": {
@@ -606,7 +696,7 @@
     {
       "id": "e39",
       "from": {
-        "node": "knn",
+        "node": "phos",
         "port": "labels"
       },
       "to": {
@@ -700,6 +790,149 @@
       "to": {
         "node": "exp",
         "port": "tiles"
+      }
+    },
+    {
+      "id": "e48",
+      "from": {
+        "node": "knn",
+        "port": "labels"
+      },
+      "to": {
+        "node": "names",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e49",
+      "from": {
+        "node": "names",
+        "port": "labels"
+      },
+      "to": {
+        "node": "oliv",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e50",
+      "from": {
+        "node": "dn",
+        "port": "cube"
+      },
+      "to": {
+        "node": "oliv",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e51",
+      "from": {
+        "node": "oliv",
+        "port": "labels"
+      },
+      "to": {
+        "node": "weath",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e52",
+      "from": {
+        "node": "dn",
+        "port": "cube"
+      },
+      "to": {
+        "node": "weath",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e53",
+      "from": {
+        "node": "src",
+        "port": "bse"
+      },
+      "to": {
+        "node": "weath",
+        "port": "bse"
+      }
+    },
+    {
+      "id": "e54",
+      "from": {
+        "node": "weath",
+        "port": "labels"
+      },
+      "to": {
+        "node": "pyx",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e55",
+      "from": {
+        "node": "src_hires",
+        "port": "cube"
+      },
+      "to": {
+        "node": "pyx",
+        "port": "cube_hires"
+      }
+    },
+    {
+      "id": "e56",
+      "from": {
+        "node": "pyx",
+        "port": "labels"
+      },
+      "to": {
+        "node": "phos",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e57",
+      "from": {
+        "node": "dn",
+        "port": "cube"
+      },
+      "to": {
+        "node": "phos",
+        "port": "cube"
+      }
+    },
+    {
+      "id": "e58",
+      "from": {
+        "node": "pyx",
+        "port": "labels_hires"
+      },
+      "to": {
+        "node": "exp",
+        "port": "labels_hires"
+      }
+    },
+    {
+      "id": "e59",
+      "from": {
+        "node": "phos",
+        "port": "labels"
+      },
+      "to": {
+        "node": "qc_named_phase_map",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e60",
+      "from": {
+        "node": "src",
+        "port": "bse"
+      },
+      "to": {
+        "node": "qc_named_phase_map",
+        "port": "bse"
       }
     }
   ]

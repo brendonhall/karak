@@ -16,6 +16,12 @@ from karak.stages.registry import register
 
 logger = logging.getLogger(__name__)
 
+
+def _split_names(text: str) -> list[str]:
+    """new_names are separated by ';' so a formula may contain commas."""
+    return [n.strip() for n in text.split(";") if n.strip()]
+
+
 _NOTE = Param("note", "str", "", "Note", "Why this split: the observation it rests on")
 
 
@@ -125,7 +131,7 @@ class SplitGmmStage(Stage):
               "Feature whose component means (ascending) order the new "
               "labels; empty = by size, descending"),
         Param("new_names", "str", "", "New names",
-              "Comma list, one per new label, in order"),
+              "Names separated by ';', one per new label, in order"),
         _NOTE,
     ]
 
@@ -144,7 +150,7 @@ class SplitGmmStage(Stage):
         if order_by and order_by not in features:
             errors.append(f"order_by: {order_by!r} is not one of the features")
         expected = params["n_components"] - (1 if params["keep_parent"] else 0)
-        names = parse_csv(params["new_names"])
+        names = _split_names(params["new_names"])
         if len(names) != expected:
             errors.append(f"new_names: {expected} name(s) expected, got {len(names)}")
         return errors
@@ -166,7 +172,7 @@ class SplitGmmStage(Stage):
             )
         except ValueError as exc:
             raise StageError(f"split_gmm: {exc}") from exc
-        given = parse_csv(params["new_names"])
+        given = _split_names(params["new_names"])
         new_names = {label: given[i] for i, label in enumerate(new_labels) if i < len(given)}
         if new_labels and len(given) > len(new_labels):
             logger.warning(

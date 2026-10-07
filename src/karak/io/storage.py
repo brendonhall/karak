@@ -717,8 +717,10 @@ def save_hires_labels(h5_path, image, *, ratio, names, downsample_factor,
 
 def save_subclustering(h5_path: str | Path, history: list[dict]) -> None:
     """Write the split history to ``clusters/subclustering`` attributes:
-    ``history`` (the JSON list) and one ``split_NN`` attribute per record,
-    the layout the NWA 4587 analysis scripts read."""
+    ``history`` (the JSON list) and one ``split_NN`` attribute per record.
+    This is karak's record schema (``history``, ``split_NN``), one attribute
+    per split; the published NWA 4587 file used hand-written ``phase_N_*``
+    attributes instead."""
     with h5py.File(h5_path, "a") as f:
         grp = f["clusters"]
         if "subclustering" in grp:

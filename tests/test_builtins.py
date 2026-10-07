@@ -238,15 +238,49 @@ PAPER_SETTINGS = {
 }
 
 
-def test_paper_is_tiled_rare_with_the_published_settings():
+PAPER_EXTRA_NODES = ["src_hires", "names", "oliv", "weath", "pyx", "phos",
+                     "qc_named_phase_map"]
+
+
+def test_paper_is_tiled_rare_plus_the_published_hand_steps():
     paper, base = builtin_flow("paper"), builtin_flow("tiled-rare")
-    assert [(n.id, n.type) for n in paper.nodes] == [(n.id, n.type) for n in base.nodes]
-    assert paper.edges == base.edges
+    base_ids = [n.id for n in base.nodes]
+    assert [n.id for n in paper.nodes if n.id not in PAPER_EXTRA_NODES] == base_ids
     for node in base.nodes:
         expected = {**node.params, **PAPER_SETTINGS.get(node.id, {})}
         assert paper.node(node.id).params == expected, node.id
     assert all(paper.node(n).params["device"] == "cpu"
                for n in ("dn", "nrm", "pca", "hdb", "rare", "knn"))
+    types = {n.id: n.type for n in paper.nodes}
+    assert types["src_hires"] == "load_elements" and types["names"] == "name_phases"
+    assert types["oliv"] == "split_threshold" and types["weath"] == "split_gmm"
+    assert types["pyx"] == "split_hires" and types["phos"] == "split_gmm"
+    hires = paper.node("src_hires").params
+    assert hires["downsample_factor"] == 1 and hires["include_elements"] == "Ca,Mg"
+    assert hires["header_trim_px"] == paper.node("src").params["header_trim_px"]
+    assert hires["colormap"] == paper.node("src").params["colormap"]
+
+    def source(node_id, port):
+        return next((e.src.node, e.src.port) for e in paper.edges
+                    if e.dst.node == node_id and e.dst.port == port)
+
+    chain = [("names", "knn"), ("oliv", "names"), ("weath", "oliv"),
+             ("pyx", "weath"), ("phos", "pyx")]
+    for node_id, upstream in chain:
+        assert source(node_id, "labels") == (upstream, "labels")
+    assert source("pyx", "cube_hires") == ("src_hires", "cube")
+    for consumer in ("stats", "fp", "exp", "qc_phase_map"):
+        assert source(consumer, "labels") == ("phos", "labels")
+    assert source("qc_named_phase_map", "labels") == ("phos", "labels")
+    assert source("qc_named_phase_map", "bse") == ("src", "bse")
+    assert source("exp", "labels_hires") == ("pyx", "labels_hires")
+    assert source("weath", "bse") == ("src", "bse")
+    assert paper.node("oliv").params["rule"] == "Fe-K > 0.6 & Ca < 0.10"
+    assert paper.node("weath").params["keep_parent"] is True
+    assert paper.node("weath").params["features"] == "Ca/(Ca+Mg),BSE,Fe-K"
+    assert paper.node("phos").params["keep_parent"] is False
+    assert paper.node("phos").params["order_by"] == "Cl"
+    assert paper.node("pyx").params["feature"] == "Ca/(Ca+Mg)"
 
 
 @pytest.mark.parametrize("name", ["tiled", "tiled-rare", "paper"])

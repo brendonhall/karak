@@ -379,6 +379,36 @@ def generate_scree_plot(
 # ---------------------------------------------------------------------------
 
 
+_BACKGROUND_GRAY = (0.85, 0.85, 0.85, 1.0)
+
+
+def label_color(lab: int) -> tuple:
+    """RGBA colour of one label, by its value on a fixed tab20 cycle.
+
+    Every figure uses this one lookup, so a label has the same colour in
+    the phase map, the fingerprint chart and the named phase map whatever
+    labels each figure holds. -1 (background) is gray.
+    """
+    lab = int(lab)
+    if lab < 0:
+        return _BACKGROUND_GRAY
+    return tuple(float(c) for c in plt.cm.tab20(lab % 20))
+
+
+def _label_cmap(labels):
+    """Colormap indexed by label + 1 (index 0 is the gray background).
+
+    Returns (cmap, vmax) for ``imshow(label_image + 1, vmin=0, vmax=vmax)``.
+    Labels may be non-contiguous (a split can empty its parent); the
+    colour comes from the label value, never from a position in a list.
+    """
+    from matplotlib.colors import ListedColormap
+
+    top = max((int(l) for l in labels), default=-1)
+    colors = [_BACKGROUND_GRAY] + [label_color(l) for l in range(top + 1)]
+    return ListedColormap(colors), top + 1
+
+
 def generate_phase_map(
     raw_label_image: np.ndarray,
     cleaned_label_image: np.ndarray,
@@ -403,21 +433,17 @@ def generate_phase_map(
 
     Returns the path to the saved PNG.
     """
-    from matplotlib.colors import ListedColormap
 
     figure_dir = Path(figure_dir)
     figure_dir.mkdir(parents=True, exist_ok=True)
 
     n_clusters = cluster_stats["n_clusters"]
 
-    # Build a categorical colormap: distinct colors for each cluster + gray for background
-    base_colors = plt.cm.tab20(np.linspace(0, 1, max(n_clusters, 1)))
-    # Map: -1 -> gray (background/noise), 0..n-1 -> distinct colors
-    # Shift labels so -1 maps to index 0 in colormap
-    cmap_colors = [[0.85, 0.85, 0.85, 1.0]]  # gray for -1 / background
-    for i in range(n_clusters):
-        cmap_colors.append(list(base_colors[i % 20]))
-    cmap = ListedColormap(cmap_colors)
+    # Categorical colormap: colour by label value, gray for -1
+    present = set(np.unique(raw_label_image).tolist()) | set(
+        np.unique(cleaned_label_image).tolist()
+    )
+    cmap, vmax = _label_cmap(present)
 
     fig, axes = plt.subplots(1, 3, figsize=(21, 8))
 
@@ -428,14 +454,14 @@ def generate_phase_map(
 
     # Panel 2: Raw HDBSCAN labels (noise as gray)
     display_raw = raw_label_image + 1  # shift so -1 -> 0 (gray), 0 -> 1, etc.
-    axes[1].imshow(display_raw, cmap=cmap, vmin=0, vmax=n_clusters, interpolation="none")
+    axes[1].imshow(display_raw, cmap=cmap, vmin=0, vmax=vmax, interpolation="none")
     noise_pct = cluster_stats["noise_pct"]
     axes[1].set_title(f"HDBSCAN Raw ({n_clusters} clusters, {noise_pct:.1f}% noise)")
     axes[1].axis("off")
 
     # Panel 3: Cleaned labels (noise reassigned)
     display_clean = cleaned_label_image + 1
-    axes[2].imshow(display_clean, cmap=cmap, vmin=0, vmax=n_clusters, interpolation="none")
+    axes[2].imshow(display_clean, cmap=cmap, vmin=0, vmax=vmax, interpolation="none")
     axes[2].set_title(f"Cleaned (noise reassigned via kNN)")
     axes[2].axis("off")
 
@@ -545,7 +571,6 @@ def generate_fingerprint_chart(
     str
         Path to the saved ``fingerprint_chart.png``.
     """
-    from matplotlib.colors import ListedColormap
 
     figure_dir = Path(figure_dir)
     figure_dir.mkdir(parents=True, exist_ok=True)
@@ -579,9 +604,7 @@ def generate_fingerprint_chart(
             y_max = local_max
     y_max = min(float(y_max) * 1.05, 1.0)
 
-    # Tab20 colors matching phase map
-    tab20 = plt.cm.tab20(np.linspace(0, 1, max(n_clusters, 1)))
-
+    # Tab20 colours by label value, the same as in the phase maps
     sorted_labels = sorted(fp.keys())
     for idx, label in enumerate(sorted_labels):
         ax = axes_flat[idx]
@@ -591,7 +614,7 @@ def generate_fingerprint_chart(
 
         ax.bar(
             x, ordered_means, yerr=ordered_stds,
-            color=tab20[label % 20],
+            color=label_color(label),
             edgecolor="white", linewidth=0.5,
             capsize=2, error_kw={"linewidth": 0.8},
         )
@@ -651,20 +674,15 @@ def generate_named_phase_map(
     str
         Path to the saved ``named_phase_map.png``.
     """
-    from matplotlib.colors import ListedColormap
     from matplotlib.patches import Patch
 
     figure_dir = Path(figure_dir)
     figure_dir.mkdir(parents=True, exist_ok=True)
 
-    n_clusters = max(mineral_names.keys()) + 1 if mineral_names else 1
-
-    # Build colormap: -1 -> gray (background), 0..n-1 -> tab20 colors
-    base_colors = plt.cm.tab20(np.linspace(0, 1, max(n_clusters, 1)))
-    cmap_colors = [[0.85, 0.85, 0.85, 1.0]]  # gray for -1 / background
-    for i in range(n_clusters):
-        cmap_colors.append(list(base_colors[i % 20]))
-    cmap = ListedColormap(cmap_colors)
+    # Colormap: -1 -> gray (background); every present label gets its
+    # tab20 colour by value, named or not
+    present = set(np.unique(cleaned_label_image).tolist()) | set(mineral_names)
+    cmap, vmax = _label_cmap(present)
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 8))
 
@@ -675,7 +693,7 @@ def generate_named_phase_map(
 
     # Panel 2: Named phase map
     display = cleaned_label_image + 1  # shift so -1 -> 0 (gray)
-    axes[1].imshow(display, cmap=cmap, vmin=0, vmax=n_clusters, interpolation="none")
+    axes[1].imshow(display, cmap=cmap, vmin=0, vmax=vmax, interpolation="none")
     axes[1].set_title("Mineral Phase Map")
     axes[1].axis("off")
 
@@ -683,7 +701,7 @@ def generate_named_phase_map(
     legend_patches = []
     for label in sorted(mineral_names.keys()):
         name = mineral_names[label]
-        color = base_colors[label % 20]
+        color = label_color(label)
         legend_patches.append(Patch(facecolor=color, edgecolor="black", label=name))
     legend_patches.append(
         Patch(facecolor=[0.85, 0.85, 0.85], edgecolor="black", label="Background")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -206,3 +207,59 @@ def test_qc_fingerprints_uses_the_carried_names(tmp_path, payloads, monkeypatch)
         {"figure_dir": str(tmp_path), "mineral_names": '{"0": "Fo"}'},
     )
     assert seen["names"] == {0: "Fo"}
+    get("qc_fingerprints")().run(
+        {"fingerprints": fp}, {"figure_dir": str(tmp_path), "mineral_names": "{}"}
+    )
+    assert seen["names"] == {0: "Olivine"}                 # "{}" falls back like null
+
+
+def _gappy(payloads):
+    """Labels 0, 1, 3: a split emptied label 2, and the largest label (3)
+    exceeds the cluster count (3)."""
+    fp = payloads["fingerprints"]
+    d = dict(fp.data)
+    d["fingerprints"] = {
+        0: d["fingerprints"][0], 1: d["fingerprints"][1],
+        3: {"mean": np.array([0.3, 0.3]), "std": np.array([0.02, 0.02]),
+            "n_pixels": 10, "area_pct": 1.0},
+    }
+    d["n_clusters"] = 3
+    return Fingerprints(data=d, similar_pairs=[])
+
+
+def test_a_label_has_one_colour_in_every_figure(tmp_path, payloads, monkeypatch):
+    """Labels 0, 1, 3 (2 absent): label 3 gets the same colour from the
+    phase map and from the fingerprint chart, and the named map."""
+    from karak.qc import figures
+
+    assert figures.label_color(3) == tuple(float(c) for c in plt.cm.tab20(3))
+    assert figures.label_color(23) == figures.label_color(3)      # fixed cycle of 20
+    assert figures.label_color(-1) == (0.85, 0.85, 0.85, 1.0)
+
+    asked = {}
+    real = figures.label_color
+    shape = (2, 3)
+    cleaned = np.array([[0, 1, 3], [3, 1, 0]], dtype=np.int32)
+    raw = np.array([[0, -1, 3], [3, 1, -1]], dtype=np.int32)
+    bse = np.zeros(shape, dtype=np.float32)
+
+    def calls(name, run):
+        seen = []
+        monkeypatch.setattr(
+            figures, "label_color", lambda lab: (seen.append(int(lab)), real(lab))[1])
+        out = run()
+        monkeypatch.setattr(figures, "label_color", real)
+        assert out and (tmp_path / out.rsplit("/", 1)[1]).exists()
+        asked[name] = set(seen)
+
+    calls("phase", lambda: figures.generate_phase_map(
+        raw, cleaned, bse, {"n_clusters": 3, "noise_pct": 0.0}, tmp_path))
+    calls("fingerprints", lambda: figures.generate_fingerprint_chart(
+        _gappy(payloads).data, tmp_path))
+    calls("named", lambda: figures.generate_named_phase_map(
+        cleaned, bse, {0: "a", 1: "b", 3: "c"}, tmp_path))
+    for name, labels in asked.items():
+        assert 3 in labels, name
+    # The colormap the phase map builds gives label 3 the fingerprint colour.
+    cmap, vmax = figures._label_cmap({-1, 0, 1, 3})
+    assert tuple(cmap(3 + 1)) == figures.label_color(3) and vmax == 4

@@ -85,7 +85,7 @@ def test_split_gmm_without_parent_empties_it_and_orders(scene):
         {"labels": labels, "cube": cube},
         {"target_phase": 1, "features": "A,B", "n_components": 2, "bse_weight": 1.0,
          "subsample_n": 0, "random_state": 0, "keep_parent": False, "order_by": "B",
-         "new_names": "Low B,High B", "note": ""})
+         "new_names": "Low B;High B", "note": ""})
     got = out["labels"]
     assert not (got.labels == 1).any()
     assert got.names[2] == "Low B" and got.names[3] == "High B"
@@ -102,7 +102,7 @@ def test_split_gmm_too_few_pixels_logs_and_passes_through(scene, caplog):
             {"labels": labels, "cube": cube},
             {"target_phase": 1, "features": "A", "n_components": 2, "bse_weight": 1.0,
              "subsample_n": 0, "random_state": 0, "keep_parent": False, "order_by": "",
-             "new_names": "x,y", "note": ""})
+             "new_names": "x;y", "note": ""})
     np.testing.assert_array_equal(out["labels"].labels, few)
     assert out["labels"].history[-1]["new_labels"] == []
     assert "skipped" in caplog.text
@@ -116,9 +116,12 @@ def test_split_gmm_check_params():
     assert not cls.check_params(base)
     assert cls.check_params({**base, "features": "A/(B+C)"})          # bad ratio
     assert cls.check_params({**base, "order_by": "C"})                 # not a feature
-    assert cls.check_params({**base, "new_names": "x,y"})              # one too many
+    assert cls.check_params({**base, "new_names": "x;y"})              # one too many
     assert cls.check_params({**base, "keep_parent": False})            # one too few
-    assert not cls.check_params({**base, "keep_parent": False, "new_names": "x,y"})
+    assert not cls.check_params({**base, "keep_parent": False, "new_names": "x;y"})
+    # ';' separates names, so a formula may contain commas
+    assert not cls.check_params({**base, "keep_parent": False,
+                                 "new_names": "Chlorapatite (Ca,F);Other"})
 
 
 def test_split_gmm_unknown_channel_is_a_stage_error(scene):
@@ -143,7 +146,7 @@ def test_split_hires_stage(scene):
     out = get("split_hires")().run(
         {"labels": labels, "cube_hires": cube_hi},
         {"target_phases": "1", "feature": "A/(A+B)", "n_components": 2,
-         "subsample_n": 0, "random_state": 0, "new_names": "Low A,High A", "note": "n"})
+         "subsample_n": 0, "random_state": 0, "new_names": "Low A;High A", "note": "n"})
     got, hires = out["labels"], out["labels_hires"]
     assert got.names[2] == "Low A" and got.names[3] == "High A"
     assert hires.names == {2: "Low A", 3: "High A"}
@@ -159,11 +162,14 @@ def test_split_hires_stage(scene):
 def test_split_hires_check_params():
     cls = get("split_hires")
     base = {"target_phases": "2", "feature": "Ca/(Ca+Mg)", "n_components": 2,
-            "subsample_n": 0, "random_state": 0, "new_names": "a,b", "note": ""}
+            "subsample_n": 0, "random_state": 0, "new_names": "a;b", "note": ""}
     assert not cls.check_params(base)
     assert cls.check_params({**base, "target_phases": "x"})
     assert cls.check_params({**base, "feature": "BSE"})
-    assert cls.check_params({**base, "new_names": "a"})
+    assert cls.check_params({**base, "new_names": "a"}) == [
+        "new_names: 2 names expected, got 1"]
+    assert cls.check_params({**base, "target_phases": "2,-1"}) == [
+        "target_phases: labels must be >= 0, got -1"]
 
 
 def test_split_hires_non_integer_ratio_is_a_stage_error(scene):
@@ -174,7 +180,7 @@ def test_split_hires_non_integer_ratio_is_a_stage_error(scene):
         get("split_hires")().run(
             {"labels": labels, "cube_hires": cube_hi},
             {"target_phases": "1", "feature": "A/(A+B)", "n_components": 2,
-             "subsample_n": 0, "random_state": 0, "new_names": "a,b", "note": ""})
+             "subsample_n": 0, "random_state": 0, "new_names": "a;b", "note": ""})
 
 
 def test_history_restores_int_keys_of_hires_counts():
