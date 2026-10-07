@@ -100,6 +100,9 @@
           "$ref": "#/$defs/node_mask"
         },
         {
+          "$ref": "#/$defs/node_name_phases"
+        },
+        {
           "$ref": "#/$defs/node_noise_assign"
         },
         {
@@ -771,6 +774,53 @@
           "title": "Valid-region CSV",
           "description": "napari shapes CSV of the sample boundary polygon (coordinates in original, pre-downsample image space)",
           "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_name_phases": {
+      "title": "Name phases",
+      "description": "Attach mineral names to phase labels. Names travel with the labels to the split stages, the fingerprints, the QC figures and the HDF5 export (clusters/mineral_names).",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "name_phases"
+        },
+        "params": {
+          "$ref": "#/$defs/params_name_phases"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_name_phases": {
+      "type": "object",
+      "required": [
+        "names",
+        "note"
+      ],
+      "properties": {
+        "names": {
+          "type": "string",
+          "title": "Names",
+          "description": "Entries 'label: name' separated by ';', e.g. '0: Ilmenite (FeTiO\u2083); 1: Silica polymorph (SiO\u2082)'",
+          "default": ""
+        },
+        "note": {
+          "type": "string",
+          "title": "Note",
+          "description": "How the names were decided (fingerprints, TIMA, references)",
+          "default": ""
         }
       },
       "additionalProperties": false
