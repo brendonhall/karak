@@ -27,6 +27,10 @@ published baseline), so in tiled and tiled-rare `hdb`, `rare` and
 everything downstream carry new hashes; global and stepwise do not change.
 2026-10-05: rare_phase gained a `device` param, so in tiled-rare `rare` and
 everything downstream carry new hashes.
+2026-10-06: hdbscan_tiled records deferred tiles and rare_phase leaves their
+pixels to noise_assign (recipe revision "deferred-1" on both), so in tiled,
+tiled-rare and paper `hdb`, `rare` and everything downstream carry new
+hashes; global and stepwise do not change.
 """
 
 from __future__ import annotations
@@ -60,25 +64,25 @@ GOLDEN = {
               "dn": "b6aded777b5cfb0fc67e895c3c845d19",
               "nrm": "da983310b20bcb02b559790f0e03dbf4",
               "pca": "9c1401964c98ddd2f5e08334d556383f",
-              "hdb": "be4fbe467cf7282e5020a3e98b82fa2b",
-              "rare": "80ed30aecaf42cea9200ae303acdad80",
-              "knn": "7e59dc3d4d039f12fa1239780fd16d61",
-              "stats": "714adb24e978ef37996eba0b7b449ddb",
-              "fp": "7df3e51d04d5c25fd5baa2b66a01053f"},
+              "hdb": "edd534d8d3b1669e1edac6db07d3cfc6",
+              "rare": "067bd67ac63614b485f69adc50b70803",
+              "knn": "1d8f7101bf77f325d41b0a7a7a5af8e1",
+              "stats": "efc20f0d12733e0e41dd44a45769ef76",
+              "fp": "e66f8b307d97721383b92660225501b0"},
     "global": {**_SHARED, "hdb": _GLOBAL_HDB, "knn": _GLOBAL_KNN,
                "stats": _GLOBAL_STATS,
                "fp": _GLOBAL_FP},
     "tiled": {**_SHARED,
-              "hdb": "650b15d84812cebb4d3cdf1a9c096bf8",
-              "knn": "8c63956522d8073fbb99446576c7f437",
-              "stats": "c2c95da3a1734cd85d26b3fda4164626",
-              "fp": "141e6c8b6e7861f1d0f166da12b9c043"},
+              "hdb": "05c453b59e9cd3f7b803fb53d23a2b7c",
+              "knn": "6fe4b7b56ba6c0db3f77e7caeffc7a9f",
+              "stats": "58e95769d8ee71766cc89b0425d691d9",
+              "fp": "2a23df67f7b73b932ceb1d93af988efb"},
     "tiled-rare": {**_SHARED,
-                   "hdb": "650b15d84812cebb4d3cdf1a9c096bf8",
-                   "rare": "79294078ee2a071c51dac5730ee5ac7a",
-                   "knn": "07698fa3938849eceabdb3d0a2cd05d5",
-                   "stats": "fcd955c389911fb8b52842756c856e42",
-                   "fp": "a3cfd2f9155b8141a333027786098143"},
+                   "hdb": "05c453b59e9cd3f7b803fb53d23a2b7c",
+                   "rare": "0406e9cf75fd015a186e095109ce03b5",
+                   "knn": "e0aafdb253d639ff0624ed011d6e3a4a",
+                   "stats": "0aecfc43fab2cc5b47511d1bd93bd5d3",
+                   "fp": "8d75b0e580f9ced45896d6220729691e"},
     "stepwise": {"src": _SHARED["src"], "msk": _SHARED["msk"],
                  "dn": _SHARED["dn"], "nrm": _SHARED["nrm"],
                  "pca": _SHARED["pca"], "hdb": _GLOBAL_HDB,

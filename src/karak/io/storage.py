@@ -511,12 +511,16 @@ def save_tiled_metadata(
         tile_n_new = np.array(
             [len(tr.new_phases) for tr in tile_results], dtype=np.int32
         )
+        tile_deferred = np.array(
+            [bool(getattr(tr, "deferred", False)) for tr in tile_results], dtype=bool
+        )
 
         tiled_grp.create_dataset("tile_ids", data=tile_ids)
         tiled_grp.create_dataset("tile_n_pixels", data=tile_n_pixels)
         tiled_grp.create_dataset("tile_n_clusters", data=tile_n_clusters)
         tiled_grp.create_dataset("tile_n_noise", data=tile_n_noise)
         tiled_grp.create_dataset("tile_n_new_phases", data=tile_n_new)
+        tiled_grp.create_dataset("tile_deferred", data=tile_deferred)
 
         tiled_grp.attrs["n_tiles"] = n_tiles
 
