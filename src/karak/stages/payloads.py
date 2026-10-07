@@ -363,6 +363,49 @@ class Labels(_Replaceable):
 
 @_payload
 @dataclass(frozen=True)
+class HiresLabels(_Replaceable):
+    """Sub-phase labels at a higher resolution than the working labels,
+    inside a set of phases: the output of ``split_hires`` and the input
+    of a lamellae analysis. -1 outside the region and where the split
+    feature is undefined."""
+
+    payload_type = "hires_labels"
+
+    image: np.ndarray                       # (H1, W1) int16
+    ratio: int                              # hires pixels per working pixel
+    names: dict                             # label -> name
+    downsample_factor: int = 1              # of the source cube
+    header_trim_px: int = 0
+    left_trim_px: int = 0
+
+    def summary(self) -> str:
+        labelled = int((self.image >= 0).sum())
+        return (f"HiresLabels {_shape(self.image.shape)} int16 · "
+                f"{len(self.names)} labels · {labelled:,} px · ratio {self.ratio}")
+
+    def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
+        group.attrs["payload_type"] = self.payload_type
+        group.attrs["ratio"] = self.ratio
+        group.attrs["names"] = json.dumps({str(k): v for k, v in self.names.items()})
+        group.attrs["downsample_factor"] = self.downsample_factor
+        group.attrs["header_trim_px"] = self.header_trim_px
+        group.attrs["left_trim_px"] = self.left_trim_px
+        _dataset(group, "image", self.image.astype(np.int16), compression)
+
+    @classmethod
+    def from_h5(cls, group) -> "HiresLabels":
+        return cls(
+            image=group["image"][()],
+            ratio=int(group.attrs["ratio"]),
+            names=_int_keys(json.loads(group.attrs["names"])),
+            downsample_factor=int(group.attrs["downsample_factor"]),
+            header_trim_px=int(group.attrs["header_trim_px"]),
+            left_trim_px=int(group.attrs["left_trim_px"]),
+        )
+
+
+@_payload
+@dataclass(frozen=True)
 class TiledArtifacts(_Replaceable):
     """Tile diagnostics + phase registry from tiled clustering."""
 
