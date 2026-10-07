@@ -299,7 +299,7 @@ def _history_from_json(text: str) -> tuple:
     records = []
     for rec in json.loads(text):
         rec = dict(rec)
-        for key in ("names", "n_pixels"):
+        for key in ("names", "n_pixels", "n_pixels_hires"):
             if key in rec:
                 rec[key] = _int_keys(rec[key])
         if "component_means" in rec:

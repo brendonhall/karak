@@ -37,7 +37,7 @@ def _feature_image(cube_hi, element_names, feature) -> tuple[np.ndarray, np.ndar
 
     kind, names = parse_feature(feature)
     if kind == "bse":
-        raise ValueError("split_hires takes a channel or a ratio, not BSE")
+        raise ValueError("hires_split takes a channel or a ratio, not BSE")
     if kind == "ratio":
         a = cube_hi[:, :, _channel_index(element_names, names[0])]
         b = cube_hi[:, :, _channel_index(element_names, names[1])]
