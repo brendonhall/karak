@@ -97,6 +97,51 @@ def _extract_olivine(
     return updated, new_label
 
 
+_OPERATORS = {
+    "<": np.less, "<=": np.less_equal, ">": np.greater, ">=": np.greater_equal,
+}
+
+
+def _channel_index(element_names: list[str], channel: str) -> int:
+    lowered = [n.lower() for n in element_names]
+    if channel.lower() not in lowered:
+        raise ValueError(f"channel {channel!r} not in the cube: {list(element_names)}")
+    return lowered.index(channel.lower())
+
+
+def threshold_split(
+    cleaned_labels: np.ndarray,
+    denoised_cube: np.ndarray,
+    mineral_indices: np.ndarray,
+    element_names: list[str],
+    target_phase: int,
+    rules: list[tuple[str, str, float]],
+) -> tuple[np.ndarray, int, int]:
+    """Move the target-phase pixels that satisfy every rule to a new label.
+
+    ``rules`` are ``(channel, operator, value)`` with operators ``<``,
+    ``<=``, ``>``, ``>=`` on the denoised cube. Returns ``(labels,
+    new_label, n_moved)``; ``new_label`` is ``max(labels) + 1``, or -1 when
+    no pixel moves (labels come back as an unchanged copy).
+    """
+    phase_mask = cleaned_labels == target_phase
+    rows, cols = mineral_indices[phase_mask, 0], mineral_indices[phase_mask, 1]
+    keep = np.ones(int(phase_mask.sum()), dtype=bool)
+    for channel, op, value in rules:
+        values = denoised_cube[rows, cols, _channel_index(element_names, channel)]
+        keep &= _OPERATORS[op](values, value)
+    n_moved = int(keep.sum())
+    updated = cleaned_labels.copy()
+    if n_moved == 0:
+        logger.info("threshold split of phase %d: no pixel satisfies %s", target_phase, rules)
+        return updated, -1, 0
+    new_label = int(cleaned_labels.max()) + 1
+    updated[np.where(phase_mask)[0][keep]] = new_label
+    logger.info("threshold split of phase %d: %d pixels -> label %d (%s)",
+                target_phase, n_moved, new_label, rules)
+    return updated, new_label, n_moved
+
+
 def _gmm_split(
     cleaned_labels: np.ndarray,
     denoised_cube: np.ndarray,
