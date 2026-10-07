@@ -574,7 +574,7 @@ Split one phase with a Gaussian mixture on z-scored features (denoised channels,
 | `random_state` | int | `42` | - | Random seed |
 | `keep_parent` | bool | `True` | - | The largest component keeps the parent label |
 | `order_by` | str | `""` | - | Feature whose component means (ascending) order the new labels; empty = by size, descending |
-| `new_names` | str | `""` | - | Comma list, one per new label, in order |
+| `new_names` | str | `""` | - | Names separated by ';', one per new label, in order |
 | `note` | str | `""` | - | Why this split: the observation it rests on |
 
 ## `split_hires` — Split at full resolution
@@ -604,7 +604,7 @@ Inside a set of phases, fit one Gaussian mixture on a channel or ratio of a high
 | `n_components` | int | `2` | 2.. | Components |
 | `subsample_n` | int | `500000` | 0.. | Max hires pixels fitted; 0 = all |
 | `random_state` | int | `42` | - | Random seed |
-| `new_names` | str | `""` | - | Comma list, one per component, by ascending feature mean |
+| `new_names` | str | `""` | - | Names separated by ';', one per component, by ascending feature mean |
 | `note` | str | `""` | - | Why this split: the observation it rests on |
 
 ## `split_threshold` — Split by threshold

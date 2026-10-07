@@ -1619,7 +1619,7 @@
         "new_names": {
           "type": "string",
           "title": "New names",
-          "description": "Comma list, one per new label, in order",
+          "description": "Names separated by ';', one per new label, in order",
           "default": ""
         },
         "note": {
@@ -1701,7 +1701,7 @@
         "new_names": {
           "type": "string",
           "title": "New names",
-          "description": "Comma list, one per component, by ascending feature mean",
+          "description": "Names separated by ';', one per component, by ascending feature mean",
           "default": ""
         },
         "note": {

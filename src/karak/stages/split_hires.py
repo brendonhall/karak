@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from karak.stages.base import Param, Port, Stage, StageError
-from karak.stages.params_text import parse_csv, parse_feature, parse_int_list
+from karak.stages.params_text import parse_feature, parse_int_list
 from karak.stages.payloads import HiresLabels, LabelState, Space
 from karak.stages.registry import register
-from karak.stages.split import _NOTE, _history_record
+from karak.stages.split import _NOTE, _history_record, _split_names
 
 
 @register
@@ -41,7 +41,7 @@ class SplitHiresStage(Stage):
               "Max hires pixels fitted; 0 = all", min=0),
         Param("random_state", "int", 42, "Random seed"),
         Param("new_names", "str", "", "New names",
-              "Comma list, one per component, by ascending feature mean"),
+              "Names separated by ';', one per component, by ascending feature mean"),
         _NOTE,
     ]
 
@@ -59,7 +59,7 @@ class SplitHiresStage(Stage):
                 errors.append("feature: BSE is not a channel of cube_hires")
         except ValueError as exc:
             errors.append(f"feature: {exc}")
-        if len(parse_csv(params["new_names"])) != params["n_components"]:
+        if len(_split_names(params["new_names"])) != params["n_components"]:
             errors.append(f"new_names: {params['n_components']} names expected")
         return errors
 
@@ -78,7 +78,7 @@ class SplitHiresStage(Stage):
             )
         except ValueError as exc:
             raise StageError(f"split_hires: {exc}") from exc
-        new_names = dict(zip(new_labels, parse_csv(params["new_names"])))
+        new_names = dict(zip(new_labels, _split_names(params["new_names"])))
         names = {**labels.names, **new_names}
         for parent in targets:                      # emptied parents lose their name
             if not (updated == parent).any():

@@ -276,7 +276,7 @@ prints what it added. Some parameters beyond the basics:
 {"id": "phos", "type": "split_gmm",
  "params": {"target_phase": 7, "features": "Cl,Na,Mg,F", "n_components": 2,
             "keep_parent": false, "order_by": "Cl",
-            "new_names": "Merrillite,Chlorapatite", "...": "..."}}
+            "new_names": "Merrillite;Chlorapatite", "...": "..."}}
 ```
 
 ## Documentation

@@ -163,7 +163,7 @@
         "n_components": 2,
         "subsample_n": 500000,
         "random_state": 42,
-        "new_names": "Pigeonite (low-Ca pyroxene),Augite (high-Ca pyroxene)",
+        "new_names": "Pigeonite (low-Ca pyroxene);Augite (high-Ca pyroxene)",
         "note": "Exsolution lamellae are narrower than a 2x pixel; Ca/(Ca+Mg) from the 1x Ca and Mg maps separates low-Ca pigeonite from high-Ca augite. The 1x map feeds the lamellae analysis."
       }
     },
@@ -179,7 +179,7 @@
         "random_state": 42,
         "keep_parent": false,
         "order_by": "Cl",
-        "new_names": "Merrillite (Ca₉NaMg(PO₄)₇),Chlorapatite (Ca₅(PO₄)₃Cl)",
+        "new_names": "Merrillite (Ca₉NaMg(PO₄)₇);Chlorapatite (Ca₅(PO₄)₃(Cl,F,OH))",
         "note": "The phosphate phase has a low-Cl, Na-Mg-bearing population (merrillite) and a high-Cl population (chlorapatite); ordered by mean Cl."
       }
     },
