@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   float32 sums; the tile-grid QC figure keeps tiles from 200 pixels, as the
   clustering does). On the CPU, load through normalize are bit-identical to
   the published run and the tiled pass matches its per-tile cluster
-  counts; the rare-phase pass does not reproduce the published labels.
+  counts; the rare-phase pass reproduces the published raw labels once the
+  deferred tile is left to kNN (the published file had that tile reset by
+  hand).
 - `rare_phase` runs its pass-2 HDBSCAN on the GPU with `device: cuda`
   (new param; `--device cuda` sets it), with cuML's subsample fit and
   batched prediction; fingerprints and the registry merge stay on the
@@ -189,6 +191,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Tiles with fewer than `min_clusters_per_tile` clusters are now skipped by
+  `rare_phase` and filled by `noise_assign`. Pass 2 used to recluster them
+  with the rest of the noise, which on NWA 4587 put 99 % of a 1,043,317
+  pixel tile into one phase as a square block; the published run removed
+  that block by hand. `hdbscan_tiled` records the deferred tiles
+  (`TileResult.deferred`, `TiledArtifacts.deferred_pixels`, HDF5
+  `clusters/tiled/tile_deferred`). Recipe revision `deferred-1` on both
+  stages: `hdb`, `rare` and downstream recipes change in `tiled`,
+  `tiled-rare` and `paper`.
+
 - User guide: the stepwise paragraph says that the builtin HDBSCAN values
   stop at once on the CPU at full scale (since the fit memory check),
   instead of "takes hours".
@@ -198,7 +210,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   50k/125 in between (9 phases); a per-tile subsample speeds up the paper
   settings but does not keep their small-phase recovery. README: the paper reproduction claim states what
   reproduces (load through normalization bit for bit, the tiled pass per
-  tile) and that the rare-phase pass does not yet.
+  tile) and that the rare-phase pass reproduces the published raw labels
+  once the deferred tile is left to kNN (6 of 12,495,787 pixels differ when
+  replayed on the published pass-1 noise).
 - `export_h5` writes faster and smaller: compressed datasets use 256 × 256
   pixel chunks with every element in one chunk, and the denoised and
   normalized cubes add HDF5's shuffle filter. On NWA 4587 at full scale

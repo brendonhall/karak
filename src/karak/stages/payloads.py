@@ -345,6 +345,13 @@ class TiledArtifacts(_Replaceable):
     tile_results: tuple                     # tuple[TileResult, ...]
     phase_registry: tuple                   # tuple[PhaseEntry, ...]
     tile_size: int
+    deferred_pixels: np.ndarray = dataclasses.field(
+        default_factory=lambda: np.zeros(0, dtype=np.int64)
+    )                                       # indices of deferred tiles' pixels
+
+    @property
+    def deferred_tiles(self) -> tuple:
+        return tuple(tr.tile_id for tr in self.tile_results if tr.deferred)
 
     def summary(self) -> str:
         return (
@@ -366,6 +373,7 @@ class TiledArtifacts(_Replaceable):
                 {str(k): int(v) for k, v in tr.merge_map.items()}
             )
             sub.attrs["new_phases"] = [int(p) for p in tr.new_phases]
+            sub.attrs["deferred"] = bool(tr.deferred)
             _dataset(sub, "local_labels", tr.local_labels, compression)
         registry = group.create_group("registry")
         for i, entry in enumerate(self.phase_registry):
@@ -377,6 +385,7 @@ class TiledArtifacts(_Replaceable):
                 {str(k): int(v) for k, v in entry.tile_contributions.items()}
             )
             sub.create_dataset("mean_fingerprint", data=entry.mean_fingerprint)
+        _dataset(group, "deferred_pixels", self.deferred_pixels, compression)
 
     @classmethod
     def from_h5(cls, group) -> "TiledArtifacts":
@@ -396,6 +405,7 @@ class TiledArtifacts(_Replaceable):
                     for k, v in json.loads(sub.attrs["merge_map"]).items()
                 },
                 new_phases=[int(p) for p in sub.attrs["new_phases"]],
+                deferred=bool(sub.attrs.get("deferred", False)),
             ))
         phase_registry = []
         for key in sorted(group["registry"], key=int):
@@ -416,6 +426,9 @@ class TiledArtifacts(_Replaceable):
             tile_results=tuple(tile_results),
             phase_registry=tuple(phase_registry),
             tile_size=int(group.attrs["tile_size"]),
+            deferred_pixels=(group["deferred_pixels"][()]
+                             if "deferred_pixels" in group
+                             else np.zeros(0, dtype=np.int64)),
         )
 
 

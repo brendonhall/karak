@@ -49,7 +49,9 @@ def test_tiled_cuda_warns_once_through_the_cli_log_capture(monkeypatch):
     with capture_logs(recorder):
         logs, seen = _run(monkeypatch, "cuda", reporter=False)
     assert seen["device"] == "cuda"
-    assert recorder.logs == [("warning", cluster.TILED_CUDA_WARNING)]
+    # compute_tile_grid also logs an info record; only warnings count here
+    warnings = [r for r in recorder.logs if r[0] == "warning"]
+    assert warnings == [("warning", cluster.TILED_CUDA_WARNING)]
 
 
 def test_tiled_cuda_warns_under_the_executor_null_reporter(monkeypatch, caplog):
@@ -76,3 +78,13 @@ def test_tiled_cpu_does_not_warn(monkeypatch, caplog):
     with caplog.at_level("WARNING", logger="karak.stages.cluster"):
         _run(monkeypatch, "cpu", reporter=False)
     assert cluster.TILED_CUDA_WARNING not in caplog.text
+
+
+def test_tiled_run_logs_the_tile_grid_once(caplog):
+    # the stage recomputes the grid for the deferred pixels; only the run
+    # itself logs it (no monkeypatch: the real tiled run calls the grid)
+    stage = cluster.HdbscanTiledStage()
+    stage.reporter = None
+    with caplog.at_level("INFO", logger="karak.clustering.tiling"):
+        stage.run(_inputs(), {**cluster.HdbscanTiledStage.template(), "device": "cpu"})
+    assert caplog.text.count("Tile grid") == 1

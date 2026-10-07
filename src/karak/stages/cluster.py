@@ -40,6 +40,12 @@ def _cuda_subsample_revision(params: dict) -> str | None:
     return None
 
 
+def _join_revisions(*tags: str | None) -> str | None:
+    """One revision string from the tags that apply, or None."""
+    present = [t for t in tags if t]
+    return "+".join(present) if present else None
+
+
 TILED_CUDA_WARNING = (
     "hdbscan_tiled on cuda: cuML can select different clusters than the cpu "
     "on full tiles (NWA 4587, a 733 k-pixel tile at min_cluster_size 100: "
@@ -144,11 +150,17 @@ class HdbscanTiledStage(Stage):
 
     @classmethod
     def recipe_revision(cls, params: dict) -> str | None:
-        return _cuda_subsample_revision(params)
+        # 2026-10-06: deferred tiles are recorded and skip pass 2
+        return _join_revisions(_cuda_subsample_revision(params), "deferred-1")
 
     def apply(self, inputs: dict, params: dict) -> dict:
         from karak.accel import resolve_workers
-        from karak.clustering.tiling import run_tiled_hdbscan
+        from karak.clustering.tiling import (
+            compute_tile_grid,
+            deferred_pixel_indices,
+            resolve_min_tile_pixels,
+            run_tiled_hdbscan,
+        )
 
         if params["device"] == "cuda":
             # One path for every caller: the CLI forwards karak log records
@@ -162,20 +174,27 @@ class HdbscanTiledStage(Stage):
         # process pool); per-tile cuML calls move each tile to the device.
         features = inputs["features"].to("cpu")
         cube = inputs["cube"].to("cpu")
+        hdb_cfg, tiled_cfg = hdbscan_config(params), tiled_config(params)
         raw_labels, _, probabilities, tile_results, phase_registry = (
             run_tiled_hdbscan(
                 features.features,
                 features.mineral_indices,
                 features.image_shape,
                 cube.pixels,
-                hdbscan_config(params),
-                tiled_config(params),
+                hdb_cfg,
+                tiled_cfg,
                 noise_reassign_k=None,
                 skip_knn=True,
                 workers=resolve_workers(self.workers),
                 device=params["device"],
             )
         )
+        grid = compute_tile_grid(
+            features.mineral_indices, features.image_shape,
+            tiled_cfg.tile_size, resolve_min_tile_pixels(tiled_cfg, hdb_cfg),
+            log=False,
+        )
+        deferred_pixels = deferred_pixel_indices(grid, tile_results)
         return {
             "labels": Labels(
                 labels=raw_labels,
@@ -188,5 +207,6 @@ class HdbscanTiledStage(Stage):
                 tile_results=tuple(tile_results),
                 phase_registry=tuple(phase_registry),
                 tile_size=params["tile_size"],
+                deferred_pixels=deferred_pixels,
             ),
         }

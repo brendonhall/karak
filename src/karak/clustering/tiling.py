@@ -96,6 +96,7 @@ class TileResult:
     local_labels: np.ndarray  # raw HDBSCAN labels for this tile
     merge_map: dict[int, int]  # local_label -> global_id
     new_phases: list[int]  # global_ids of phases discovered in this tile
+    deferred: bool = False  # True: too few clusters, every pixel left to kNN
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +109,8 @@ def compute_tile_grid(
     image_shape: tuple[int, int],
     tile_size: int,
     min_tile_pixels: int,
+    *,
+    log: bool = True,
 ) -> list[TileSpec]:
     """Divide the image into a fixed grid and assign mineral pixels to tiles.
 
@@ -121,6 +124,9 @@ def compute_tile_grid(
         Side length of each square tile in pixels.
     min_tile_pixels : int
         Tiles with fewer mineral pixels are skipped.
+    log : bool
+        Write the "Tile grid" info line. A caller that recomputes a grid
+        it already logged passes False.
 
     Returns
     -------
@@ -167,17 +173,38 @@ def compute_tile_grid(
             )
             tile_id += 1
 
-    logger.info(
-        "Tile grid: %d tiles of size %d (image %dx%d, %d mineral pixels, "
-        "min_tile_pixels=%d)",
-        len(tiles), tile_size, H, W, len(mineral_indices), min_tile_pixels,
-    )
+    if log:
+        logger.info(
+            "Tile grid: %d tiles of size %d (image %dx%d, %d mineral pixels, "
+            "min_tile_pixels=%d)",
+            len(tiles), tile_size, H, W, len(mineral_indices), min_tile_pixels,
+        )
     return tiles
 
 
 # ---------------------------------------------------------------------------
 # Per-tile fingerprint computation
 # ---------------------------------------------------------------------------
+
+
+def resolve_min_tile_pixels(tiled: TiledConfig, hdbscan: HDBSCANConfig) -> int:
+    """``min_tile_pixels`` of the tiled config, or twice ``min_cluster_size``
+    when it is None. One rule for the clustering and for every consumer
+    that recomputes the grid (``hdbscan_tiled``, ``qc_tiled``)."""
+    if tiled.min_tile_pixels is not None:
+        return tiled.min_tile_pixels
+    return 2 * hdbscan.min_cluster_size
+
+
+def deferred_pixel_indices(tiles: list[TileSpec],
+                           tile_results: list[TileResult]) -> np.ndarray:
+    """Sorted indices (into the mineral arrays) of every pixel of a
+    deferred tile; empty when no tile was deferred."""
+    deferred = {tr.tile_id for tr in tile_results if tr.deferred}
+    parts = [t.pixel_indices for t in tiles if t.tile_id in deferred]
+    if not parts:
+        return np.zeros(0, dtype=np.int64)
+    return np.sort(np.concatenate(parts).astype(np.int64))
 
 
 def _check_accumulate(accumulate: str) -> None:
@@ -349,6 +376,7 @@ def recluster_unassigned(
     random_state: int,
     workers: int = 1,
     device: str = "cpu",
+    exclude_indices: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[PhaseEntry], int, int]:
     """Recluster unassigned pixels to discover rare phases (Pass 2).
 
@@ -357,6 +385,12 @@ def recluster_unassigned(
     count. ``device="cuda"`` runs the pass-2 HDBSCAN with cuML (a subsample
     fit and batched prediction when ``subsample_n`` is set); the
     fingerprints and the registry merge stay on the host.
+
+    ``exclude_indices`` (indices into the mineral arrays) are left out of
+    the pass-2 fit, prediction and registry merge and stay -1: the pixels
+    of tiles that pass 1 deferred, which the kNN step fills from their
+    neighbours instead (a tile with too few clusters otherwise becomes
+    one block of the pass-2 majority phase).
 
     Collects all pixels with label == -1, runs HDBSCAN with more sensitive
     parameters (lower min_cluster_size), and matches discovered clusters
@@ -394,7 +428,8 @@ def recluster_unassigned(
     n_rare_phases : int
         Number of new rare phases discovered.
     n_still_unassigned : int
-        Number of pixels still unassigned after Pass 2.
+        Number of pixels still unassigned after Pass 2, including the
+        excluded pixels.
     """
     import gc
 
@@ -404,11 +439,16 @@ def recluster_unassigned(
     rare_cfg = rare
     _check_accumulate(rare_cfg.accumulate)
     unassigned_mask = raw_labels == -1
+    n_excluded = 0
+    if exclude_indices is not None and exclude_indices.size:
+        n_excluded = int(unassigned_mask[exclude_indices].sum())
+        unassigned_mask[exclude_indices] = False
+        logger.info("Pass 2: %d pixels of deferred tiles left to kNN", n_excluded)
     n_unassigned = int(np.sum(unassigned_mask))
 
     if n_unassigned == 0:
         logger.info("No unassigned pixels for Pass 2")
-        return raw_labels.copy(), phase_registry, 0, 0
+        return raw_labels.copy(), phase_registry, 0, n_excluded
 
     logger.info(
         "Pass 2: reclustering %d unassigned pixels (min_cluster_size=%d)",
@@ -449,7 +489,7 @@ def recluster_unassigned(
 
     if n_pass2_clusters == 0:
         logger.info("Pass 2: no clusters found in unassigned pixels")
-        return raw_labels.copy(), phase_registry, 0, n_unassigned
+        return raw_labels.copy(), phase_registry, 0, n_unassigned + n_excluded
 
     # Load denoised cube on-demand if an HDF5 path was given
     if isinstance(denoised_cube, (str, Path)):
@@ -603,9 +643,7 @@ def run_tiled_hdbscan(
     n_mineral = len(mineral_indices)
 
     # Resolve min_tile_pixels
-    min_tile_pixels = tiled_cfg.min_tile_pixels
-    if min_tile_pixels is None:
-        min_tile_pixels = 2 * hdb_cfg.min_cluster_size
+    min_tile_pixels = resolve_min_tile_pixels(tiled_cfg, hdb_cfg)
 
     # Step 1: Compute tile grid
     tiles = compute_tile_grid(
@@ -702,6 +740,7 @@ def run_tiled_hdbscan(
                     local_labels=tile_labels,
                     merge_map={},
                     new_phases=[],
+                    deferred=True,
                 )
             )
 

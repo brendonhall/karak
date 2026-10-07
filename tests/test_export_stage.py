@@ -113,6 +113,31 @@ def test_export_writes_legacy_layout(tmp_path, payloads):
         assert fh["denoised"].attrs["sigma_spatial"] == 1.0   # from the flow
 
 
+def test_export_writes_the_deferred_flag_per_tile(tmp_path, payloads):
+    from karak.clustering.tiling import PhaseEntry, TileResult
+    from karak.stages.payloads import TiledArtifacts
+
+    tile = TileResult(
+        tile_id=0, n_pixels=64, n_clusters=1, n_noise=64,
+        local_labels=np.full(64, -1, dtype=np.int32), merge_map={},
+        new_phases=[], deferred=True,
+    )
+    phase = PhaseEntry(
+        global_id=0, mean_fingerprint=np.zeros(2, dtype=np.float32),
+        n_pixels=0, discovered_in_tile=0,
+    )
+    tiles = TiledArtifacts(
+        tile_results=(tile,), phase_registry=(phase,), tile_size=8,
+    )
+    path = str(tmp_path / "tiled.h5")
+    get("export_h5")().run(
+        {**payloads, "tiles": tiles}, {"path": path, "flow_json": _flow_json()}
+    )
+
+    with h5py.File(path, "r") as fh:
+        assert fh["clusters/tiled/tile_deferred"][()].tolist() == [True]
+
+
 def test_export_partial_inputs(tmp_path, payloads):
     path = str(tmp_path / "partial.h5")
     subset = {k: payloads[k] for k in ("cube_raw", "bse", "masks")}

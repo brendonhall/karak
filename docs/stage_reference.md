@@ -490,7 +490,7 @@ Tile grid overlay and phase discovery chart. Recomputes the tile grid from the f
 
 ## `rare_phase` — Rare phases
 
-Recluster still-unassigned pixels with more sensitive HDBSCAN parameters; novel clusters join the phase registry. Presence of this stage in a flow is what enables the two-pass workflow.
+Recluster still-unassigned pixels with more sensitive HDBSCAN parameters; novel clusters join the phase registry. Presence of this stage in a flow is what enables the two-pass workflow. Pixels of tiles that pass 1 deferred are left to noise_assign.
 
 **Inputs**
 

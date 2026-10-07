@@ -207,6 +207,28 @@ def test_hdbscan_tiled_parity(features_payload, denoised_cube, chain):
         np.testing.assert_allclose(got.mean_fingerprint, exp.mean_fingerprint)
 
 
+def test_hdbscan_tiled_records_deferred_tiles(features_payload, denoised_cube, chain):
+    """With tile_size 32 on the 64x64 scene, the left tiles hold only phase A
+    (one cluster) and are deferred at min_clusters_per_tile 2; the right
+    tiles hold A and B and are kept."""
+    out = get("hdbscan_tiled")().run(
+        {"features": features_payload, "cube": denoised_cube},
+        {"min_cluster_size": 100, "random_state": 0,
+         "tile_size": 32, "min_clusters_per_tile": 2},
+    )
+    tiles = out["tiles"]
+    deferred = [tr for tr in tiles.tile_results if tr.deferred]
+    kept = [tr for tr in tiles.tile_results if not tr.deferred]
+    assert deferred and kept
+    assert tiles.deferred_tiles == tuple(tr.tile_id for tr in deferred)
+    assert tiles.deferred_pixels.size == sum(tr.n_pixels for tr in deferred)
+    # every deferred pixel is unassigned in the raw labels
+    assert (out["labels"].labels[tiles.deferred_pixels] == -1).all()
+    # deferred pixels lie in the left half (phase A columns 8..31)
+    cols = chain["mineral_indices"][tiles.deferred_pixels, 1]
+    assert cols.max() < 32
+
+
 @pytest.mark.skipif(not cuda_available(), reason="no CUDA")
 def test_hdbscan_global_cuda_device_in_device_out(features_payload):
     import cupy as cp
@@ -393,3 +415,51 @@ def test_fingerprints_parity(denoised_cube, chain):
             fp.data["fingerprints"][label]["mean"], entry["mean"]
         )
     assert fp.similar_pairs == expected_pairs
+
+
+# ---------------------------------------------------------------------------
+# rare_phase skips the pixels of deferred tiles
+# ---------------------------------------------------------------------------
+
+def _tiled_outputs(features_payload, denoised_cube, min_clusters):
+    return get("hdbscan_tiled")().run(
+        {"features": features_payload, "cube": denoised_cube},
+        {"min_cluster_size": 100, "random_state": 0,
+         "tile_size": 32, "min_clusters_per_tile": min_clusters},
+    )
+
+
+def test_rare_phase_leaves_deferred_pixels_unassigned(features_payload, denoised_cube):
+    out = _tiled_outputs(features_payload, denoised_cube, min_clusters=2)
+    deferred = out["tiles"].deferred_pixels
+    assert deferred.size > 0
+    rare = get("rare_phase")().run(
+        {"labels": out["labels"], "features": features_payload,
+         "cube": denoised_cube, "tiles": out["tiles"]},
+        {"min_cluster_size": 20, "random_state": 0},
+    )
+    assert (rare["labels"].labels[deferred] == -1).all()
+    # the deferred pixels pass through to the payload unchanged
+    np.testing.assert_array_equal(rare["tiles"].deferred_pixels, deferred)
+    # and noise_assign gives every one of them a label
+    knn = get("noise_assign")().run(
+        {"labels": rare["labels"], "features": features_payload}, {"k": 5})
+    assert (knn["labels"].labels[deferred] >= 0).all()
+
+
+def test_rare_phase_with_only_deferred_noise_returns_input_labels(
+        features_payload, denoised_cube):
+    """Every -1 pixel sits in a deferred tile: no HDBSCAN fit on zero rows,
+    labels come back unchanged."""
+    out = _tiled_outputs(features_payload, denoised_cube, min_clusters=2)
+    labels = out["labels"]
+    forced = labels.labels.copy()
+    forced[forced == -1] = 0                      # assign every real noise pixel
+    forced[out["tiles"].deferred_pixels] = -1     # keep only the deferred ones
+    labels = labels.replace(labels=forced)
+    rare = get("rare_phase")().run(
+        {"labels": labels, "features": features_payload,
+         "cube": denoised_cube, "tiles": out["tiles"]},
+        {"min_cluster_size": 20, "random_state": 0},
+    )
+    np.testing.assert_array_equal(rare["labels"].labels, forced)
