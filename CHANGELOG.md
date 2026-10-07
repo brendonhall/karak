@@ -12,7 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   NWA 4587 analysis as nodes: `src_hires` (Ca and Mg at 1x), `names`,
   `oliv` (olivine threshold), `weath` (weathering GMM), `pyx` (1x
   pyroxene split with the lamellae map) and `phos` (phosphate GMM). One
-  run gives the published 16 phases. Real-data check: ACCEPTANCE.
+  run gives the published phases (15 with pixels; the published file keeps
+  a 16th label for 92 unresolved pyroxene pixels). Real-data check on
+  NWA 4587: every phase within 2.81 pp of Table 1 (largest: Weathering
+  Assemblage, +2.81 pp); the 1x pyroxene map gives 301 grains against the
+  published 128.
 - `split_hires` stage and `HiresLabels` payload: a GMM on a full-resolution
   channel or ratio inside a set of phases, with the full-resolution label
   map as a second output (`clusters/hires/labels` in the export). Working

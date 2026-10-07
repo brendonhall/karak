@@ -223,9 +223,15 @@ What a CPU run reproduces of the published result:
   deferred 1024 px tile is left to kNN (the published file had it reset
   by hand): replayed on the published pass-1 noise, 6 of 12,495,787
   pixels differ;
-- the splits give the published 16 phases; the numbering differs in one
-  place (13 pigeonite, 14 augite here; the published file has them the
-  other way round). Abundances against Table 1 of the paper: ACCEPTANCE.
+- the splits give the published phases: 15 with pixels, where the published
+  file keeps a 16th label for 92 pixels of unresolved pyroxene that the
+  flow splits away. The numbering differs in one place (13 pigeonite, 14
+  augite here; the published file has them the other way round).
+  Abundances against Table 1 of the paper: within 2.81 pp for every phase
+  (largest: Weathering Assemblage, +2.81 pp; then Augite, -2.52 pp and
+  Pigeonite, -0.86 pp; the other 12 phases within 0.3 pp). The 1x pyroxene
+  map gives 301 grains against the published 128, a median lamella spacing
+  of 39 um against 51 um, and a Rayleigh p of 0.15 against 0.008.
 
 Run it on the CPU: cuML selects different clusters on these full tiles
 (see [Computational requirements](#computational-requirements)). The tiled
@@ -348,7 +354,7 @@ named phases of the published run:
 | goal | flow and settings | phases | `hdb` time |
 |---|---|---|---|
 | main phases, fast | `global` (or `stepwise`) with `subsample_n` 50000, `min_cluster_size` = `min_samples` = 125 | 7: ilmenite, spinel, plagioclase, epoxy, the pyroxene group, merrillite/chlorapatite, ferroan olivine | 267 s (15 s on a GPU) |
-| every small phase | `--builtin paper` (tiled, `min_cluster_size` 100, `min_samples` 25, 1024 px tiles, no subsample) | 11: adds silica (0.10 %), calcite (0.15 %), Fe oxyhydroxide (0.03 %), a Zn phase (0.01 %) and xenotime (0.004 %), each 100 % pure; olivine stays in the pyroxene group | 1,775 s; CPU only |
+| every small phase | `--builtin paper` (tiled, `min_cluster_size` 100, `min_samples` 25, 1024 px tiles, no subsample) | 11 after `hdb` (the later nodes of `paper` split these to 15 with pixels): adds silica (0.10 %), calcite (0.15 %), Fe oxyhydroxide (0.03 %), a Zn phase (0.01 %) and xenotime (0.004 %), each 100 % pure; olivine stays in the pyroxene group | 1,775 s; CPU only |
 | in between | `tiled` or `tiled-rare` with 50000 / 125 | 9: silica and calcite mixed with weathering material; Fe oxyhydroxide, the Zn phase and xenotime lost | 365 s |
 
 A per-tile subsample speeds up the `paper` settings but does not keep their
@@ -356,8 +362,8 @@ small-phase recovery: with `subsample_n` 200000 the step takes 672 s
 instead of 1,775 s but loses or mixes all five small phases, and with
 500000 it takes 1,590 s and keeps only xenotime. Only the
 subsampled fits separate the ferroan olivine (about 2.5 %) from the
-pyroxene group; the published run separated it afterwards with a manual
-threshold.
+pyroxene group; the `paper` flow separates it afterwards in its `oliv`
+node, with the threshold of the published run.
 
 ---
 
@@ -421,7 +427,8 @@ karak run ... --no-cache                                   # force a clean run
 ```
 
 A change to one node reruns that node and what follows it. In the `paper`
-flow, this reruns only `weath` and its downstream nodes:
+flow, this reruns only `weath` and its downstream nodes (after a prior
+`paper` run to the same `--out`):
 
 ```bash
 karak run --builtin paper --input data/ --out output/s1 --set weath.target_phase=3
