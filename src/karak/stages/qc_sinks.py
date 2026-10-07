@@ -287,7 +287,7 @@ class QcNamedPhaseMapStage(Stage):
         _FIGURE_DIR,
         Param("mineral_names", "str", "{}", "Mineral names",
               'JSON mapping of cluster id to name, e.g. {"0": "olivine"}; '
-              "null/{} = the names carried by the labels"),
+              "{} = the names carried by the labels"),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:

@@ -714,18 +714,25 @@ def save_subclustering(h5_path: str | Path, history: list[dict]) -> None:
 
 
 def _json_record(record: dict) -> dict:
-    out = {}
-    for key, value in record.items():
-        if isinstance(value, dict):
-            out[key] = {str(k): (int(v) if isinstance(v, (int, np.integer)) else v)
-                        for k, v in value.items()}
-        elif isinstance(value, (list, tuple)):
-            out[key] = [int(v) if isinstance(v, np.integer) else v for v in value]
-        elif isinstance(value, np.integer):
-            out[key] = int(value)
-        else:
-            out[key] = value
-    return out
+    """Return ``record`` with numpy scalars, arrays and non-string dict
+    keys converted recursively to JSON-safe Python values."""
+    return _json_safe(record)
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return _json_safe(value.tolist())
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
+    return value
 
 
 def load_mineral_names(h5_path: str | Path) -> dict[int, str] | None:

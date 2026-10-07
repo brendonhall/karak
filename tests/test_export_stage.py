@@ -248,3 +248,23 @@ def test_export_writes_names_and_history(tmp_path, payloads):
         assert json.loads(sub.attrs["history"])[0]["new_labels"] == [1]
         assert json.loads(sub.attrs["split_00"])["parent"] == 0
         assert fh["clusters"].attrs["cluster_1_name"] == "Augite"
+
+
+def test_export_history_record_with_numpy_values(tmp_path, payloads):
+    labels = payloads["labels"].replace(
+        names={0: "Olivine", 1: "Augite"},
+        history=({"stage": "split_gmm", "parent": 0,
+                  "new_labels": [np.int32(1)],
+                  "component_means": {1: {"Ca": np.float32(0.5)}},
+                  "n_pixels": {np.int64(1): np.int64(3)}},),
+    )
+    path = tmp_path / "out.h5"
+    get("export_h5")().run(
+        {"labels": labels, "stats": payloads["stats"], "features": payloads["features"]},
+        {"path": str(path), "flow_json": _flow_json(), "compression": "none"},
+    )
+    with h5py.File(path, "r") as fh:
+        rec = json.loads(fh["clusters/subclustering"].attrs["split_00"])
+    assert rec["component_means"]["1"]["Ca"] == pytest.approx(0.5)
+    assert rec["n_pixels"]["1"] == 3
+    assert rec["new_labels"] == [1]
