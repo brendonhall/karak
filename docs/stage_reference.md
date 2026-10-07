@@ -575,3 +575,29 @@ Split a composite phase: threshold-based olivine extraction, then a GMM split of
 | `gmm_bse_weight` | float | `1.0` | 0.0.. | BSE weight |
 | `gmm_subsample_n` | int | `500000` | 0.. | Max pixels to fit GMM on; 0 = all |
 | `random_state` | int | `42` | - | Random seed |
+
+## `split_threshold` — Split by threshold
+
+Move the pixels of one phase that satisfy a rule on denoised channel values to a new label (e.g. olivine out of a pyroxene phase with 'Fe-K > 0.6 & Ca < 0.10').
+
+**Inputs**
+
+| port | type tag | required | notes |
+|------|----------|----------|-------|
+| `labels` | `cleaned` | yes | labels with the phase to split |
+| `cube` | `denoised` | yes | denoised channel values for the rule |
+
+**Outputs**
+
+| port | type tag | notes |
+|------|----------|-------|
+| `labels` | `cleaned` | labels with the new phase; names and history extended |
+
+**Parameters**
+
+| name | type | default | bounds / choices | help |
+|------|------|---------|------------------|------|
+| `target_phase` | int | `0` | 0.. | Label to split |
+| `rule` | str | `""` | - | Comparisons joined by '&': 'Fe-K > 0.6 & Ca < 0.10' (operators <, <=, >, >= on channel names) |
+| `new_name` | str | `""` | - | Name of the new label |
+| `note` | str | `""` | - | Why this split: the observation it rests on |

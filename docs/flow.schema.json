@@ -143,6 +143,9 @@
         },
         {
           "$ref": "#/$defs/node_refine"
+        },
+        {
+          "$ref": "#/$defs/node_split_threshold"
         }
       ]
     },
@@ -1619,6 +1622,68 @@
           "type": "integer",
           "title": "Random seed",
           "default": 42
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_split_threshold": {
+      "title": "Split by threshold",
+      "description": "Move the pixels of one phase that satisfy a rule on denoised channel values to a new label (e.g. olivine out of a pyroxene phase with 'Fe-K > 0.6 & Ca < 0.10').",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "split_threshold"
+        },
+        "params": {
+          "$ref": "#/$defs/params_split_threshold"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_split_threshold": {
+      "type": "object",
+      "required": [
+        "target_phase",
+        "rule",
+        "new_name",
+        "note"
+      ],
+      "properties": {
+        "target_phase": {
+          "type": "integer",
+          "title": "Target phase",
+          "description": "Label to split",
+          "minimum": 0,
+          "default": 0
+        },
+        "rule": {
+          "type": "string",
+          "title": "Rule",
+          "description": "Comparisons joined by '&': 'Fe-K > 0.6 & Ca < 0.10' (operators <, <=, >, >= on channel names)",
+          "default": ""
+        },
+        "new_name": {
+          "type": "string",
+          "title": "New name",
+          "description": "Name of the new label",
+          "default": ""
+        },
+        "note": {
+          "type": "string",
+          "title": "Note",
+          "description": "Why this split: the observation it rests on",
+          "default": ""
         }
       },
       "additionalProperties": false
