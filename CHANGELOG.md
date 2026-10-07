@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pyroxene split with the lamellae map) and `phos` (phosphate GMM). One
   run gives the published phases (15 with pixels; the published file keeps
   a 16th label for 92 unresolved pyroxene pixels). Real-data check on
-  NWA 4587: every phase within 2.81 pp of Table 1 (largest: Weathering
-  Assemblage, +2.81 pp); the 1x pyroxene map gives 301 grains against the
+  NWA 4587: every phase within 0.50 pp of Table 1 (largest: Weathering
+  Assemblage, -0.50 pp); the 1x pyroxene map gives 272 grains against the
   published 128.
 - `split_hires` stage and `HiresLabels` payload: a GMM on a full-resolution
   channel or ratio inside a set of phases, with the full-resolution label
@@ -317,6 +317,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The QC fingerprint chart, phase map and named phase map looked colours
+  up by the label value. Labels can be non-contiguous after a split empties
+  its parent (the `paper` flow has labels 0 to 6 and 8 to 16), which
+  crashed the fingerprint chart. Colours now follow the label's position in
+  the sorted labels.
 - With `--workers N`, the tiled flows fitted N tiles at once on the cpu
   regardless of memory: each full 512 px tile at `min_samples` 1000 holds
   about 8.4 GB, so 16 workers needed about 134 GB. The pool now runs only

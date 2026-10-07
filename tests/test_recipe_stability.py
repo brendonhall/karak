@@ -34,6 +34,9 @@ hashes; global and stepwise do not change.
 2026-10-06: paper gains src_hires, names, oliv, weath, pyx and phos; the
 consumers of the final labels (stats, fp) now hash from phos. Other flows
 unchanged.
+2026-10-07: paper's weath node uses the three features of the published
+split (Ca/(Ca+Mg),BSE,Fe-K), so weath, pyx, phos, stats and fp carry new
+hashes. Other flows unchanged.
 """
 
 from __future__ import annotations
@@ -73,11 +76,11 @@ GOLDEN = {
               "knn": "1d8f7101bf77f325d41b0a7a7a5af8e1",
               "names": "805bc7900a5b41c2b282f1c6167a21a9",
               "oliv": "7c89e275705fe4acc0e08381a7ec2e78",
-              "weath": "f8ce6634025c3d8d32beb987941d2f6d",
-              "pyx": "c0e302673cac9164b8e6aabbf029d2c1",
-              "phos": "fe77dc839623a4486bb5ab14718c7f38",
-              "stats": "e09d23e49eaa5fa68262603846b7db54",
-              "fp": "5975488fea29c92f5b90527923a7af8d"},
+              "weath": "5dafcfd5c8ecad612b97bf3119c180d9",
+              "pyx": "5d5f0c104ec586c5c83f918661a13dfb",
+              "phos": "08e50a5788cd3e7feafd972855855f45",
+              "stats": "88b9ebf4b6dc6fd61179ac1cc04d86d1",
+              "fp": "eef786148a8b0f0c320742c9555f7249"},
     "global": {**_SHARED, "hdb": _GLOBAL_HDB, "knn": _GLOBAL_KNN,
                "stats": _GLOBAL_STATS,
                "fp": _GLOBAL_FP},

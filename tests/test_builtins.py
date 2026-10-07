@@ -274,6 +274,7 @@ def test_paper_is_tiled_rare_plus_the_published_hand_steps():
     assert source("weath", "bse") == ("src", "bse")
     assert paper.node("oliv").params["rule"] == "Fe-K > 0.6 & Ca < 0.10"
     assert paper.node("weath").params["keep_parent"] is True
+    assert paper.node("weath").params["features"] == "Ca/(Ca+Mg),BSE,Fe-K"
     assert paper.node("phos").params["keep_parent"] is False
     assert paper.node("phos").params["order_by"] == "Cl"
     assert paper.node("pyx").params["feature"] == "Ca/(Ca+Mg)"

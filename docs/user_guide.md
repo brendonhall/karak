@@ -198,7 +198,7 @@ clustering, each as a node with its parameters and a `note`:
 | `src_hires` | `load_elements` | Ca and Mg at 1x (no downsample), the same 100 px trim and jet palette |
 | `names` | `name_phases` | the 11 base names, from the fingerprints and the TIMA reference |
 | `oliv` | `split_threshold` | olivine out of phase 2: `Fe-K > 0.6 & Ca < 0.10` |
-| `weath` | `split_gmm` | the smaller of two components of phase 2 on Ca, Mg, Fe-K, BSE and Ca/(Ca+Mg) is a weathering assemblage |
+| `weath` | `split_gmm` | the smaller of two components of phase 2 on Ca/(Ca+Mg), BSE and Fe-K (the three features of the published split) is a weathering assemblage |
 | `pyx` | `split_hires` | pigeonite and augite from Ca/(Ca+Mg) at 1x inside phase 2; the 1x map goes to `clusters/hires/labels` |
 | `phos` | `split_gmm` | merrillite and chlorapatite from Cl, Na, Mg, F of phase 7, ordered by Cl |
 
@@ -227,11 +227,11 @@ What a CPU run reproduces of the published result:
   file keeps a 16th label for 92 pixels of unresolved pyroxene that the
   flow splits away. The numbering differs in one place (13 pigeonite, 14
   augite here; the published file has them the other way round).
-  Abundances against Table 1 of the paper: within 2.81 pp for every phase
-  (largest: Weathering Assemblage, +2.81 pp; then Augite, -2.52 pp and
-  Pigeonite, -0.86 pp; the other 12 phases within 0.3 pp). The 1x pyroxene
-  map gives 301 grains against the published 128, a median lamella spacing
-  of 39 um against 51 um, and a Rayleigh p of 0.15 against 0.008.
+  Abundances against Table 1 of the paper: within 0.50 pp for every phase
+  (largest: Weathering Assemblage, -0.50 pp; then Epoxy, +0.28 pp and
+  Plagioclase, +0.16 pp). The 1x pyroxene map gives 272 grains against the
+  published 128, a median lamella spacing of 45 um against 51 um, and a
+  Rayleigh p of 0.80 against 0.008.
 
 Run it on the CPU: cuML selects different clusters on these full tiles
 (see [Computational requirements](#computational-requirements)). The tiled

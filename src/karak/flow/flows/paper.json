@@ -143,7 +143,7 @@
       "type": "split_gmm",
       "params": {
         "target_phase": 2,
-        "features": "Ca,Mg,Fe-K,BSE,Ca/(Ca+Mg)",
+        "features": "Ca/(Ca+Mg),BSE,Fe-K",
         "n_components": 2,
         "bse_weight": 1.0,
         "subsample_n": 500000,
@@ -151,7 +151,7 @@
         "keep_parent": true,
         "order_by": "",
         "new_names": "Weathering Assemblage",
-        "note": "The smaller GMM component of the remaining pyroxene pixels carries S, Cl and altered mafic chemistry (terrestrial weathering), not a pyroxene composition; the larger component stays pyroxene."
+        "note": "The smaller GMM component of the remaining pyroxene pixels, fitted on the three features of the published split, carries S, Cl and altered mafic chemistry (terrestrial weathering), not a pyroxene composition; the larger component stays pyroxene."
       }
     },
     {
