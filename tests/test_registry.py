@@ -43,7 +43,7 @@ def test_autoload_finds_phase_a_stages():
     assert {
         "load_elements", "mask", "denoise", "normalize",
         "pca", "hdbscan_global", "hdbscan_tiled", "rare_phase",
-        "noise_assign", "name_phases", "refine", "cluster_stats", "fingerprints",
+        "noise_assign", "name_phases", "cluster_stats", "fingerprints",
         "split_threshold", "split_gmm",
     } <= ids
 

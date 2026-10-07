@@ -8,7 +8,6 @@ identical, seeded parameters.
 from __future__ import annotations
 
 import copy
-from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -19,14 +18,12 @@ from conftest import (
     make_synthetic_scene,
     pca_cfg,
     rare_cfg,
-    refinement_cfg,
     tiled_cfg,
 )
 from karak.accel import cuda_available
 from karak.clustering.hdbscan_cluster import compute_cluster_stats, run_hdbscan
 from karak.clustering.noise_assign import assign_noise_pixels
 from karak.clustering.pca import fit_pca, select_components
-from karak.clustering.refinement import refine_phases
 from karak.clustering.tiling import final_knn_assign, run_tiled_hdbscan
 from karak.identification.fingerprint import (
     compute_fingerprints,
@@ -37,7 +34,6 @@ from karak.preprocessing.compositional import zscore_normalize
 from karak.preprocessing.denoise import denoise_cube
 from karak.stages import get
 from karak.stages.payloads import (
-    BseImage,
     ElementCube,
     LabelState,
     Labels,
@@ -333,44 +329,6 @@ def test_knn_implementations_agree(chain):
     ours = assign_noise_pixels(chain["features"], chain["labels"], k=5, device="cpu")
     tiled = final_knn_assign(chain["features"], chain["labels"], 5)
     np.testing.assert_array_equal(ours, tiled)
-
-
-# ---------------------------------------------------------------------------
-# refine
-# ---------------------------------------------------------------------------
-
-def test_refine_parity(denoised_cube, chain):
-    cleaned = assign_noise_pixels(chain["features"], chain["labels"], k=5, device="cpu")
-    target = int(np.bincount(cleaned).argmax())
-    base = refinement_cfg(target_phase=target)
-    config = replace(
-        base,
-        olivine=replace(base.olivine, enabled=False),
-        gmm_split=replace(
-            base.gmm_split, enabled=True, n_components=2,
-            features=("A", "B"), subsample_n=None, random_state=0,
-        ),
-    )
-    bse = np.zeros(chain["shape"], dtype=np.float32)
-    expected = refine_phases(
-        cleaned.copy(), chain["denoised"], bse,
-        chain["mineral_indices"], ["A", "B", "C"], config,
-    )
-
-    cleaned_payload = Labels(
-        labels=cleaned, probabilities=chain["probabilities"],
-        mineral_indices=chain["mineral_indices"],
-        image_shape=chain["shape"], state=LabelState.CLEANED,
-    )
-    out = get("refine")().run(
-        {"labels": cleaned_payload, "cube": denoised_cube,
-         "bse": BseImage(pixels=bse)},
-        {"target_phase": target, "gmm_enabled": True,
-         "gmm_features": "A,B", "gmm_subsample_n": 0, "random_state": 0},
-    )
-
-    assert out["labels"].state is LabelState.CLEANED
-    np.testing.assert_array_equal(out["labels"].labels, expected)
 
 
 # ---------------------------------------------------------------------------

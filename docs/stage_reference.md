@@ -543,39 +543,6 @@ Recluster still-unassigned pixels with more sensitive HDBSCAN parameters; novel 
 | `device` | str | `cpu` | cpu \| cuda | cpu (hdbscan package) or cuda (cuML; needs karak[cuda]) for the pass-2 HDBSCAN; cuda labels agree with cpu but are not identical. Fingerprints and the registry merge run on the host. |
 | `accumulate` | enum | `float64` | float64 \| float32 | Precision of the rare-cluster fingerprint sums: float64 is accurate; float32 reproduces the published baseline |
 
-## `refine` — Phase refinement
-
-Split a composite phase: threshold-based olivine extraction, then a GMM split of the remaining target-phase pixels.
-
-**Inputs**
-
-| port | type tag | required | notes |
-|------|----------|----------|-------|
-| `labels` | `cleaned` | yes | cleaned labels containing the target composite phase |
-| `cube` | `denoised` | yes | denoised intensities for thresholds and GMM features |
-| `bse` | - | yes | BSE image; optional GMM feature channel |
-
-**Outputs**
-
-| port | type tag | notes |
-|------|----------|-------|
-| `labels` | `cleaned` | labels with the target phase split into sub-phases |
-
-**Parameters**
-
-| name | type | default | bounds / choices | help |
-|------|------|---------|------------------|------|
-| `target_phase` | int | `2` | - | Cluster label of the phase to refine |
-| `olivine_enabled` | bool | `False` | - | Olivine extraction |
-| `olivine_fe_threshold` | float | `0.6` | 0.0..1.0 | Olivine Fe threshold |
-| `olivine_ca_threshold` | float | `0.1` | 0.0..1.0 | Olivine Ca threshold |
-| `gmm_enabled` | bool | `False` | - | GMM split |
-| `gmm_n_components` | int | `2` | 2.. | GMM components |
-| `gmm_features` | str | `Ca,Mg,Fe-K,BSE` | - | Comma-separated channel names; 'BSE' adds backscatter |
-| `gmm_bse_weight` | float | `1.0` | 0.0.. | BSE weight |
-| `gmm_subsample_n` | int | `500000` | 0.. | Max pixels to fit GMM on; 0 = all |
-| `random_state` | int | `42` | - | Random seed |
-
 ## `split_gmm` — Split by GMM
 
 Split one phase with a Gaussian mixture on z-scored features (denoised channels, BSE, or a ratio A/(A+B)). The largest component can keep the parent label; new labels are named in order.

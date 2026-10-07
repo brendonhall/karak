@@ -142,9 +142,6 @@
           "$ref": "#/$defs/node_rare_phase"
         },
         {
-          "$ref": "#/$defs/node_refine"
-        },
-        {
           "$ref": "#/$defs/node_split_gmm"
         },
         {
@@ -1522,109 +1519,6 @@
             "float32"
           ],
           "default": "float64"
-        }
-      },
-      "additionalProperties": false
-    },
-    "node_refine": {
-      "title": "Phase refinement",
-      "description": "Split a composite phase: threshold-based olivine extraction, then a GMM split of the remaining target-phase pixels.",
-      "type": "object",
-      "required": [
-        "id",
-        "type",
-        "params"
-      ],
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "type": {
-          "const": "refine"
-        },
-        "params": {
-          "$ref": "#/$defs/params_refine"
-        },
-        "ui": {
-          "$ref": "#/$defs/ui"
-        }
-      },
-      "additionalProperties": false
-    },
-    "params_refine": {
-      "type": "object",
-      "required": [
-        "target_phase",
-        "olivine_enabled",
-        "olivine_fe_threshold",
-        "olivine_ca_threshold",
-        "gmm_enabled",
-        "gmm_n_components",
-        "gmm_features",
-        "gmm_bse_weight",
-        "gmm_subsample_n",
-        "random_state"
-      ],
-      "properties": {
-        "target_phase": {
-          "type": "integer",
-          "title": "Target phase",
-          "description": "Cluster label of the phase to refine",
-          "default": 2
-        },
-        "olivine_enabled": {
-          "type": "boolean",
-          "title": "Olivine extraction",
-          "default": false
-        },
-        "olivine_fe_threshold": {
-          "type": "number",
-          "title": "Olivine Fe threshold",
-          "minimum": 0.0,
-          "maximum": 1.0,
-          "default": 0.6
-        },
-        "olivine_ca_threshold": {
-          "type": "number",
-          "title": "Olivine Ca threshold",
-          "minimum": 0.0,
-          "maximum": 1.0,
-          "default": 0.1
-        },
-        "gmm_enabled": {
-          "type": "boolean",
-          "title": "GMM split",
-          "default": false
-        },
-        "gmm_n_components": {
-          "type": "integer",
-          "title": "GMM components",
-          "minimum": 2,
-          "default": 2
-        },
-        "gmm_features": {
-          "type": "string",
-          "title": "GMM features",
-          "description": "Comma-separated channel names; 'BSE' adds backscatter",
-          "default": "Ca,Mg,Fe-K,BSE"
-        },
-        "gmm_bse_weight": {
-          "type": "number",
-          "title": "BSE weight",
-          "minimum": 0.0,
-          "default": 1.0
-        },
-        "gmm_subsample_n": {
-          "type": "integer",
-          "title": "GMM subsample N",
-          "description": "Max pixels to fit GMM on; 0 = all",
-          "minimum": 0,
-          "default": 500000
-        },
-        "random_state": {
-          "type": "integer",
-          "title": "Random seed",
-          "default": 42
         }
       },
       "additionalProperties": false

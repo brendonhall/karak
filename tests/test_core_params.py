@@ -32,7 +32,6 @@ def test_stage_builders_fill_every_field_from_the_stage_params():
     from karak.stages.load import LoadElementsStage, downsample_config, loader_config
     from karak.stages.pca import PCAStage, pca_config
     from karak.stages.rare_phase import RarePhaseStage, rare_phase_config
-    from karak.stages.refine import RefineStage, refinement_config
 
     load = LoadElementsStage.template()
     assert downsample_config(load).downsample_factor == load["downsample_factor"]
@@ -44,8 +43,6 @@ def test_stage_builders_fill_every_field_from_the_stage_params():
     assert tiled_config(tiled).merge_threshold == tiled["merge_threshold"]
     rare = RarePhaseStage.template()
     assert rare_phase_config(rare).merge_threshold == rare["merge_threshold"]
-    refine = refinement_config(RefineStage.template())
-    assert refine.gmm_split.features == ("Ca", "Mg", "Fe-K", "BSE")
 
 
 def test_rare_phase_merge_threshold_is_explicit():
