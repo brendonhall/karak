@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   float32 sums; the tile-grid QC figure keeps tiles from 200 pixels, as the
   clustering does). On the CPU, load through normalize are bit-identical to
   the published run and the tiled pass matches its per-tile cluster
-  counts; the rare-phase pass does not reproduce the published labels.
+  counts; the rare-phase pass reproduces the published raw labels once the
+  deferred tile is left to kNN (the published file had that tile reset by
+  hand).
 - `rare_phase` runs its pass-2 HDBSCAN on the GPU with `device: cuda`
   (new param; `--device cuda` sets it), with cuML's subsample fit and
   batched prediction; fingerprints and the registry merge stay on the
@@ -208,7 +210,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   50k/125 in between (9 phases); a per-tile subsample speeds up the paper
   settings but does not keep their small-phase recovery. README: the paper reproduction claim states what
   reproduces (load through normalization bit for bit, the tiled pass per
-  tile) and that the rare-phase pass does not yet.
+  tile) and that the rare-phase pass reproduces the published raw labels
+  once the deferred tile is left to kNN (6 of 12,495,787 pixels differ when
+  replayed on the published pass-1 noise).
 - `export_h5` writes faster and smaller: compressed datasets use 256 × 256
   pixel chunks with every element in one chunk, and the denoised and
   normalized cubes add HDF5's shuffle filter. On NWA 4587 at full scale
