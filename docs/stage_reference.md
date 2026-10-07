@@ -84,6 +84,7 @@ Write connected results to the provenance HDF5 file using the legacy group layou
 | `labels` | `cleaned` | no | written to clusters/cleaned_labels (+ probabilities) |
 | `stats` | - | no | cluster statistics stored as clusters/ attributes |
 | `tiles` | - | no | written to clusters/tiled/ (tile metadata + registry) |
+| `labels_hires` | - | no | written to clusters/hires/labels (full-resolution sub-phase map) |
 
 **Outputs**: none (sink)
 
@@ -574,6 +575,36 @@ Split one phase with a Gaussian mixture on z-scored features (denoised channels,
 | `keep_parent` | bool | `True` | - | The largest component keeps the parent label |
 | `order_by` | str | `""` | - | Feature whose component means (ascending) order the new labels; empty = by size, descending |
 | `new_names` | str | `""` | - | Comma list, one per new label, in order |
+| `note` | str | `""` | - | Why this split: the observation it rests on |
+
+## `split_hires` — Split at full resolution
+
+Inside a set of phases, fit one Gaussian mixture on a channel or ratio of a higher-resolution cube and classify every pixel of that cube; the working labels take the majority of their children. The high-resolution map is a second output (e.g. exsolution lamellae in pyroxene from Ca/(Ca+Mg) at 1x).
+
+**Inputs**
+
+| port | type tag | required | notes |
+|------|----------|----------|-------|
+| `labels` | `cleaned` | yes | working-resolution labels |
+| `cube_hires` | `raw` | yes | raw cube at a higher resolution (a second load_elements node with downsample_factor 1 and include_elements) |
+
+**Outputs**
+
+| port | type tag | notes |
+|------|----------|-------|
+| `labels` | `cleaned` | working labels with the new phases; names and history extended |
+| `labels_hires` | - | HiresLabels: the new labels at the cube's resolution |
+
+**Parameters**
+
+| name | type | default | bounds / choices | help |
+|------|------|---------|------------------|------|
+| `target_phases` | str | `""` | - | Comma list of labels that form the region |
+| `feature` | str | `""` | - | One channel of cube_hires or a ratio 'A/(A+B)' |
+| `n_components` | int | `2` | 2.. | Components |
+| `subsample_n` | int | `500000` | 0.. | Max hires pixels fitted; 0 = all |
+| `random_state` | int | `42` | - | Random seed |
+| `new_names` | str | `""` | - | Comma list, one per component, by ascending feature mean |
 | `note` | str | `""` | - | Why this split: the observation it rests on |
 
 ## `split_threshold` — Split by threshold
