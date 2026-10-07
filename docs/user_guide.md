@@ -101,9 +101,10 @@ the registry; `karak schema` prints the same contract as JSON.
 | `name_phases` | `labels:cleaned` → `labels:cleaned` | Attaches mineral names (`names`: `'0: Ilmenite; 1: Silica'`) that travel with the labels to the fingerprints, the QC figures and the export (`clusters/mineral_names`). Fails validation if a named label is not in the data. |
 | `split_threshold` | `labels:cleaned`, `cube:denoised` → `labels:cleaned` | Moves the pixels of one phase that satisfy a rule on denoised channels (`'Fe-K > 0.6 & Ca < 0.10'`) to a new, named label. Appends a record to the split history. |
 | `split_gmm` | `labels:cleaned`, `cube:denoised` (+`bse`) → `labels:cleaned` | Gaussian mixture on z-scored features (channels, `BSE`, ratios `A/(A+B)`). `keep_parent` lets the largest component keep the parent label; `order_by` orders the new labels by a feature's component mean. |
+| `split_hires` | `labels:cleaned`, `cube:raw` (higher resolution) → `labels:cleaned`, `labels_hires` | One GMM on a channel or ratio of a full-resolution cube inside a set of phases; every full-resolution pixel is classified (`labels_hires`, exported to `clusters/hires/labels`) and the working labels take the majority of their children. The second cube comes from a `load_elements` node with `downsample_factor: 1` and `include_elements`. |
 | `cluster_stats` | `labels:cleaned` → `stats` | Cluster counts, sizes, and noise fraction. |
 | `fingerprints` | `labels:cleaned`, `cube:denoised` → `fingerprints` | Per-cluster mean/std element intensities from the denoised cube, with cosine-similar pairs flagged. `accumulate` sets the precision of the mean and standard-deviation sums: `float64` (default) is accurate; `float32` reproduces the published baseline, which drifts by a few percent on clusters of millions of pixels. |
-| `export_h5` | ten optional inputs → sink | Writes the provenance HDF5 file; only connected groups are written (see [HDF5 output layout](#hdf5-output-layout)). |
+| `export_h5` | eleven optional inputs → sink | Writes the provenance HDF5 file; only connected groups are written (see [HDF5 output layout](#hdf5-output-layout)). |
 | `qc_mask` | `bse`, `masks` (+`cube:raw`) → sink | Mask coverage overlay with optional TIMA reference panel. |
 | `qc_denoise` | `cube:raw`, `cube:denoised`, `bse`, `masks` → sink | Before/after denoising comparison panels. |
 | `qc_normalize` | `cube:normalized`, `masks` → sink | Z-score histograms and channel correlation matrix. |
@@ -376,6 +377,10 @@ in each.
 │   │             when the flow names the phases)
 │   ├── subclustering/  split history (written when the flow splits phases);
 │   │             attrs: history (JSON list), split_NN (JSON record each)
+│   ├── hires/    labels (H1, W1) int16, full-resolution sub-phase map
+│   │             (written when the flow has split_hires); attrs: ratio,
+│   │             names (JSON), downsample_factor, header_trim_px,
+│   │             left_trim_px
 │   └── tiled/    per-tile summaries and phase registry (tiled strategy)
 └── attrs:        pipeline_config (the complete flow, as YAML), created (UTC),
                   pipeline_version, python_version, platform,

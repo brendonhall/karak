@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `split_hires` stage and `HiresLabels` payload: a GMM on a full-resolution
+  channel or ratio inside a set of phases, with the full-resolution label
+  map as a second output (`clusters/hires/labels` in the export). Working
+  pixels take the majority of their children; ties go to the child at
+  (r·ds, c·ds); pixels with no defined child keep the parent label. This
+  is the published 1x pyroxene split, fitted once instead of three times.
 - `name_phases` stage and `Labels.names`/`Labels.history`: mineral names
   and split records travel with the labels; `fingerprints` copies the
   names, `qc_fingerprints` and `qc_named_phase_map` use them when their

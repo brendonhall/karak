@@ -129,3 +129,59 @@ def test_split_gmm_unknown_channel_is_a_stage_error(scene):
             {"target_phase": 1, "features": "Ti", "n_components": 2, "bse_weight": 1.0,
              "subsample_n": 0, "random_state": 0, "keep_parent": True, "order_by": "",
              "new_names": "x", "note": ""})
+
+
+def test_split_hires_stage(scene):
+    labels, cube = scene
+    H, W = labels.image_shape
+    hi = np.repeat(np.repeat(cube.pixels, 2, axis=0), 2, axis=1)
+    # inside phase 1 make channel A vary so Ca/(Ca+Mg)-like ratio A/(A+B) has two modes
+    hi[: H, 72:, 0] = 0.9          # top half of phase 1: high A
+    hi[H:, 72:, 0] = 0.1           # bottom half: low A
+    cube_hi = ElementCube(pixels=hi, element_names=("A", "B", "C"), space=Space.RAW,
+                          downsample_factor=1, header_trim_px=7)
+    out = get("split_hires")().run(
+        {"labels": labels, "cube_hires": cube_hi},
+        {"target_phases": "1", "feature": "A/(A+B)", "n_components": 2,
+         "subsample_n": 0, "random_state": 0, "new_names": "Low A,High A", "note": "n"})
+    got, hires = out["labels"], out["labels_hires"]
+    assert got.names[2] == "Low A" and got.names[3] == "High A"
+    assert hires.names == {2: "Low A", 3: "High A"}
+    assert hires.ratio == 2 and hires.header_trim_px == 7
+    assert hires.image.shape == (2 * H, 2 * W)
+    assert (hires.image[:, :72] == -1).all()
+    assert set(np.unique(got.labels[labels.labels == 1]).tolist()) <= {2, 3}
+    rec = got.history[-1]
+    assert rec["stage"] == "split_hires" and rec["new_labels"] == [2, 3]
+    assert rec["ratio"] == 2
+
+
+def test_split_hires_check_params():
+    cls = get("split_hires")
+    base = {"target_phases": "2", "feature": "Ca/(Ca+Mg)", "n_components": 2,
+            "subsample_n": 0, "random_state": 0, "new_names": "a,b", "note": ""}
+    assert not cls.check_params(base)
+    assert cls.check_params({**base, "target_phases": "x"})
+    assert cls.check_params({**base, "feature": "BSE"})
+    assert cls.check_params({**base, "new_names": "a"})
+
+
+def test_split_hires_non_integer_ratio_is_a_stage_error(scene):
+    labels, cube = scene
+    hi = np.repeat(np.repeat(cube.pixels, 2, axis=0), 2, axis=1)[:-40]   # 88 x 128
+    cube_hi = ElementCube(pixels=hi, element_names=("A", "B", "C"), space=Space.RAW)
+    with pytest.raises(StageError, match="integer multiple"):
+        get("split_hires")().run(
+            {"labels": labels, "cube_hires": cube_hi},
+            {"target_phases": "1", "feature": "A/(A+B)", "n_components": 2,
+             "subsample_n": 0, "random_state": 0, "new_names": "a,b", "note": ""})
+
+
+def test_history_restores_int_keys_of_hires_counts():
+    import json
+
+    from karak.stages.payloads import _history_from_json
+
+    rec = {"stage": "split_hires", "n_pixels_hires": {2: 10, 3: 5}}
+    (got,) = _history_from_json(json.dumps([rec]))
+    assert got["n_pixels_hires"] == {2: 10, 3: 5}

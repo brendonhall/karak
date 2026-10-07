@@ -44,7 +44,7 @@ def test_autoload_finds_phase_a_stages():
         "load_elements", "mask", "denoise", "normalize",
         "pca", "hdbscan_global", "hdbscan_tiled", "rare_phase",
         "noise_assign", "name_phases", "cluster_stats", "fingerprints",
-        "split_threshold", "split_gmm",
+        "split_threshold", "split_gmm", "split_hires",
     } <= ids
 
 

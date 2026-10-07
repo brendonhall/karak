@@ -10,6 +10,7 @@ from karak.stages.payloads import (
     ClusterStats,
     ElementCube,
     Fingerprints,
+    HiresLabels,
     LabelState,
     Labels,
     MaskSet,
@@ -169,6 +170,20 @@ def test_labels_roundtrip_names_and_history(tmp_path):
     assert old.names == {} and old.history == ()
 
 
+def test_hires_labels_h5_roundtrip(tmp_path):
+    hires = HiresLabels(
+        image=np.array([[-1, 13], [14, 14]], dtype=np.int16),
+        ratio=2, names={13: "Pigeonite", 14: "Augite"},
+        downsample_factor=1, header_trim_px=100, left_trim_px=0,
+    )
+    back = _roundtrip(hires, tmp_path)
+    np.testing.assert_array_equal(back.image, hires.image)
+    assert back.image.dtype == np.int16
+    assert (back.ratio, back.names, back.downsample_factor, back.header_trim_px) == (
+        2, {13: "Pigeonite", 14: "Augite"}, 1, 100)
+    assert "HiresLabels" in hires.summary()
+
+
 def test_tiled_artifacts_h5_roundtrip(tmp_path):
     from karak.clustering.tiling import PhaseEntry, TileResult
 
@@ -299,6 +314,7 @@ def test_every_payload_roundtrips_under_each_compression(tmp_path, compression):
         Labels(labels=np.zeros(7, np.int32), probabilities=None,
                mineral_indices=np.zeros((7, 2), np.int32),
                image_shape=(4, 5), state=LabelState.RAW),
+        HiresLabels(image=np.zeros((4, 5), np.int16), ratio=2, names={1: "A"}),
         ClusterStats(stats={"n": 1}),
     ]
     for payload in payloads:
