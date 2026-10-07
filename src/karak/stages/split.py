@@ -16,6 +16,7 @@ from karak.stages.registry import register
 
 logger = logging.getLogger(__name__)
 
+
 def _split_names(text: str) -> list[str]:
     """new_names are separated by ';' so a formula may contain commas."""
     return [n.strip() for n in text.split(";") if n.strip()]

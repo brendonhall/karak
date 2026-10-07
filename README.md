@@ -11,7 +11,7 @@
 
 **Karak** is an automated mineralogy pipeline that transforms SEM-EDS elemental map PNGs into mineral phase maps with chemical fingerprints. Named after the dwarven word for *stronghold*, it digs into the hidden structure of rocks, meteorites, and other geological samples.
 
-Since v0.2.0, the pipeline is a graph rather than a script. Every processing step is a node with typed parameters and named ports. A pipeline is a JSON file wiring nodes together. The engine validates the graph before anything runs, executes it headlessly, and caches every node's output by content. The paper's full analysis (12.5 million mineral pixels, 13 mineral phases) reruns as `karak run --builtin paper`: the load, mask, denoise, and normalization outputs reproduce the published run bit for bit, the tiled clustering finds the published tiles with the same cluster count in each (11 phases before the manual subclustering), and the rare-phase pass reproduces the published raw labels once the deferred tile is left to kNN (see the [user guide](docs/user_guide.md#flows)). Changing one refinement threshold reruns in minutes instead of two hours, because only the affected nodes execute.
+Since v0.2.0, the pipeline is a graph rather than a script. Every processing step is a node with typed parameters and named ports. A pipeline is a JSON file wiring nodes together. The engine validates the graph before anything runs, executes it headlessly, and caches every node's output by content. The paper's full analysis (12.5 million mineral pixels, 13 mineral phases) reruns as `karak run --builtin paper`: it reproduces the published preprocessing bit for bit, the published tiles and phases, and the six hand steps of the published analysis (names, olivine, weathering, 1x pyroxene and phosphate splits) as declared nodes; the abundances agree with the paper's Table 1 to within ACCEPTANCE (see the [user guide](docs/user_guide.md#flows)). Changing one refinement threshold reruns in minutes instead of two hours, because only the affected nodes execute.
 
 <p align="center">
   <img src="docs/images/phase_map_example.png" alt="Mineral phase map of meteorite NWA 4587" width="350">
@@ -226,9 +226,10 @@ In flow terms these are the stages `load_elements → mask → denoise →
 normalize → pca → hdbscan_global → noise_assign → cluster_stats →
 fingerprints → export_h5`, plus QC figure sinks. The `tiled` flow swaps in
 `hdbscan_tiled`; `tiled-rare` adds a `rare_phase` stage. `name_phases`,
-`split_threshold` and `split_gmm` attach names and split composite phases
-(the published NWA 4587 olivine, weathering and phosphate splits are of
-this form). A full-resolution split stage follows. Optional
+`split_threshold`, `split_gmm` and `split_hires` attach names and split
+composite phases (the published NWA 4587 olivine, weathering, phosphate and
+1x pyroxene splits are of this form; `split_hires` fits the pyroxene split
+on the full-resolution maps). Optional
 post-run stages `qc_named_phase_map` and the notebook helpers
 `save_mineral_names`/`load_mineral_names` attach researcher-assigned
 mineral names.

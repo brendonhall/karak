@@ -156,7 +156,7 @@ by `edges` (output port to input port). Five builtins ship with karak:
 | `tiled` | `hdbscan_tiled → noise_assign` |
 | `tiled-rare` | `hdbscan_tiled → rare_phase → noise_assign` |
 | `stepwise` | `hdbscan_global → noise_assign`, then statistics and fingerprints; `global` without the export and QC figures |
-| `paper` | `hdbscan_tiled → rare_phase → noise_assign` with the settings of the published NWA 4587 run |
+| `paper` | `tiled-rare` + the published names and splits; 1x pyroxene map |
 
 `stepwise` is the dashboard flow: every processing step of `global`, with
 the same parameters and wiring, but without the HDF5 export and the QC
@@ -189,33 +189,48 @@ builtin leaves `msk.valid_mask_path` at `null` (no polygon); set it in your
 own copy (`karak flow init --builtin stepwise -o FILE`), for example to
 `"{input}/mask/Valid_mask.csv"`.
 
-`paper` is `tiled-rare` with the settings of the published NWA 4587 run
-(stored in that run's HDF5 as `clusters.attrs["cluster_config"]`): the
-matplotlib jet palette (`cmap:jet`) and a 100 px header trim for the load,
-the valid mask at `{input}/mask/Valid_mask.csv`, `min_cluster_size` 100,
-`min_samples` 25, 1024 px tiles and merge threshold 0.88 for the tiled
-HDBSCAN, merge threshold 0.88 for the rare phases, and float32 sums in the
-normalize, tile, rare-phase and fingerprint steps; its tile-grid QC figure
-keeps tiles from 200 mineral pixels, as the clustering does. A test pins
-these differences from `tiled-rare`. On the CPU it reproduces the published run
-as follows:
+`paper` is `tiled-rare` with the settings of the published NWA 4587 run,
+plus the six steps that were done by hand after the March 2026
+clustering, each as a node with its parameters and a `note`:
+
+| node | type | what it decides |
+|---|---|---|
+| `src_hires` | `load_elements` | Ca and Mg at 1x (no downsample), the same 100 px trim and jet palette |
+| `names` | `name_phases` | the 11 base names, from the fingerprints and the TIMA reference |
+| `oliv` | `split_threshold` | olivine out of phase 2: `Fe-K > 0.6 & Ca < 0.10` |
+| `weath` | `split_gmm` | the smaller of two components of phase 2 on Ca, Mg, Fe-K, BSE and Ca/(Ca+Mg) is a weathering assemblage |
+| `pyx` | `split_hires` | pigeonite and augite from Ca/(Ca+Mg) at 1x inside phase 2; the 1x map goes to `clusters/hires/labels` |
+| `phos` | `split_gmm` | merrillite and chlorapatite from Cl, Na, Mg, F of phase 7, ordered by Cl |
+
+The clustering settings (stored in the published HDF5 as
+`clusters.attrs["cluster_config"]`) are the matplotlib jet palette
+(`cmap:jet`) and a 100 px header trim for the load, the valid mask at
+`{input}/mask/Valid_mask.csv`, `min_cluster_size` 100, `min_samples` 25,
+1024 px tiles and merge threshold 0.88 for the tiled HDBSCAN, merge
+threshold 0.88 for the rare phases, and float32 sums in the normalize,
+tile, rare-phase and fingerprint steps. Tests pin the nodes, the wiring
+and these settings.
+
+What a CPU run reproduces of the published result:
 
 - load, mask, denoise and normalize outputs are bit-identical;
-- the PCA explained variance agrees within 5e-7;
+- the PCA explained variance agrees within 5e-7; the features differ at
+  about 1e-5 relative because the OpenBLAS kernel of the CPU that ran the
+  paper differs, which moves pass-1 noise by up to 4,111 pixels per tile;
 - the tiled pass finds the published 22 tiles with the same cluster count
-  in each, and 2,847,514 noise pixels against the published 2,852,516; its
-  11 phases each match one published phase (every phase 100 % pure; the
-  published 16 labels add manual olivine, pyroxene and apatite splits);
-- the rare-phase pass reproduces the published raw labels once the one
-  deferred 1024 px tile is excluded, which `rare_phase` now does: replaying
-  it on the published pass-1 noise matches the published raw labels in all
-  but 6 of 12,495,787 pixels. The published file had that tile reset by
-  hand (`fix_tile.py` in the paper repository).
+  in each; its 11 phases each match one published phase at 100 % purity;
+- the rare-phase pass matches the published raw labels once the one
+  deferred 1024 px tile is left to kNN (the published file had it reset
+  by hand): replayed on the published pass-1 noise, 6 of 12,495,787
+  pixels differ;
+- the splits give the published 16 phases; the numbering differs in one
+  place (13 pigeonite, 14 augite here; the published file has them the
+  other way round). Abundances against Table 1 of the paper: ACCEPTANCE.
 
 Run it on the CPU: cuML selects different clusters on these full tiles
 (see [Computational requirements](#computational-requirements)). The tiled
 HDBSCAN takes about 30 minutes on 16 threads, with the pool limited to 7
-workers by memory.
+workers by memory; the 1x load adds about a minute and 0.8 GB.
 
 ```bash
 karak run --builtin global --input data/ --out output/sample
@@ -402,8 +417,14 @@ change:
 ```bash
 karak run --builtin global --input data/ --out output/s1   # first run: all stages
 karak run --builtin global --input data/ --out output/s1   # warm: only sinks re-run
-karak run --builtin paper --set weath.target_phase=3 ...  # only weath + downstream
 karak run ... --no-cache                                   # force a clean run
+```
+
+A change to one node reruns that node and what follows it. In the `paper`
+flow, this reruns only `weath` and its downstream nodes:
+
+```bash
+karak run --builtin paper --input data/ --out output/s1 --set weath.target_phase=3
 ```
 
 Cache files are written on a background thread, so the next step starts
@@ -555,6 +576,9 @@ cube into memory (about 2 GB for NWA 4587).
   parameters, recipe hash, whether it ran or came from the cache, its time,
   and its output files with one-line summaries. `{out}/runs/latest` points
   at the newest record. Records are never overwritten or pruned.
+- **Declared judgments** — every split or naming decision is a node with
+  a `note` param; `clusters/subclustering` in the HDF5 lists them in order
+  with their pixel counts and component means.
 - **Embedded provenance** — the output HDF5 file records the complete
   executing flow, library versions, Python version, and
   platform string, making every result file self-documenting.

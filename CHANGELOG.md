@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The `paper` builtin flow carries the six hand steps of the published
+  NWA 4587 analysis as nodes: `src_hires` (Ca and Mg at 1x), `names`,
+  `oliv` (olivine threshold), `weath` (weathering GMM), `pyx` (1x
+  pyroxene split with the lamellae map) and `phos` (phosphate GMM). One
+  run gives the published 16 phases. Real-data check: ACCEPTANCE.
 - `split_hires` stage and `HiresLabels` payload: a GMM on a full-resolution
   channel or ratio inside a set of phases, with the full-resolution label
   map as a second output (`clusters/hires/labels` in the export). Working
@@ -206,7 +211,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record to the labels' split history (parent, new labels, pixel counts,
   method, component means). `split_gmm` can give every component a new
   label (`keep_parent: false`) and order them by a feature's mean
-  (`order_by`), as the published phosphate split did.
+  (`order_by`), as the published phosphate split did. `new_names`
+  entries are separated by ';', so a formula such as (Cl,F,OH) may
+  contain commas.
 
 ### Changed
 
