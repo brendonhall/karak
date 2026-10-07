@@ -396,3 +396,122 @@ def refine_phases(
     logger.info("Phase refinement complete: %d total phases", n_phases)
 
     return labels
+
+
+def _feature_matrix(
+    denoised_cube, bse, rows, cols, element_names, features,
+) -> tuple[np.ndarray, list[str]]:
+    """Columns for the feature tokens (channel, BSE, A/(A+B)) at the given
+    pixels; ValueError names an unknown channel or a missing BSE image."""
+    from karak.clustering.features import parse_feature
+
+    columns, used = [], []
+    for token in features:
+        kind, names = parse_feature(token)
+        if kind == "bse":
+            if bse is None:
+                raise ValueError("feature 'BSE' needs the bse input")
+            columns.append(bse[rows, cols].astype(np.float32))
+        elif kind == "ratio":
+            a = denoised_cube[rows, cols, _channel_index(element_names, names[0])]
+            b = denoised_cube[rows, cols, _channel_index(element_names, names[1])]
+            denom = a + b
+            columns.append(np.where(denom > 0, a / np.where(denom > 0, denom, 1), 0.0)
+                           .astype(np.float32))
+        else:
+            columns.append(denoised_cube[rows, cols, _channel_index(element_names, names[0])])
+        used.append(token.strip())
+    return np.column_stack(columns).astype(np.float32), used
+
+
+def gmm_split(
+    cleaned_labels: np.ndarray,
+    denoised_cube: np.ndarray,
+    bse: np.ndarray | None,
+    mineral_indices: np.ndarray,
+    element_names: list[str],
+    target_phase: int,
+    features: list[str],
+    *,
+    n_components: int,
+    bse_weight: float,
+    subsample_n: int | None,
+    random_state: int,
+    keep_parent: bool,
+    order_by: str,
+) -> tuple[np.ndarray, list[int], dict]:
+    """Split the target phase with a GMM on z-scored features.
+
+    ``keep_parent`` True: the largest component keeps the parent label and
+    the others get new labels, ordered by ascending mean of ``order_by``
+    (or by size, descending, when ``order_by`` is empty). False: every
+    component gets a new label in that order and the parent empties.
+    Returns ``(labels, new_labels, info)``.
+    """
+    from sklearn.mixture import GaussianMixture
+    from sklearn.preprocessing import StandardScaler
+
+    phase_mask = cleaned_labels == target_phase
+    n_phase = int(phase_mask.sum())
+    method = f"GMM {n_components}-component on {'+'.join(t.strip() for t in features)}"
+    if n_phase < n_components * 10:
+        logger.warning("GMM split of phase %d: only %d pixels, need %d; skipped",
+                       target_phase, n_phase, n_components * 10)
+        return cleaned_labels.copy(), [], {"method": method, "skipped":
+                                            f"{n_phase} pixels < {n_components * 10}"}
+    rows, cols = mineral_indices[phase_mask, 0], mineral_indices[phase_mask, 1]
+    X, used = _feature_matrix(denoised_cube, bse, rows, cols, element_names, features)
+    X_scaled = StandardScaler().fit_transform(X)
+    for i, name in enumerate(used):
+        if name.upper() == "BSE" and bse_weight != 1.0:
+            X_scaled[:, i] *= bse_weight
+
+    rng = np.random.default_rng(random_state)
+    X_fit = X_scaled
+    if subsample_n is not None and n_phase > subsample_n:
+        X_fit = X_scaled[rng.choice(n_phase, subsample_n, replace=False)]
+    gmm = GaussianMixture(n_components=n_components, covariance_type="full",
+                          random_state=random_state, n_init=5).fit(X_fit)
+    comp = gmm.predict(X_scaled)
+    sizes = np.bincount(comp, minlength=n_components)
+
+    if order_by.strip():
+        if order_by.strip() not in used:
+            raise ValueError(f"order_by {order_by!r} is not one of the features {used}")
+        column = used.index(order_by.strip())
+        means = np.array([X[comp == c, column].mean() if sizes[c] else np.inf
+                          for c in range(n_components)])
+        order = [int(c) for c in np.argsort(means, kind="stable")]
+    else:
+        order = [int(c) for c in np.argsort(-sizes, kind="stable")]
+
+    updated = cleaned_labels.copy()
+    phase_indices = np.where(phase_mask)[0]
+    next_label = int(cleaned_labels.max()) + 1
+    new_labels: list[int] = []
+    assigned: dict[int, int] = {}
+    if keep_parent:
+        largest = int(np.argmax(sizes))
+        assigned[largest] = target_phase
+        order = [c for c in order if c != largest]
+    for c in order:
+        if sizes[c] == 0:
+            continue
+        assigned[c] = next_label
+        new_labels.append(next_label)
+        next_label += 1
+    for c, label in assigned.items():
+        updated[phase_indices[comp == c]] = label
+
+    info = {
+        "method": method,
+        "n_pixels": {label: int(sizes[c]) for c, label in assigned.items()
+                     if label != target_phase},
+        "component_means": {
+            label: {name: float(X[comp == c, i].mean()) for i, name in enumerate(used)}
+            for c, label in assigned.items()
+        },
+    }
+    logger.info("%s of phase %d: %s", method, target_phase,
+                {label: int(sizes[c]) for c, label in assigned.items()})
+    return updated, new_labels, info
