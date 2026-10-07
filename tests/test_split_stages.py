@@ -166,7 +166,10 @@ def test_split_hires_check_params():
     assert not cls.check_params(base)
     assert cls.check_params({**base, "target_phases": "x"})
     assert cls.check_params({**base, "feature": "BSE"})
-    assert cls.check_params({**base, "new_names": "a"})
+    assert cls.check_params({**base, "new_names": "a"}) == [
+        "new_names: 2 names expected, got 1"]
+    assert cls.check_params({**base, "target_phases": "2,-1"}) == [
+        "target_phases: labels must be >= 0, got -1"]
 
 
 def test_split_hires_non_integer_ratio_is_a_stage_error(scene):

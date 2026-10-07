@@ -189,8 +189,8 @@ def compute_tile_grid(
 
 def resolve_min_tile_pixels(tiled: TiledConfig, hdbscan: HDBSCANConfig) -> int:
     """``min_tile_pixels`` of the tiled config, or twice ``min_cluster_size``
-    when it is None. One rule for the clustering and for every consumer
-    that recomputes the grid (``hdbscan_tiled``, ``qc_tiled``)."""
+    when it is None. One rule for the clustering and for the
+    ``hdbscan_tiled`` stage's grid recompute."""
     if tiled.min_tile_pixels is not None:
         return tiled.min_tile_pixels
     return 2 * hdbscan.min_cluster_size

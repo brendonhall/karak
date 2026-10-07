@@ -49,8 +49,13 @@ class SplitHiresStage(Stage):
     def check_params(cls, params: dict) -> list[str]:
         errors = []
         try:
-            if not parse_int_list(params["target_phases"], "target_phases"):
+            targets = parse_int_list(params["target_phases"], "target_phases")
+            if not targets:
                 errors.append("target_phases: at least one label is needed")
+            for label in targets:
+                if label < 0:
+                    errors.append(f"target_phases: labels must be >= 0, got {label}")
+                    break
         except ValueError as exc:
             errors.append(str(exc))
         try:
@@ -59,8 +64,10 @@ class SplitHiresStage(Stage):
                 errors.append("feature: BSE is not a channel of cube_hires")
         except ValueError as exc:
             errors.append(f"feature: {exc}")
-        if len(_split_names(params["new_names"])) != params["n_components"]:
-            errors.append(f"new_names: {params['n_components']} names expected")
+        n_names = len(_split_names(params["new_names"]))
+        if n_names != params["n_components"]:
+            errors.append(
+                f"new_names: {params['n_components']} names expected, got {n_names}")
         return errors
 
     def apply(self, inputs: dict, params: dict) -> dict:

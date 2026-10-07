@@ -133,7 +133,11 @@ def threshold_split(
     n_moved = int(keep.sum())
     updated = cleaned_labels.copy()
     if n_moved == 0:
-        logger.info("threshold split of phase %d: no pixel satisfies %s", target_phase, rules)
+        if not phase_mask.any():
+            logger.warning("threshold split: target phase %d has no pixels", target_phase)
+        else:
+            logger.info("threshold split of phase %d: no pixel satisfies %s",
+                        target_phase, rules)
         return updated, -1, 0
     new_label = int(cleaned_labels.max()) + 1
     updated[np.where(phase_mask)[0][keep]] = new_label

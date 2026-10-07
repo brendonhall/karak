@@ -18,12 +18,13 @@ logger = logging.getLogger(__name__)
 def resolution_ratio(working_shape: tuple[int, int],
                      hires_shape: tuple[int, int]) -> int:
     """Hires pixels per working pixel, the same along both axes. The hires
-    image may exceed ``working * ratio`` by up to ``ratio - 1`` pixels (odd
-    source dimensions); anything else is an error."""
+    image may differ from ``working * ratio`` by less than ``ratio`` pixels
+    in either direction (odd source dimensions round the downsample up);
+    anything else is an error."""
     (H, W), (H1, W1) = working_shape, hires_shape
     ds = max(1, int(round(H1 / H)))
     for size, hi in ((H, H1), (W, W1)):
-        if not 0 <= hi - size * ds < ds:
+        if not -ds < hi - size * ds < ds:
             raise ValueError(
                 f"hires shape {hires_shape} is not an integer multiple of the "
                 f"working shape {working_shape} (ratio {H1 / H:.3f} x {W1 / W:.3f})")

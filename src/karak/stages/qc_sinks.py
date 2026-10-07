@@ -261,11 +261,12 @@ class QcFingerprintsStage(Stage):
         from karak.qc.figures import generate_fingerprint_chart
 
         names = inputs["fingerprints"].data.get("names")
-        if params["mineral_names"]:
-            names = {
-                int(k): v
-                for k, v in json.loads(params["mineral_names"]).items()
-            }
+        given = {
+            int(k): v
+            for k, v in json.loads(params["mineral_names"] or "{}").items()
+        }
+        if given:
+            names = given
         generate_fingerprint_chart(
             inputs["fingerprints"].data, params["figure_dir"],
             mineral_names=names,
