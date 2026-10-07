@@ -576,6 +576,39 @@ Split a composite phase: threshold-based olivine extraction, then a GMM split of
 | `gmm_subsample_n` | int | `500000` | 0.. | Max pixels to fit GMM on; 0 = all |
 | `random_state` | int | `42` | - | Random seed |
 
+## `split_gmm` — Split by GMM
+
+Split one phase with a Gaussian mixture on z-scored features (denoised channels, BSE, or a ratio A/(A+B)). The largest component can keep the parent label; new labels are named in order.
+
+**Inputs**
+
+| port | type tag | required | notes |
+|------|----------|----------|-------|
+| `labels` | `cleaned` | yes | labels with the phase to split |
+| `cube` | `denoised` | yes | denoised channels for the features |
+| `bse` | - | no | BSE image; needed when a feature is 'BSE' |
+
+**Outputs**
+
+| port | type tag | notes |
+|------|----------|-------|
+| `labels` | `cleaned` | labels with the new phases; names and history extended |
+
+**Parameters**
+
+| name | type | default | bounds / choices | help |
+|------|------|---------|------------------|------|
+| `target_phase` | int | `0` | 0.. | Label to split |
+| `features` | str | `""` | - | Comma list of channel names, 'BSE', or ratios 'A/(A+B)' |
+| `n_components` | int | `2` | 2.. | Components |
+| `bse_weight` | float | `1.0` | 0.0.. | Multiplier on the z-scored BSE column |
+| `subsample_n` | int | `500000` | 0.. | Max pixels fitted; 0 = all |
+| `random_state` | int | `42` | - | Random seed |
+| `keep_parent` | bool | `True` | - | The largest component keeps the parent label |
+| `order_by` | str | `""` | - | Feature whose component means (ascending) order the new labels; empty = by size, descending |
+| `new_names` | str | `""` | - | Comma list, one per new label, in order |
+| `note` | str | `""` | - | Why this split: the observation it rests on |
+
 ## `split_threshold` — Split by threshold
 
 Move the pixels of one phase that satisfy a rule on denoised channel values to a new label (e.g. olivine out of a pyroxene phase with 'Fe-K > 0.6 & Ca < 0.10').

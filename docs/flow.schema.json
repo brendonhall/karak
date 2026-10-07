@@ -145,6 +145,9 @@
           "$ref": "#/$defs/node_refine"
         },
         {
+          "$ref": "#/$defs/node_split_gmm"
+        },
+        {
           "$ref": "#/$defs/node_split_threshold"
         }
       ]
@@ -1622,6 +1625,111 @@
           "type": "integer",
           "title": "Random seed",
           "default": 42
+        }
+      },
+      "additionalProperties": false
+    },
+    "node_split_gmm": {
+      "title": "Split by GMM",
+      "description": "Split one phase with a Gaussian mixture on z-scored features (denoised channels, BSE, or a ratio A/(A+B)). The largest component can keep the parent label; new labels are named in order.",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "split_gmm"
+        },
+        "params": {
+          "$ref": "#/$defs/params_split_gmm"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_split_gmm": {
+      "type": "object",
+      "required": [
+        "target_phase",
+        "features",
+        "n_components",
+        "bse_weight",
+        "subsample_n",
+        "random_state",
+        "keep_parent",
+        "order_by",
+        "new_names",
+        "note"
+      ],
+      "properties": {
+        "target_phase": {
+          "type": "integer",
+          "title": "Target phase",
+          "description": "Label to split",
+          "minimum": 0,
+          "default": 0
+        },
+        "features": {
+          "type": "string",
+          "title": "Features",
+          "description": "Comma list of channel names, 'BSE', or ratios 'A/(A+B)'",
+          "default": ""
+        },
+        "n_components": {
+          "type": "integer",
+          "title": "Components",
+          "minimum": 2,
+          "default": 2
+        },
+        "bse_weight": {
+          "type": "number",
+          "title": "BSE weight",
+          "description": "Multiplier on the z-scored BSE column",
+          "minimum": 0.0,
+          "default": 1.0
+        },
+        "subsample_n": {
+          "type": "integer",
+          "title": "Subsample N",
+          "description": "Max pixels fitted; 0 = all",
+          "minimum": 0,
+          "default": 500000
+        },
+        "random_state": {
+          "type": "integer",
+          "title": "Random seed",
+          "default": 42
+        },
+        "keep_parent": {
+          "type": "boolean",
+          "title": "Keep parent",
+          "description": "The largest component keeps the parent label",
+          "default": true
+        },
+        "order_by": {
+          "type": "string",
+          "title": "Order by",
+          "description": "Feature whose component means (ascending) order the new labels; empty = by size, descending",
+          "default": ""
+        },
+        "new_names": {
+          "type": "string",
+          "title": "New names",
+          "description": "Comma list, one per new label, in order",
+          "default": ""
+        },
+        "note": {
+          "type": "string",
+          "title": "Note",
+          "description": "Why this split: the observation it rests on",
+          "default": ""
         }
       },
       "additionalProperties": false

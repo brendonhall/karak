@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from conftest import make_synthetic_scene
-from karak.clustering.refinement import threshold_split
+from karak.clustering.refinement import gmm_split, threshold_split
 from karak.stages import get
 from karak.stages.base import StageError
 from karak.stages.payloads import ElementCube, LabelState, Labels, Space
@@ -58,3 +58,74 @@ def test_split_threshold_unknown_channel_is_a_stage_error(scene):
         get("split_threshold")().run(
             {"labels": labels, "cube": cube},
             {"target_phase": 0, "rule": "Ti > 0.5", "new_name": "x", "note": ""})
+
+
+def test_split_gmm_parity_keep_parent(scene):
+    labels, cube = scene
+    expected, new, info = gmm_split(
+        labels.labels, cube.pixels, None, labels.mineral_indices, ["A", "B", "C"], 1,
+        ["A", "B"], n_components=2, bse_weight=1.0, subsample_n=None, random_state=0,
+        keep_parent=True, order_by="")
+    out = get("split_gmm")().run(
+        {"labels": labels, "cube": cube},
+        {"target_phase": 1, "features": "A,B", "n_components": 2, "bse_weight": 1.0,
+         "subsample_n": 0, "random_state": 0, "keep_parent": True, "order_by": "",
+         "new_names": "B minor", "note": "n"})
+    got = out["labels"]
+    np.testing.assert_array_equal(got.labels, expected)
+    assert new == [2] and got.names[2] == "B minor"
+    rec = got.history[-1]
+    assert rec["stage"] == "split_gmm" and rec["new_labels"] == [2]
+    assert rec["n_pixels"] == info["n_pixels"] and rec["method"] == info["method"]
+
+
+def test_split_gmm_without_parent_empties_it_and_orders(scene):
+    labels, cube = scene
+    out = get("split_gmm")().run(
+        {"labels": labels, "cube": cube},
+        {"target_phase": 1, "features": "A,B", "n_components": 2, "bse_weight": 1.0,
+         "subsample_n": 0, "random_state": 0, "keep_parent": False, "order_by": "B",
+         "new_names": "Low B,High B", "note": ""})
+    got = out["labels"]
+    assert not (got.labels == 1).any()
+    assert got.names[2] == "Low B" and got.names[3] == "High B"
+    rec = got.history[-1]
+    assert rec["new_labels"] == [2, 3]
+
+
+def test_split_gmm_too_few_pixels_logs_and_passes_through(scene, caplog):
+    labels, cube = scene
+    few = labels.labels.copy(); few[few == 1] = 0; few[:5] = 1
+    labels = labels.replace(labels=few)
+    with caplog.at_level("WARNING"):
+        out = get("split_gmm")().run(
+            {"labels": labels, "cube": cube},
+            {"target_phase": 1, "features": "A", "n_components": 2, "bse_weight": 1.0,
+             "subsample_n": 0, "random_state": 0, "keep_parent": False, "order_by": "",
+             "new_names": "x,y", "note": ""})
+    np.testing.assert_array_equal(out["labels"].labels, few)
+    assert out["labels"].history[-1]["new_labels"] == []
+    assert "skipped" in caplog.text
+
+
+def test_split_gmm_check_params():
+    cls = get("split_gmm")
+    base = {"target_phase": 1, "features": "A,B", "n_components": 2, "bse_weight": 1.0,
+            "subsample_n": 0, "random_state": 0, "keep_parent": True, "order_by": "",
+            "new_names": "x", "note": ""}
+    assert not cls.check_params(base)
+    assert cls.check_params({**base, "features": "A/(B+C)"})          # bad ratio
+    assert cls.check_params({**base, "order_by": "C"})                 # not a feature
+    assert cls.check_params({**base, "new_names": "x,y"})              # one too many
+    assert cls.check_params({**base, "keep_parent": False})            # one too few
+    assert not cls.check_params({**base, "keep_parent": False, "new_names": "x,y"})
+
+
+def test_split_gmm_unknown_channel_is_a_stage_error(scene):
+    labels, cube = scene
+    with pytest.raises(StageError, match="'Ti'"):
+        get("split_gmm")().run(
+            {"labels": labels, "cube": cube},
+            {"target_phase": 1, "features": "Ti", "n_components": 2, "bse_weight": 1.0,
+             "subsample_n": 0, "random_state": 0, "keep_parent": True, "order_by": "",
+             "new_names": "x", "note": ""})

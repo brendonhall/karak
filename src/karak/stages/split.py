@@ -8,7 +8,7 @@ that made it, in the flow file and in the exported HDF5.
 from __future__ import annotations
 
 from karak.stages.base import Param, Port, Stage, StageError
-from karak.stages.params_text import parse_rule
+from karak.stages.params_text import parse_csv, parse_feature, parse_rule
 from karak.stages.payloads import LabelState, Space
 from karak.stages.registry import register
 
@@ -83,5 +83,97 @@ class SplitThresholdStage(Stage):
             {new_label: params["new_name"]} if new_labels else {},
             {new_label: n} if new_labels else {}, params["rule"], params["note"],
         )
+        return {"labels": labels.replace(labels=updated, names=names,
+                                         history=labels.history + (record,))}
+
+
+@register
+class SplitGmmStage(Stage):
+    id = "split_gmm"
+    label = "Split by GMM"
+    description = (
+        "Split one phase with a Gaussian mixture on z-scored features "
+        "(denoised channels, BSE, or a ratio A/(A+B)). The largest component "
+        "can keep the parent label; new labels are named in order."
+    )
+    INPUTS = [
+        Port("labels", space=LabelState.CLEANED, help="labels with the phase to split"),
+        Port("cube", space=Space.DENOISED, help="denoised channels for the features"),
+        Port("bse", required=False, help="BSE image; needed when a feature is 'BSE'"),
+    ]
+    OUTPUTS = [
+        Port("labels", space=LabelState.CLEANED,
+             help="labels with the new phases; names and history extended"),
+    ]
+    PARAMS = [
+        Param("target_phase", "int", 0, "Target phase", "Label to split", min=0),
+        Param("features", "str", "", "Features",
+              "Comma list of channel names, 'BSE', or ratios 'A/(A+B)'"),
+        Param("n_components", "int", 2, "Components", min=2),
+        Param("bse_weight", "float", 1.0, "BSE weight",
+              "Multiplier on the z-scored BSE column", min=0.0),
+        Param("subsample_n", "int", 500_000, "Subsample N",
+              "Max pixels fitted; 0 = all", min=0),
+        Param("random_state", "int", 42, "Random seed"),
+        Param("keep_parent", "bool", True, "Keep parent",
+              "The largest component keeps the parent label"),
+        Param("order_by", "str", "", "Order by",
+              "Feature whose component means (ascending) order the new "
+              "labels; empty = by size, descending"),
+        Param("new_names", "str", "", "New names",
+              "Comma list, one per new label, in order"),
+        _NOTE,
+    ]
+
+    @classmethod
+    def check_params(cls, params: dict) -> list[str]:
+        errors = []
+        features = parse_csv(params["features"])
+        if not features:
+            errors.append("features: at least one feature is needed")
+        for token in features:
+            try:
+                parse_feature(token)
+            except ValueError as exc:
+                errors.append(f"features: {exc}")
+        order_by = params["order_by"].strip()
+        if order_by and order_by not in features:
+            errors.append(f"order_by: {order_by!r} is not one of the features")
+        expected = params["n_components"] - (1 if params["keep_parent"] else 0)
+        names = parse_csv(params["new_names"])
+        if len(names) != expected:
+            errors.append(f"new_names: {expected} name(s) expected, got {len(names)}")
+        return errors
+
+    def apply(self, inputs: dict, params: dict) -> dict:
+        from karak.clustering.refinement import gmm_split
+
+        labels, cube = inputs["labels"], inputs["cube"]
+        bse = inputs.get("bse")
+        try:
+            updated, new_labels, info = gmm_split(
+                labels.labels, cube.pixels, None if bse is None else bse.pixels,
+                labels.mineral_indices, list(cube.element_names),
+                params["target_phase"], parse_csv(params["features"]),
+                n_components=params["n_components"], bse_weight=params["bse_weight"],
+                subsample_n=params["subsample_n"] or None,
+                random_state=params["random_state"], keep_parent=params["keep_parent"],
+                order_by=params["order_by"],
+            )
+        except ValueError as exc:
+            raise StageError(f"split_gmm: {exc}") from exc
+        given = parse_csv(params["new_names"])
+        new_names = {label: given[i] for i, label in enumerate(new_labels) if i < len(given)}
+        names = {**labels.names, **new_names}
+        if not params["keep_parent"] and new_labels:
+            names.pop(params["target_phase"], None)   # the parent emptied
+        record = _history_record(
+            self.id, params["target_phase"], new_labels, new_names,
+            info.get("n_pixels", {}), info["method"], params["note"],
+        )
+        if "skipped" in info:
+            record["skipped"] = info["skipped"]
+        if "component_means" in info:
+            record["component_means"] = {int(k): v for k, v in info["component_means"].items()}
         return {"labels": labels.replace(labels=updated, names=names,
                                          history=labels.history + (record,))}
