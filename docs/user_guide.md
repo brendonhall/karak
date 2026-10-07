@@ -576,7 +576,7 @@ cube into memory (about 2 GB for NWA 4587).
   parameters, recipe hash, whether it ran or came from the cache, its time,
   and its output files with one-line summaries. `{out}/runs/latest` points
   at the newest record. Records are never overwritten or pruned.
-- **Declared judgments** — every split or naming decision is a node with
+- **Declared judgments.** Every split or naming decision is a node with
   a `note` param; `clusters/subclustering` in the HDF5 lists them in order
   with their pixel counts and component means.
 - **Embedded provenance** — the output HDF5 file records the complete
