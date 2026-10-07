@@ -226,9 +226,9 @@ In flow terms these are the stages `load_elements → mask → denoise →
 normalize → pca → hdbscan_global → noise_assign → cluster_stats →
 fingerprints → export_h5`, plus QC figure sinks. The `tiled` flow swaps in
 `hdbscan_tiled`; `tiled-rare` adds a `rare_phase` stage. `name_phases`,
-`split_threshold` and `split_gmm` attach names and split composite
-phases; the `paper` flow uses them for the published olivine, weathering
-and phosphate splits (PR 5 adds the hires split). Optional
+`split_threshold` and `split_gmm` attach names and split composite phases
+(the published NWA 4587 olivine, weathering and phosphate splits are of
+this form). A full-resolution split stage follows. Optional
 post-run stages `qc_named_phase_map` and the notebook helpers
 `save_mineral_names`/`load_mineral_names` attach researcher-assigned
 mineral names.

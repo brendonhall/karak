@@ -168,7 +168,7 @@ class SplitGmmStage(Stage):
             raise StageError(f"split_gmm: {exc}") from exc
         given = parse_csv(params["new_names"])
         new_names = {label: given[i] for i, label in enumerate(new_labels) if i < len(given)}
-        if len(given) > len(new_labels):
+        if new_labels and len(given) > len(new_labels):
             logger.warning(
                 "split_gmm: %d name(s) given for %d new label(s); dropped %s",
                 len(given), len(new_labels), given[len(new_labels):],
