@@ -78,3 +78,13 @@ def test_tiled_cpu_does_not_warn(monkeypatch, caplog):
     with caplog.at_level("WARNING", logger="karak.stages.cluster"):
         _run(monkeypatch, "cpu", reporter=False)
     assert cluster.TILED_CUDA_WARNING not in caplog.text
+
+
+def test_tiled_run_logs_the_tile_grid_once(caplog):
+    # the stage recomputes the grid for the deferred pixels; only the run
+    # itself logs it (no monkeypatch: the real tiled run calls the grid)
+    stage = cluster.HdbscanTiledStage()
+    stage.reporter = None
+    with caplog.at_level("INFO", logger="karak.clustering.tiling"):
+        stage.run(_inputs(), {**cluster.HdbscanTiledStage.template(), "device": "cpu"})
+    assert caplog.text.count("Tile grid") == 1

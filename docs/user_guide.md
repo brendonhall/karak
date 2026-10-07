@@ -95,8 +95,8 @@ the registry; `karak schema` prints the same contract as JSON.
 | `normalize` | `cube:denoised`, `masks` → `cube:normalized` | Per-channel z-score normalization: mean and standard deviation are computed over **mineral pixels only**, then `z = (x - mean) / std`. Non-mineral pixels are set to 0. On `--device cuda` runs on the GPU. `accumulate` sets the precision of the mean and standard-deviation sums: `float64` (default) is accurate; `float32` reproduces the published NWA 4587 baseline, whose standard deviations are up to 3.6 % off because numpy summed 12.5 M rows in float32. |
 | `pca` | `cube:normalized`, `masks` → `features` | PCA fit + projection of mineral pixels. `n_components: 0` auto-selects the first count reaching 95% cumulative variance (minimum 5). On `--device cuda` runs on the GPU; features match the CPU path within 1e-3. |
 | `hdbscan_global` | `features` → `labels:raw` | Single HDBSCAN run over all mineral-pixel features. |
-| `hdbscan_tiled` | `features`, `cube:denoised` → `labels:raw`, `tiles` | Per-tile HDBSCAN with cosine-similarity phase-registry merging across tiles. `accumulate` sets the precision of the tile-fingerprint sums: `float64` (default) or `float32` (the published baseline). |
-| `rare_phase` | `labels:raw`, `features`, `cube:denoised`, `tiles` → `labels:raw`, `tiles` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. `accumulate` sets the precision of the rare-cluster fingerprint sums, as for `hdbscan_tiled`. On `--device cuda` the pass-2 HDBSCAN runs with cuML (NWA 4587: 92 s instead of 684 s on 16 CPU threads, the same 11 phases); the registry merge stays on the host. |
+| `hdbscan_tiled` | `features`, `cube:denoised` → `labels:raw`, `tiles` | Per-tile HDBSCAN with cosine-similarity phase-registry merging across tiles. `accumulate` sets the precision of the tile-fingerprint sums: `float64` (default) or `float32` (the published baseline). A tile with fewer than `min_clusters_per_tile` clusters is deferred: its pixels stay unassigned for `noise_assign`, and `rare_phase` skips them. |
+| `rare_phase` | `labels:raw`, `features`, `cube:denoised`, `tiles` → `labels:raw`, `tiles` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. `accumulate` sets the precision of the rare-cluster fingerprint sums, as for `hdbscan_tiled`. On `--device cuda` the pass-2 HDBSCAN runs with cuML (NWA 4587: 92 s instead of 684 s on 16 CPU threads, the same 11 phases); the registry merge stays on the host. Pixels of deferred tiles are skipped (they would otherwise form one block of the pass-2 majority phase). |
 | `noise_assign` | `labels:raw`, `features` → `labels:cleaned` | Distance-weighted k-NN reassignment of every remaining unlabeled pixel. On `--device cuda` a CuPy brute-force search with the same vote runs on the GPU (NWA 4587: 24 s instead of 281 s, identical labels); labels can differ from the cpu only where two neighbor distances tie within float32 precision. |
 | `refine` | `labels:cleaned`, `cube:denoised`, `bse` → `labels:cleaned` | Composite-phase splitting: threshold-based olivine extraction, then a GMM split of the target phase. |
 | `cluster_stats` | `labels:cleaned` → `stats` | Cluster counts, sizes, and noise fraction. |
@@ -201,9 +201,11 @@ as follows:
   in each, and 2,847,514 noise pixels against the published 2,852,516; its
   11 phases each match one published phase (every phase 100 % pure; the
   published 16 labels add manual olivine, pyroxene and apatite splits);
-- the rare-phase pass does not reproduce the published labels: it assigns
-  all but 26 k of the noise pixels, where the published labels keep 1.26 M,
-  and the code that produced those labels is not known.
+- the rare-phase pass reproduces the published raw labels once the one
+  deferred 1024 px tile is excluded, which `rare_phase` now does: replaying
+  it on the published pass-1 noise matches the published raw labels in all
+  but 6 of 12,495,787 pixels. The published file had that tile reset by
+  hand (`fix_tile.py` in the paper repository).
 
 Run it on the CPU: cuML selects different clusters on these full tiles
 (see [Computational requirements](#computational-requirements)). The tiled

@@ -109,6 +109,8 @@ def compute_tile_grid(
     image_shape: tuple[int, int],
     tile_size: int,
     min_tile_pixels: int,
+    *,
+    log: bool = True,
 ) -> list[TileSpec]:
     """Divide the image into a fixed grid and assign mineral pixels to tiles.
 
@@ -122,6 +124,9 @@ def compute_tile_grid(
         Side length of each square tile in pixels.
     min_tile_pixels : int
         Tiles with fewer mineral pixels are skipped.
+    log : bool
+        Write the "Tile grid" info line. A caller that recomputes a grid
+        it already logged passes False.
 
     Returns
     -------
@@ -168,11 +173,12 @@ def compute_tile_grid(
             )
             tile_id += 1
 
-    logger.info(
-        "Tile grid: %d tiles of size %d (image %dx%d, %d mineral pixels, "
-        "min_tile_pixels=%d)",
-        len(tiles), tile_size, H, W, len(mineral_indices), min_tile_pixels,
-    )
+    if log:
+        logger.info(
+            "Tile grid: %d tiles of size %d (image %dx%d, %d mineral pixels, "
+            "min_tile_pixels=%d)",
+            len(tiles), tile_size, H, W, len(mineral_indices), min_tile_pixels,
+        )
     return tiles
 
 

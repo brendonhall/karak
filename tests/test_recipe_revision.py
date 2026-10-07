@@ -117,6 +117,11 @@ def test_hdbscan_cuda_subsample_recipes_carry_a_revision():
         assert "cuda-subsample-1" in cls.recipe_revision(
             {**params, "device": "cuda", "subsample_n": 500})
 
+    tiled = HdbscanTiledStage
+    assert tiled.recipe_revision(
+        {**tiled.template(), "device": "cuda", "subsample_n": 1000}
+    ) == "cuda-subsample-1+deferred-1"
+
 
 def test_builtin_recipes_do_not_change():
     # the shipped flows run hdb on cpu with subsample_n 0: no cuda revision;

@@ -189,6 +189,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Tiles with fewer than `min_clusters_per_tile` clusters are now skipped by
+  `rare_phase` and filled by `noise_assign`. Pass 2 used to recluster them
+  with the rest of the noise, which on NWA 4587 put 99 % of a 1,043,317
+  pixel tile into one phase as a square block; the published run removed
+  that block by hand. `hdbscan_tiled` records the deferred tiles
+  (`TileResult.deferred`, `TiledArtifacts.deferred_pixels`, HDF5
+  `clusters/tiled/tile_deferred`). Recipe revision `deferred-1` on both
+  stages: `hdb`, `rare` and downstream recipes change in `tiled`,
+  `tiled-rare` and `paper`.
+
 - User guide: the stepwise paragraph says that the builtin HDBSCAN values
   stop at once on the CPU at full scale (since the fit memory check),
   instead of "takes hours".

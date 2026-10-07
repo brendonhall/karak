@@ -192,6 +192,7 @@ class HdbscanTiledStage(Stage):
         grid = compute_tile_grid(
             features.mineral_indices, features.image_shape,
             tiled_cfg.tile_size, resolve_min_tile_pixels(tiled_cfg, hdb_cfg),
+            log=False,
         )
         deferred_pixels = deferred_pixel_indices(grid, tile_results)
         return {
