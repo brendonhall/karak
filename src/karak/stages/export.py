@@ -148,9 +148,16 @@ class ExportH5Stage(Stage):
                 "strategy": "tiled" if tiles is not None else "global",
             }
             for stage_type in ("pca", "hdbscan_global", "hdbscan_tiled",
-                               "rare_phase", "noise_assign", "refine"):
+                               "rare_phase", "noise_assign"):
                 if _node_params(flow, stage_type) is not None:
                     cluster_params[stage_type] = _params_for(flow, stage_type)
+            refinement_types = ("name_phases", "split_threshold", "split_gmm", "split_hires")
+            refinement_nodes = [
+                {"id": node["id"], "type": node["type"], "params": dict(node.get("params", {}))}
+                for node in flow.get("nodes", []) if node.get("type") in refinement_types
+            ]
+            if refinement_nodes:
+                cluster_params["refinement_nodes"] = refinement_nodes
             storage.save_cluster_data(
                 path,
                 labels_raw.labels if labels_raw is not None else labels.labels,
@@ -163,6 +170,10 @@ class ExportH5Stage(Stage):
                 cluster_params,
                 compression=compression,
             )
+            if labels.names:
+                storage.save_mineral_names(path, dict(labels.names))
+            if labels.history:
+                storage.save_subclustering(path, list(labels.history))
             if tiles is not None:
                 storage.save_tiled_metadata(
                     path, list(tiles.tile_results), list(tiles.phase_registry)

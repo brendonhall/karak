@@ -198,6 +198,13 @@ class Stage:
             for p in cls.PARAMS
         }
 
+    @classmethod
+    def check_params(cls, params: dict) -> list[str]:
+        """Errors in the coerced params that bounds and choices cannot
+        express (text grammars, cross-param rules). Empty means valid.
+        The flow validator and ``run()`` both call it."""
+        return []
+
     def check(self, inputs: dict, params: dict) -> list:
         """Return a list of error strings; empty means valid."""
         errors: list[str] = []
@@ -217,7 +224,7 @@ class Stage:
 
     def run(self, inputs: dict, params: dict | None = None) -> dict:
         coerced = self.coerce_params(params)
-        errors = self.check(inputs, coerced)
+        errors = self.check_params(coerced) + self.check(inputs, coerced)
         if errors:
             raise StageError(f"{self.id}: " + "; ".join(errors))
         return self.apply(inputs, coerced)

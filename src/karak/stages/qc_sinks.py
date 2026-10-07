@@ -253,13 +253,14 @@ class QcFingerprintsStage(Stage):
     PARAMS = [
         _FIGURE_DIR,
         Param("mineral_names", "str", None, "Mineral names",
-              'JSON mapping of cluster id to name, e.g. {"0": "olivine"}'),
+              'JSON mapping of cluster id to name, e.g. {"0": "olivine"}; '
+              "null/{} = the names carried by the labels"),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
         from karak.qc.figures import generate_fingerprint_chart
 
-        names = None
+        names = inputs["fingerprints"].data.get("names")
         if params["mineral_names"]:
             names = {
                 int(k): v
@@ -285,7 +286,8 @@ class QcNamedPhaseMapStage(Stage):
     PARAMS = [
         _FIGURE_DIR,
         Param("mineral_names", "str", "{}", "Mineral names",
-              'JSON mapping of cluster id to name, e.g. {"0": "olivine"}'),
+              'JSON mapping of cluster id to name, e.g. {"0": "olivine"}; '
+              "{} = the names carried by the labels"),
     ]
 
     def apply(self, inputs: dict, params: dict) -> dict:
@@ -296,6 +298,8 @@ class QcNamedPhaseMapStage(Stage):
         names = {
             int(k): v for k, v in json.loads(params["mineral_names"]).items()
         }
+        if not names:
+            names = dict(labels.names)
         generate_named_phase_map(
             labels_to_image(
                 labels.labels, labels.mineral_indices, labels.image_shape

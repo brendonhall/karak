@@ -291,6 +291,21 @@ class PCAFeatures(_Replaceable):
         )
 
 
+def _int_keys(mapping: dict) -> dict:
+    return {int(k): v for k, v in mapping.items()}
+
+
+def _history_from_json(text: str) -> tuple:
+    records = []
+    for rec in json.loads(text):
+        rec = dict(rec)
+        for key in ("names", "n_pixels"):
+            if key in rec:
+                rec[key] = _int_keys(rec[key])
+        records.append(rec)
+    return tuple(records)
+
+
 @_payload
 @dataclass(frozen=True)
 class Labels(_Replaceable):
@@ -303,6 +318,8 @@ class Labels(_Replaceable):
     mineral_indices: np.ndarray             # (N_mineral, 2) int32
     image_shape: tuple                      # (H, W)
     state: LabelState
+    names: dict = dataclasses.field(default_factory=dict)     # label -> name
+    history: tuple = ()                                        # split records
 
     def summary(self) -> str:
         labels = self.labels
@@ -311,12 +328,17 @@ class Labels(_Replaceable):
         text = f"Labels {labels.size:,} px · {phases} phases"
         if noise:
             text += f" · {noise:,} noise"
-        return text + f" · state={self.state.value}"
+        text += f" · state={self.state.value}"
+        if self.names:
+            text += f" · {len(self.names)} named"
+        return text
 
     def to_h5(self, group, compression=CACHE_COMPRESSION) -> None:
         group.attrs["payload_type"] = self.payload_type
         group.attrs["image_shape"] = list(self.image_shape)
         group.attrs["state"] = self.state.value
+        group.attrs["names"] = json.dumps({str(k): v for k, v in self.names.items()})
+        group.attrs["history"] = json.dumps(_jsonable(list(self.history)))
         _dataset(group, "labels", self.labels, compression)
         _dataset(group, "mineral_indices", self.mineral_indices, compression)
         if self.probabilities is not None:
@@ -332,6 +354,8 @@ class Labels(_Replaceable):
             mineral_indices=group["mineral_indices"][()],
             image_shape=tuple(int(v) for v in group.attrs["image_shape"]),
             state=LabelState(group.attrs["state"]),
+            names=_int_keys(json.loads(group.attrs.get("names", "{}"))),
+            history=_history_from_json(group.attrs.get("history", "[]")),
         )
 
 
@@ -511,6 +535,8 @@ class Fingerprints(_Replaceable):
             }
         if "element_order" in data:
             data["element_order"] = np.asarray(data["element_order"])
+        if "names" in data:
+            data["names"] = {int(k): v for k, v in data["names"].items()}
         pairs = [
             tuple(pair)
             for pair in json.loads(group.attrs["similar_pairs"])

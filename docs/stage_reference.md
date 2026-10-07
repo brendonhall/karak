@@ -232,6 +232,29 @@ Boolean mineral-pixel mask: all-zero pixels are background; an optional napari p
 | `min_object_size` | int | `100` | 0.., px | Remove connected components smaller than this |
 | `valid_mask_path` | str | `None` | - | napari shapes CSV of the sample boundary polygon (coordinates in original, pre-downsample image space) |
 
+## `name_phases` — Name phases
+
+Attach mineral names to phase labels. Names travel with the labels to the split stages, the fingerprints, the QC figures and the HDF5 export (clusters/mineral_names).
+
+**Inputs**
+
+| port | type tag | required | notes |
+|------|----------|----------|-------|
+| `labels` | `cleaned` | yes | labels to name |
+
+**Outputs**
+
+| port | type tag | notes |
+|------|----------|-------|
+| `labels` | `cleaned` | the same labels with names attached |
+
+**Parameters**
+
+| name | type | default | bounds / choices | help |
+|------|------|---------|------------------|------|
+| `names` | str | `""` | - | Entries 'label: name' separated by ';', e.g. '0: Ilmenite (FeTiO₃); 1: Silica polymorph (SiO₂)' |
+| `note` | str | `""` | - | How the names were decided (fingerprints, TIMA, references) |
+
 ## `noise_assign` — Noise reassignment
 
 Assign every remaining -1 pixel to its nearest phase by distance-weighted k-NN voting in feature space.
@@ -366,7 +389,7 @@ Per-cluster chemical fingerprint chart.
 | name | type | default | bounds / choices | help |
 |------|------|---------|------------------|------|
 | `figure_dir` | str | `{out}/figures` | - | Directory the diagnostic figures are written to |
-| `mineral_names` | str | `None` | - | JSON mapping of cluster id to name, e.g. {"0": "olivine"} |
+| `mineral_names` | str | `None` | - | JSON mapping of cluster id to name, e.g. {"0": "olivine"}; null/{} = the names carried by the labels |
 
 ## `qc_mask` — QC: mask
 
@@ -407,7 +430,7 @@ Final phase map with researcher-assigned mineral names.
 | name | type | default | bounds / choices | help |
 |------|------|---------|------------------|------|
 | `figure_dir` | str | `{out}/figures` | - | Directory the diagnostic figures are written to |
-| `mineral_names` | str | `{}` | - | JSON mapping of cluster id to name, e.g. {"0": "olivine"} |
+| `mineral_names` | str | `{}` | - | JSON mapping of cluster id to name, e.g. {"0": "olivine"}; {} = the names carried by the labels |
 
 ## `qc_normalize` — QC: normalize
 

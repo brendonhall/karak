@@ -140,6 +140,33 @@ def test_labels_h5_roundtrip_none_probabilities(tmp_path):
     assert back.state is LabelState.CLEANED
 
 
+def test_labels_roundtrip_names_and_history(tmp_path):
+    labels = Labels(
+        labels=np.array([0, 1, 2], dtype=np.int32),
+        probabilities=None,
+        mineral_indices=np.zeros((3, 2), dtype=np.int32),
+        image_shape=(2, 2),
+        state=LabelState.CLEANED,
+        names={0: "Olivine", 1: "Augite", 2: "Pigeonite"},
+        history=({"stage": "split_gmm", "parent": 1, "new_labels": [2],
+                  "names": {2: "Pigeonite"}, "n_pixels": {2: 1},
+                  "method": "GMM on Ca", "note": "why"},),
+    )
+    back = _roundtrip(labels, tmp_path)
+    assert back.names == {0: "Olivine", 1: "Augite", 2: "Pigeonite"}
+    assert back.history[0]["new_labels"] == [2]
+    assert back.history[0]["names"] == {2: "Pigeonite"}
+    assert back.history[0]["n_pixels"] == {2: 1}
+    # old files have neither attribute
+    import h5py
+    with h5py.File(tmp_path / "old.h5", "w") as fh:
+        labels.to_h5(fh.create_group("p"))
+        del fh["p"].attrs["names"], fh["p"].attrs["history"]
+    with h5py.File(tmp_path / "old.h5", "r") as fh:
+        old = payload_from_h5(fh["p"])
+    assert old.names == {} and old.history == ()
+
+
 def test_tiled_artifacts_h5_roundtrip(tmp_path):
     from karak.clustering.tiling import PhaseEntry, TileResult
 
@@ -241,8 +268,10 @@ def test_fingerprints_h5_roundtrip(tmp_path):
         "n_clusters": 1,
         "n_mineral_pixels": 10,
     }
+    data["names"] = {0: "A"}
     payload = Fingerprints(data=data, similar_pairs=[(0, 1, 0.97)])
     back = _roundtrip(payload, tmp_path)
+    assert back.data["names"] == {0: "A"}
     assert set(back.data["fingerprints"]) == {0}  # int keys survive
     np.testing.assert_allclose(back.data["fingerprints"][0]["mean"], [0.1, 0.2])
     assert back.data["element_names"] == ["Fe", "Mg"]

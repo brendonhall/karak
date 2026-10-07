@@ -98,6 +98,7 @@ the registry; `karak schema` prints the same contract as JSON.
 | `hdbscan_tiled` | `features`, `cube:denoised` → `labels:raw`, `tiles` | Per-tile HDBSCAN with cosine-similarity phase-registry merging across tiles. `accumulate` sets the precision of the tile-fingerprint sums: `float64` (default) or `float32` (the published baseline). A tile with fewer than `min_clusters_per_tile` clusters is deferred: its pixels stay unassigned for `noise_assign`, and `rare_phase` skips them. |
 | `rare_phase` | `labels:raw`, `features`, `cube:denoised`, `tiles` → `labels:raw`, `tiles` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. `accumulate` sets the precision of the rare-cluster fingerprint sums, as for `hdbscan_tiled`. On `--device cuda` the pass-2 HDBSCAN runs with cuML (NWA 4587: 92 s instead of 684 s on 16 CPU threads, the same 11 phases); the registry merge stays on the host. Pixels of deferred tiles are skipped (they would otherwise form one block of the pass-2 majority phase). |
 | `noise_assign` | `labels:raw`, `features` → `labels:cleaned` | Distance-weighted k-NN reassignment of every remaining unlabeled pixel. On `--device cuda` a CuPy brute-force search with the same vote runs on the GPU (NWA 4587: 24 s instead of 281 s, identical labels); labels can differ from the cpu only where two neighbor distances tie within float32 precision. |
+| `name_phases` | `labels:cleaned` → `labels:cleaned` | Attaches mineral names (`names`: `'0: Ilmenite; 1: Silica'`) that travel with the labels to the fingerprints, the QC figures and the export (`clusters/mineral_names`). Fails validation if a named label is not in the data. |
 | `refine` | `labels:cleaned`, `cube:denoised`, `bse` → `labels:cleaned` | Composite-phase splitting: threshold-based olivine extraction, then a GMM split of the target phase. |
 | `cluster_stats` | `labels:cleaned` → `stats` | Cluster counts, sizes, and noise fraction. |
 | `fingerprints` | `labels:cleaned`, `cube:denoised` → `fingerprints` | Per-cluster mean/std element intensities from the denoised cube, with cosine-similar pairs flagged. `accumulate` sets the precision of the mean and standard-deviation sums: `float64` (default) is accurate; `float32` reproduces the published baseline, which drifts by a few percent on clusters of millions of pixels. |
@@ -114,9 +115,11 @@ the registry; `karak schema` prints the same contract as JSON.
 
 Cluster labels are anonymous phases (0, 1, 2, ...). Assigning mineral names
 is a human-in-the-loop step: inspect the per-cluster chemical fingerprints
-and QC figures, then record names with
-`karak.io.storage.save_mineral_names()` and render a named map with the
-`qc_named_phase_map` stage. `preprocessing.denoise.compare_denoisers()` is
+and QC figures, then record the names in the `names` param of a
+`name_phases` node. The names travel with the labels: `fingerprints`,
+`qc_fingerprints`, `qc_named_phase_map` and `export_h5` use them. You can
+also record names after the run with
+`karak.io.storage.save_mineral_names()`. `preprocessing.denoise.compare_denoisers()` is
 a notebook helper for side-by-side denoiser comparison.
 
 ---
@@ -368,7 +371,10 @@ in each.
 │                 element_order (JSON)
 ├── clusters/     raw_labels, cleaned_labels, probabilities,
 │   │             pca_variance_ratio, mineral_indices, cluster_stats;
-│   │             attrs: mineral_names (JSON), cluster_N_name
+│   │             attrs: mineral_names (JSON), cluster_N_name (both written
+│   │             when the flow names the phases)
+│   ├── subclustering/  split history (written when the flow splits phases);
+│   │             attrs: history (JSON list), split_NN (JSON record each)
 │   └── tiled/    per-tile summaries and phase registry (tiled strategy)
 └── attrs:        pipeline_config (the complete flow, as YAML), created (UTC),
                   pipeline_version, python_version, platform,

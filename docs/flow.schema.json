@@ -100,6 +100,9 @@
           "$ref": "#/$defs/node_mask"
         },
         {
+          "$ref": "#/$defs/node_name_phases"
+        },
+        {
           "$ref": "#/$defs/node_noise_assign"
         },
         {
@@ -775,6 +778,53 @@
       },
       "additionalProperties": false
     },
+    "node_name_phases": {
+      "title": "Name phases",
+      "description": "Attach mineral names to phase labels. Names travel with the labels to the split stages, the fingerprints, the QC figures and the HDF5 export (clusters/mineral_names).",
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "name_phases"
+        },
+        "params": {
+          "$ref": "#/$defs/params_name_phases"
+        },
+        "ui": {
+          "$ref": "#/$defs/ui"
+        }
+      },
+      "additionalProperties": false
+    },
+    "params_name_phases": {
+      "type": "object",
+      "required": [
+        "names",
+        "note"
+      ],
+      "properties": {
+        "names": {
+          "type": "string",
+          "title": "Names",
+          "description": "Entries 'label: name' separated by ';', e.g. '0: Ilmenite (FeTiO\u2083); 1: Silica polymorph (SiO\u2082)'",
+          "default": ""
+        },
+        "note": {
+          "type": "string",
+          "title": "Note",
+          "description": "How the names were decided (fingerprints, TIMA, references)",
+          "default": ""
+        }
+      },
+      "additionalProperties": false
+    },
     "node_noise_assign": {
       "title": "Noise reassignment",
       "description": "Assign every remaining -1 pixel to its nearest phase by distance-weighted k-NN voting in feature space.",
@@ -1105,7 +1155,7 @@
             "null"
           ],
           "title": "Mineral names",
-          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}",
+          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}; null/{} = the names carried by the labels",
           "default": null
         }
       },
@@ -1202,7 +1252,7 @@
         "mineral_names": {
           "type": "string",
           "title": "Mineral names",
-          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}",
+          "description": "JSON mapping of cluster id to name, e.g. {\"0\": \"olivine\"}; {} = the names carried by the labels",
           "default": "{}"
         }
       },

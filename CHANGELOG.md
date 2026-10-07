@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `name_phases` stage and `Labels.names`/`Labels.history`: mineral names
+  and split records travel with the labels; `fingerprints` copies the
+  names, `qc_fingerprints` and `qc_named_phase_map` use them when their
+  `mineral_names` param is null, and `export_h5` writes
+  `clusters/mineral_names`, the `cluster_N_name` attributes and
+  `clusters/subclustering`. `Stage.check_params` lets a stage report
+  errors in text params; `karak validate` shows them.
 - `hdbscan_tiled` warns when it runs on cuda: on full tiles, cuML can
   select different clusters than the cpu (NWA 4587 with the paper's tiled
   settings: 12 phases and 4.2 M noise pixels on cuda against 11 and 2.8 M

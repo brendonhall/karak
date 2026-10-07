@@ -697,6 +697,44 @@ def save_mineral_names(h5_path: str | Path, mineral_names: dict[int, str]) -> No
     )
 
 
+def save_subclustering(h5_path: str | Path, history: list[dict]) -> None:
+    """Write the split history to ``clusters/subclustering`` attributes:
+    ``history`` (the JSON list) and one ``split_NN`` attribute per record,
+    the layout the NWA 4587 analysis scripts read."""
+    with h5py.File(h5_path, "a") as f:
+        grp = f["clusters"]
+        if "subclustering" in grp:
+            del grp["subclustering"]
+        sub = grp.create_group("subclustering")
+        records = [_json_record(r) for r in history]
+        sub.attrs["history"] = json.dumps(records)
+        for i, rec in enumerate(records):
+            sub.attrs[f"split_{i:02d}"] = json.dumps(rec)
+    logger.info("Saved %d split records to clusters/subclustering", len(history))
+
+
+def _json_record(record: dict) -> dict:
+    """Return ``record`` with numpy scalars, arrays and non-string dict
+    keys converted recursively to JSON-safe Python values."""
+    return _json_safe(record)
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return _json_safe(value.tolist())
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
+    return value
+
+
 def load_mineral_names(h5_path: str | Path) -> dict[int, str] | None:
     """Read mineral name mapping from the ``clusters/`` group attributes.
 

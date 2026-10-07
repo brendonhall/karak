@@ -57,9 +57,12 @@ def validate(graph: Graph) -> list[Issue]:
                 f"missing param(s) {missing!r}; " + COMPLETE_HINT,
             ))
         try:
-            cls.coerce_params(node.params)   # types, bounds, unknown names
+            coerced = cls.coerce_params(node.params)   # types, bounds, unknown names
         except ValueError as exc:
             issues.append(Issue("error", node.id, str(exc)))
+            continue
+        for message in cls.check_params(coerced):
+            issues.append(Issue("error", node.id, message))
 
     node_ids = {n.id for n in graph.nodes}
 
