@@ -98,7 +98,7 @@ the registry; `karak schema` prints the same contract as JSON.
 | `hdbscan_tiled` | `features`, `cube:denoised` → `labels:raw`, `tiles` | Per-tile HDBSCAN with cosine-similarity phase-registry merging across tiles. `accumulate` sets the precision of the tile-fingerprint sums: `float64` (default) or `float32` (the published baseline). A tile with fewer than `min_clusters_per_tile` clusters is deferred: its pixels stay unassigned for `noise_assign`, and `rare_phase` skips them. |
 | `rare_phase` | `labels:raw`, `features`, `cube:denoised`, `tiles` → `labels:raw`, `tiles` | Recluster still-unassigned pixels with more sensitive parameters (Pass 2 of the two-pass workflow). Including this stage in a flow is what enables the workflow. `accumulate` sets the precision of the rare-cluster fingerprint sums, as for `hdbscan_tiled`. On `--device cuda` the pass-2 HDBSCAN runs with cuML (NWA 4587: 92 s instead of 684 s on 16 CPU threads, the same 11 phases); the registry merge stays on the host. Pixels of deferred tiles are skipped (they would otherwise form one block of the pass-2 majority phase). |
 | `noise_assign` | `labels:raw`, `features` → `labels:cleaned` | Distance-weighted k-NN reassignment of every remaining unlabeled pixel. On `--device cuda` a CuPy brute-force search with the same vote runs on the GPU (NWA 4587: 24 s instead of 281 s, identical labels); labels can differ from the cpu only where two neighbor distances tie within float32 precision. |
-| `name_phases` | `labels:cleaned` → `labels:cleaned` | Attaches mineral names (`names`: `'0: Ilmenite; 1: Silica'`) that travel with the labels to the fingerprints, the QC figures and the export (`clusters/mineral_names`). Fails validation if a named label is not in the data. |
+| `name_phases` | `labels:cleaned` → `labels:cleaned` | Attaches mineral names (`names`: `'0: Ilmenite; 1: Silica'`) that travel with the labels to the fingerprints, the QC figures and the export (`clusters/mineral_names`). Fails at run time if a named label is not in the data. |
 | `split_threshold` | `labels:cleaned`, `cube:denoised` → `labels:cleaned` | Moves the pixels of one phase that satisfy a rule on denoised channels (`'Fe-K > 0.6 & Ca < 0.10'`) to a new, named label. Appends a record to the split history. |
 | `split_gmm` | `labels:cleaned`, `cube:denoised` (+`bse`) → `labels:cleaned` | Gaussian mixture on z-scored features (channels, `BSE`, ratios `A/(A+B)`). `keep_parent` lets the largest component keep the parent label; `order_by` orders the new labels by a feature's component mean. |
 | `split_hires` | `labels:cleaned`, `cube:raw` (higher resolution) → `labels:cleaned`, `labels_hires` | One GMM on a channel or ratio of a full-resolution cube inside a set of phases; every full-resolution pixel is classified (`labels_hires`, exported to `clusters/hires/labels`) and the working labels take the majority of their children. The second cube comes from a `load_elements` node with `downsample_factor: 1` and `include_elements`. |
@@ -227,11 +227,15 @@ What a CPU run reproduces of the published result:
   file keeps a 16th label for 92 pixels of unresolved pyroxene that the
   flow splits away. The numbering differs in one place (13 pigeonite, 14
   augite here; the published file has them the other way round).
-  Abundances against Table 1 of the paper: within 0.50 pp for every phase
+  Abundances against Table 1 of the paper: within 0.51 pp for every phase
   (largest: Weathering Assemblage, -0.50 pp; then Epoxy, +0.28 pp and
   Plagioclase, +0.16 pp). The 1x pyroxene map gives 272 grains against the
   published 128, a median lamella spacing of 45 um against 51 um, and a
-  Rayleigh p of 0.80 against 0.008.
+  Rayleigh p of 0.80 against 0.008. The published count rests on a stale
+  setting: the paper's lamellae script read a downsample factor of 4 against
+  a factor-2 file, so its pyroxene mask was the top-left quarter of the
+  section. With the correct factor the same script gives 272 grains on the
+  published labels, and karak's 1x map agrees with it at 99.25 %.
 
 Run it on the CPU: cuML selects different clusters on these full tiles
 (see [Computational requirements](#computational-requirements)). The tiled
@@ -431,7 +435,7 @@ flow, this reruns only `weath` and its downstream nodes (after a prior
 `paper` run to the same `--out`):
 
 ```bash
-karak run --builtin paper --input data/ --out output/s1 --set weath.target_phase=3
+karak run --builtin paper --input data/ --out output/s1 --set weath.random_state=7
 ```
 
 Cache files are written on a background thread, so the next step starts

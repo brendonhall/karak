@@ -238,7 +238,8 @@ PAPER_SETTINGS = {
 }
 
 
-PAPER_EXTRA_NODES = ["src_hires", "names", "oliv", "weath", "pyx", "phos"]
+PAPER_EXTRA_NODES = ["src_hires", "names", "oliv", "weath", "pyx", "phos",
+                     "qc_named_phase_map"]
 
 
 def test_paper_is_tiled_rare_plus_the_published_hand_steps():
@@ -270,6 +271,8 @@ def test_paper_is_tiled_rare_plus_the_published_hand_steps():
     assert source("pyx", "cube_hires") == ("src_hires", "cube")
     for consumer in ("stats", "fp", "exp", "qc_phase_map"):
         assert source(consumer, "labels") == ("phos", "labels")
+    assert source("qc_named_phase_map", "labels") == ("phos", "labels")
+    assert source("qc_named_phase_map", "bse") == ("src", "bse")
     assert source("exp", "labels_hires") == ("pyx", "labels_hires")
     assert source("weath", "bse") == ("src", "bse")
     assert paper.node("oliv").params["rule"] == "Fe-K > 0.6 & Ca < 0.10"

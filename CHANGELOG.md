@@ -14,9 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pyroxene split with the lamellae map) and `phos` (phosphate GMM). One
   run gives the published phases (15 with pixels; the published file keeps
   a 16th label for 92 unresolved pyroxene pixels). Real-data check on
-  NWA 4587: every phase within 0.50 pp of Table 1 (largest: Weathering
+  NWA 4587: every phase within 0.51 pp of Table 1 (largest: Weathering
   Assemblage, -0.50 pp); the 1x pyroxene map gives 272 grains against the
-  published 128.
+  published 128. The published count rests on a stale setting: the paper's
+  lamellae script read a downsample factor of 4 against a factor-2 file, so
+  its pyroxene mask was the top-left quarter of the section. With the
+  correct factor the same script gives 272 grains on the published labels,
+  and karak's 1x map agrees with it at 99.25 %.
 - `split_hires` stage and `HiresLabels` payload: a GMM on a full-resolution
   channel or ratio inside a set of phases, with the full-resolution label
   map as a second output (`clusters/hires/labels` in the export). Working
@@ -26,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `name_phases` stage and `Labels.names`/`Labels.history`: mineral names
   and split records travel with the labels; `fingerprints` copies the
   names, `qc_fingerprints` and `qc_named_phase_map` use them when their
-  `mineral_names` param is null, and `export_h5` writes
+  `mineral_names` param is null or `{}`, and `export_h5` writes
   `clusters/mineral_names`, the `cluster_N_name` attributes and
   `clusters/subclustering`. `Stage.check_params` lets a stage report
   errors in text params; `karak validate` shows them.
@@ -230,7 +234,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `clusters/tiled/tile_deferred`). Recipe revision `deferred-1` on both
   stages: `hdb`, `rare` and downstream recipes change in `tiled`,
   `tiled-rare` and `paper`.
-
 - User guide: the stepwise paragraph says that the builtin HDBSCAN values
   stop at once on the CPU at full scale (since the fit memory check),
   instead of "takes hours".

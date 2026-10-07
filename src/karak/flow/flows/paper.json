@@ -264,6 +264,14 @@
         "figure_dir": "{out}/figures",
         "min_tile_pixels": 200
       }
+    },
+    {
+      "id": "qc_named_phase_map",
+      "type": "qc_named_phase_map",
+      "params": {
+        "figure_dir": "{out}/figures",
+        "mineral_names": "{}"
+      }
     }
   ],
   "edges": [
@@ -903,6 +911,28 @@
       "to": {
         "node": "exp",
         "port": "labels_hires"
+      }
+    },
+    {
+      "id": "e59",
+      "from": {
+        "node": "phos",
+        "port": "labels"
+      },
+      "to": {
+        "node": "qc_named_phase_map",
+        "port": "labels"
+      }
+    },
+    {
+      "id": "e60",
+      "from": {
+        "node": "src",
+        "port": "bse"
+      },
+      "to": {
+        "node": "qc_named_phase_map",
+        "port": "bse"
       }
     }
   ]
