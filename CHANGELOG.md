@@ -320,6 +320,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `CITATION.cff` spelled co-author Tingyao Luo's given name "Tinyao" in
+  both the author list and the preferred citation.
 - The QC fingerprint chart, phase map and named phase map looked colours
   up by the label value. Labels can be non-contiguous after a split empties
   its parent (the `paper` flow has labels 0 to 6 and 8 to 16), which
